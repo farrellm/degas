@@ -35,20 +35,22 @@ The initial model families are Stable Diffusion XL (images) and Wan 2.2 (video).
 ## 2. Architecture
 
 ```
-┌──────────────────┐   HTTPS (tailscale serve)   ┌─────────────────────────────┐   colab CLI    ┌──────────────────────────┐
-│ iPhone PWA       │ ──────────────────────────▶ │ Degas server (home box)     │ ─────────────▶ │ Colab VM (GPU)           │
-│ React + Vite     │ ◀── SSE progress, Web Push  │ FastAPI + SQLite            │ ◀── stdout,    │ persistent Python kernel │
-└──────────────────┘                             │ • REST API + static UI      │    download    │ • degas_worker module    │
-                                                 │ • session manager           │                │ • diffusers pipelines    │
-                                                 │ • job queue / dispatcher    │                │ • Drive at /content/drive│
-                                                 │ • blob store, library       │                │ • model cache /content/  │
-                                                 │ • retention sweeper         │                │   models                 │
-                                                 └─────────────────────────────┘                └──────────────────────────┘
+┌──────────────────┐   HTTPS (tailscale serve)   ┌─────────────────────────────┐  colab CLI (new/stop/exec)  ┌───────────────────────────┐
+│ iPhone PWA       │ ──────────────────────────▶ │ Degas server (home box)     │ ──────────────────────────▶ │ Colab VM (GPU)            │
+│ React + Vite     │ ◀── SSE progress, Web Push  │ FastAPI + SQLite            │  ssh (colab ssh ProxyCmd)   │ • kernel: bootstrap only  │
+└──────────────────┘                             │ • REST API + static UI      │  -L tunnel ⇄ worker HTTP    │ • degas_worker (uvicorn,  │
+                                                 │ • session manager           │ ◀─────────────────────────▶ │   127.0.0.1:8765)         │
+                                                 │ • job queue / dispatcher    │                             │ • diffusers pipelines     │
+                                                 │ • Drive OAuth + asset index │  Drive access tokens ──▶    │ • rclone → /content/models│
+                                                 │ • blob store, library       │                             └────────────┬──────────────┘
+                                                 │ • retention sweeper         │ ── Drive API (index) ──┐                  │ rclone copy
+                                                 └─────────────────────────────┘                        ▼                  ▼
+                                                                                                   Google Drive  ◀─────────┘
 ```
 
 - **Frontend**: a React + Vite single-page PWA. The FastAPI server serves it as static files.
 - **Server**: Python 3.12 and FastAPI. SQLite (via SQLModel or plain SQLAlchemy) holds the metadata. Media lives on the local filesystem. The server is the only component that invokes the `colab` CLI, using asyncio subprocesses.
-- **Worker**: a Python package (`degas_worker`). The server uploads it to the VM and imports it into the kernel once per session. Loaded pipelines stay in kernel memory between jobs.
+- **Worker**: a Python package (`degas_worker`) that runs a small FastAPI/uvicorn HTTP server on the VM, bound to `127.0.0.1`. The server reaches it through an SSH tunnel (§3.2). Loaded pipelines stay in the worker's memory between jobs. The worker process is started from the Colab kernel, so it inherits the kernel's CUDA environment (Phase 0 finding 6).
 
 ### Network and security
 
@@ -56,6 +58,8 @@ The initial model families are Stable Diffusion XL (images) and Wan 2.2 (video).
 - `tailscale serve` provides HTTPS with a `*.ts.net` certificate. Both PWA install and iOS Web Push require HTTPS.
 - There is no application-level auth. Access control is tailnet membership.
 - The `colab` CLI authenticates with ADC or OAuth2 on the server. Credentials never reach the browser.
+- The worker only listens on the VM's loopback interface, and is reachable only through the server's SSH tunnel.
+- The worker receives short-lived Drive access tokens (about 1 h), never the refresh token.
 
 ## 3. Colab integration
 
@@ -63,11 +67,20 @@ The initial model families are Stable Diffusion XL (images) and Wan 2.2 (video).
 
 The user starts a session from the UI and chooses a GPU type: T4, L4, A100 or H100, optionally with `--high-mem`. The server runs these steps and streams their progress to the UI:
 
-1. `colab new -s degas --gpu <GPU> [--high-mem]`
-2. `colab drivemount -s degas`, which mounts Drive at `/content/drive`.
-3. `colab install -s degas -r requirements-worker.txt`. The requirements file is uploaded first.
-4. `colab upload -s degas <worker bundle> /content/degas_worker/`
-5. `colab exec -s degas` with a bootstrap snippet that imports the worker, checks the GPU, and emits a `ready` event that includes a Drive asset index (see §5).
+1. `colab new -s degas --gpu <GPU> [--high-mem]`. `--high-mem` is preselected for Wan A14B, because standard shapes have only 12 GB of RAM.
+2. Open the SSH master connection:
+   ```
+   ssh -o ControlMaster=yes -o ControlPath=$XDG_RUNTIME_DIR/degas-%C \
+       -o ProxyCommand="colab ssh --proxy-mode -s degas -i <key>" \
+       -f -N -L <local_port>:127.0.0.1:8765 root@colab-runtime
+   ```
+   Degas has its own ed25519 key, set in `degas.toml`. The ControlPath must be under 108 bytes, which is why it lives in `$XDG_RUNTIME_DIR`.
+3. `scp` the worker bundle and the `rclone` binary to `/content/degas/`. The bundle is only re-sent if its content hash has changed.
+4. Install packages only if something is missing. The Colab image already has torch, diffusers, transformers, peft, fastapi, uvicorn and ffmpeg, so this is usually a no-op. Extra packages such as `sam2` and DWPose dependencies are installed lazily, the first time they're used.
+5. `colab exec -s degas` with a bootstrap snippet. It starts the worker with `subprocess.Popen([... "uvicorn", "degas_worker.app:app", "--host", "127.0.0.1", "--port", "8765"], start_new_session=True)` and returns immediately. Starting from the kernel means the worker inherits `LD_LIBRARY_PATH=/usr/lib64-nvidia` and the rest of the CUDA environment.
+6. Poll `GET /health` through the tunnel until the worker reports the GPU name and free VRAM and free disk. Then `POST /drive-token` with a fresh access token. The session is now `ready`.
+
+There is no Drive FUSE mount: see §5 for how Drive is accessed.
 
 **Session states:** `starting → ready ⇄ busy → stopping → stopped`, plus `error`.
 
@@ -77,46 +90,67 @@ Only one session can be active at a time in v1. Changing GPU type means stopping
 
 **Jobs without a session.** Jobs can be submitted when no session is running. They wait in the queue, and the Create and Queue screens show a "Start session" prompt. When a session reaches `ready`, the dispatcher starts on the queue.
 
+**Liveness and heartbeat.**
+- While a session is `ready` or `busy`, the server calls `GET /health` every 30 s. It also runs `colab status` every 5 min to detect reclamation.
+- If the tunnel drops, the server re-establishes the SSH master and re-checks `/health`.
+- If the VM is gone, `colab` reports `Session '…' not found` and exits with code 1. The session then moves to `error`.
+- Whether a kernel exec heartbeat is also needed is still unknown. The Phase 0 liveness test was inconclusive: the VM was still alive 15 minutes after the kernel went idle. The question is whether a VM whose kernel is idle, with only the SSH-launched worker active, gets reclaimed. If it does, the server also sends a trivial `colab exec` every few minutes while the session is active.
+
 **Failure and restart recovery.**
-- If the VM is reclaimed or a CLI call fails fatally, the session moves to `error` and `ended_at` is set. The running job is marked `error`. Queued jobs stay queued.
-- On server startup, the server compares its session row with `colab sessions` and `colab status`:
-  - If the VM is still alive, the server re-attaches, re-running the worker import if the kernel restarted.
+- If the VM is reclaimed or the worker dies, the session moves to `error` and `ended_at` is set. The running job is marked `error`. Queued jobs stay queued.
+- On server startup, the server compares its session row with `colab sessions`:
+  - If the VM is still alive, the server re-opens the tunnel and calls `GET /state`. That returns any in-flight job and its progress, plus any finished outputs the server hasn't fetched yet, so nothing is lost. If the worker isn't running, the server restarts it (bootstrap step 5).
   - If the VM is gone, the session is marked stopped.
   - Either way, the idle timer restarts from startup.
   This keeps a server crash from leaving a GPU VM running and consuming compute units. Colab's own idle reclaim is a final backstop.
 
 Each model variant declares a minimum GPU. If you submit a job whose model needs more than the current session provides, the UI warns you. The job is not rejected, because offloading may still make it work, only slowly.
 
-### 3.2 Job execution protocol
+### 3.2 Worker protocol (HTTP over the SSH tunnel)
 
-For each job:
+The server talks to the worker through `http://127.0.0.1:<local_port>` on the forwarded port. A request's round trip is about 0.12 s. Calls are serialized per GPU by the worker. The worker has one generation slot. Preprocessing requests are also accepted while a job is running, but they wait for the GPU between denoising steps.
 
-1. **Stage inputs.** The server uploads any input blobs the VM doesn't already have to `/content/degas/in/<sha256>.<ext>`. These are source, control and mask images, identified by content hash. The server records which hashes it has uploaded during the session, so each blob is uploaded only once.
-2. **Upload the job spec.** The job spec uses the same schema as the saved generation config (§6.4), except that `runtime` is left out. A client-submitted spec may contain `fit` modes; the server resolves them into transforms before dispatch. The server uploads `job.json` to `/content/degas/jobs/<job_id>.json`.
-3. **Execute.** The server runs `colab exec -s degas` with the snippet `import degas_worker as w; w.run_job("<job_id>")`.
-4. **Stream progress.** The worker prints structured events to stdout, one per line, prefixed with `@@degas `. The server parses these and fans them out to SSE subscribers. All other stdout and stderr goes to the job log.
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/health` | GPU name, VRAM free/total, disk free, loaded family/variant, worker version |
+| GET | `/state` | Current job (id, status, progress) and outputs not yet acknowledged (for reattach) |
+| PUT | `/blobs/{sha256}` | Upload an input blob (source, control or mask image); `HEAD` to check whether it's already present |
+| POST | `/jobs` | Start a job: `{job_id, spec}`; `409` if a job is already running |
+| GET | `/jobs/{id}/events` | SSE stream of `progress`, `output`, `done`, `error`, `cancelled` events |
+| POST | `/jobs/{id}/cancel` | Cooperative cancel |
+| GET | `/outputs/{job}/{item}` | Download one output; `DELETE` acknowledges it and frees disk |
+| POST | `/preprocess` | Run depth, pose, canny or SAM on a blob, returning the output as the response body |
+| POST | `/drive-token` | Store a fresh Drive access token |
+| POST | `/assets/fetch` | Copy the given Drive paths into the local model cache (progress is reported via SSE) |
+| POST | `/shutdown` | Unload models and exit (used before `colab stop`) |
+
+**Per job:**
+
+1. **Stage inputs.** `HEAD` each input blob and `PUT` any that are missing. Blobs are content-addressed, so each is sent at most once per session.
+2. **Start.** `POST /jobs` with the job spec. The job spec uses the same schema as the saved generation config (§6.4), except that `runtime` is left out. A client-submitted spec may contain `fit` modes; the server resolves them into transforms before dispatch.
+3. **Stream.** The server subscribes to `/jobs/{id}/events` and relays the events to the phone over its own SSE stream.
    ```
-   @@degas {"t":"progress","job":"…","item":0,"step":12,"steps":30}
-   @@degas {"t":"output","job":"…","item":0,"path":"/content/degas/out/<job>/0.png","seed":1234}
-   @@degas {"t":"done","job":"…"}
-   @@degas {"t":"error","job":"…","message":"CUDA out of memory"}
+   {"t":"progress","job":"…","item":0,"phase":"copy|load|denoise|decode|encode","step":12,"steps":30}
+   {"t":"output","job":"…","item":0,"seed":1234,"media_type":"image/png"}
+   {"t":"done","job":"…"}
+   {"t":"error","job":"…","message":"CUDA out of memory"}
    ```
-5. **Download outputs.** On each `output` event the server runs `colab download` on the file and stores it in the ephemeral blob area. It then deletes the remote copy with a follow-up exec. Finished batch items therefore appear on the phone before the whole batch is done.
+4. **Fetch outputs.** On each `output` event, the server GETs the file, stores it as a blob, and then DELETEs it on the worker. Finished batch items appear on the phone before the whole batch is done.
 
-**Cancellation.** The worker's step callback (`callback_on_step_end`) checks for the file `/content/degas/cancel/<job_id>`. To cancel, the server uploads that file with `colab upload`. The worker then raises a cancellation error and emits `{"t":"cancelled"}`. If upload is blocked while the kernel is busy, the fallback is to kill the local `exec` subprocess and interrupt the kernel. Which approach works must be confirmed in the Phase 0 spike.
+The job's final state comes from the terminal event (`done`, `error` or `cancelled`). If the stream ends without one, the server treats the job as failed and reconciles via `GET /state`.
 
-**Interactive preprocessing.** SAM point prompts, and depth or pose extraction, use the same exec path with a smaller `preprocess` spec. They run at higher priority than queued generation jobs, but they cannot pre-empt a job that is already running, because there is one kernel. For SAM, the worker caches the image embedding by image hash, so each extra tap only runs the lightweight mask decoder. Round-trip latency is expected to be about 1–3 s, and the spike will measure it.
+**Cancellation** is cooperative. `POST /jobs/{id}/cancel` sets a flag that the step callback (`callback_on_step_end`) checks. The worker then aborts and emits `cancelled`. Phase 0 showed that killing a client never stops running code on the VM. If the worker is stuck, the last resort is **Force reset worker**: kill the worker process over SSH and restart it. This reloads the models. `colab restart-kernel` is only needed if the kernel itself is wedged.
 
-### 3.3 Phase 0 spike: questions to answer before building
+**Interactive preprocessing.** SAM point prompts, and depth or pose extraction, use `POST /preprocess`. For SAM, the worker caches the image embedding by image hash, so each extra tap only runs the lightweight mask decoder. The expected round trip is 0.12 s of transport plus the inference time. When a generation job is running, a preprocessing request is served between denoising steps.
 
-- Do consecutive `colab exec` calls share one kernel, so imported modules and loaded pipelines persist?
-- Does `exec` stream stdout incrementally, or only return it when the call finishes?
-- What is the fixed overhead of each `exec`, `upload` and `download` call?
-- Can `upload` or `download` run while an `exec` is in progress? This decides whether the cancel mechanism works.
-- How does the CLI behave when the VM is reclaimed? The server needs to detect it and move the session to `error`.
-- How fast is copying a 6–28 GB model from the Drive mount to local disk?
+### 3.3 Phase 0 results
 
-If streaming or a persistent kernel isn't available, the fallback is a long-running worker loop launched by one `exec`. It would poll a jobs directory for specs uploaded by the server, and the server would poll a status file with `download`. The server-side interfaces in this document stay the same either way.
+See [phase0-findings.md](phase0-findings.md). Summary:
+
+- Kernel state persists across `exec` calls, and `exec` streams output. However, `exec` has 1.3–1.5 s of overhead per call, `--timeout` has no effect, and it exits 0 even when the code raises.
+- `colab ssh` works as a `ProxyCommand`. A port-forwarded HTTP round trip takes about 0.12 s, and SSE streams through the tunnel. This is why the transport above uses SSH, not per-job `exec`.
+- `drivemount` needs interactive consent on every new VM. This is why Drive access doesn't use the FUSE mount (§5).
+- rclone with a server-supplied token copies a cold file from Drive at about 65 MB/s.
 
 ## 4. Model plugin system
 
@@ -237,9 +271,15 @@ preview: foo.jpg
 notes: "Works best with CFG 3–4"
 ```
 
-**Asset index.** At session start and on demand ("Rescan Drive"), the worker walks `MyDrive/degas/` and returns an index of each asset's path, size, modification time, parsed sidecar, and a base64 thumbnail of any preview image. The server caches the index in SQLite, so the model and LoRA pickers work when no session is running. Pickers show a "last indexed" timestamp.
+**Drive access.** Degas does not use `drivemount`, because it needs interactive consent on every new VM (Phase 0). Instead:
 
-**Local cache.** Before first use in a session, the worker copies a model or LoRA from the Drive mount to `/content/models/<same relative path>`, because loading straight from the FUSE mount is slow. Copy progress is reported with `progress` events, where `phase: "copy"`.
+- **OAuth.** Degas has its own Google Cloud OAuth client (desktop type, scope `drive.readonly`). A one-time setup command (`degas auth drive`) stores the refresh token on the server. rclone's shared client_id is being retired during 2026, so Degas doesn't depend on it.
+- **Tokens to the worker.** The server mints access tokens, which last about 1 h. It pushes one to the worker (`POST /drive-token`) at session start and every 45 min after that. The worker writes it into an rclone config that has no refresh token.
+- **Copying.** The worker copies assets with `rclone copy --multi-thread-streams 8`. A cold copy runs at about 65 MB/s: about 100 s for an SDXL checkpoint, and about 7 min for the Wan A14B pair.
+
+**Asset index.** The server indexes `MyDrive/degas/` itself, using the Drive API with the same OAuth client. Indexing happens on demand ("Rescan Drive") and every 6 hours. The index holds each asset's path, Drive file ID, size, modification time, md5, parsed sidecar, and a thumbnail of any preview image. It is cached in SQLite, so the model and LoRA pickers, and rescans, work with no GPU session running. Pickers show a "last indexed" timestamp.
+
+**Local cache.** Before first use in a session, the worker copies a model or LoRA into `/content/models/<same relative path>`, via `POST /assets/fetch` or implicitly when a job needs it. Copy progress is reported with `progress` events, where `phase: "copy"`. The server knows what each job needs, so it can prefetch the next queued job's assets while the current job is running. The VM has about 190 GB of free disk. The cache is evicted least-recently-used above 150 GB.
 
 ## 6. Data model and storage
 
@@ -275,7 +315,7 @@ Direct links to video files (MP4/WebM) are accepted as a video source. The frame
 - **`prompts`**: id, name, prompt, negative_prompt, family (nullable), tags, created_at.
 - **`blob_refs`**: blob_sha, ref_type (`result|library|job|draft|derived`), ref_id, expires_at (nullable). Used for reference counting and retention.
 - **`blob_transforms`**: derived_sha, original_sha, ops (JSON). A derived blob holds a reference to its original (see §6.5).
-- **`assets`**: family, kind (`model|lora|controlnet|vae|preprocessor`), path, size, mtime, sidecar (JSON), preview_thumb, indexed_at.
+- **`assets`**: family, kind (`model|lora|controlnet|vae|preprocessor`), path, drive_file_id, size, mtime, md5, sidecar (JSON), preview_thumb, indexed_at.
 - **`push_subscriptions`**: endpoint, keys, created_at.
 - **`settings`**: key, value. Holds idle timeout, default GPU, retention, and similar settings.
 
@@ -386,7 +426,7 @@ All endpoints are under `/api`. JSON unless noted.
 | GET | `/families` | Family descriptors, variants, modes |
 | GET | `/families/{id}/schema?variant=&mode=` | Param JSON Schema for form |
 | GET | `/assets?family=&kind=` | Cached Drive asset index |
-| POST | `/assets/rescan` | Re-index Drive (requires session) |
+| POST | `/assets/rescan` | Re-index Drive via the Drive API (no session needed) |
 | GET | `/session` | Current session state, idle countdown |
 | POST | `/session` | Start `{gpu, high_mem}` |
 | DELETE | `/session` | Stop |
@@ -451,7 +491,7 @@ The app has a bottom tab bar with Create, Queue, Results, Library, and a Session
 6. **Queue.** The running job shows live progress: step, item and phase. Queued jobs can be dragged to reorder or swiped to cancel. Results appear under their job as they arrive.
 7. **Results.** A grid of ephemeral results showing expiry countdowns. The detail view has these actions: save, save prompt, remix, use as source, use as control, extend (video), download to the phone (share sheet), and view config.
 8. **Library.** A grid of saved items with search by prompt text and tags, plus a saved-prompts tab. The detail view has remix, use as source, and delete.
-9. **Session.** Choose a GPU and start or stop the session. Shows state, bootstrap progress, idle countdown, and GPU/VRAM information. Also contains the Rescan Drive button and settings.
+9. **Session.** Choose a GPU and start or stop the session. Shows state, bootstrap progress, idle countdown, and GPU/VRAM information. Also contains Drive status (the last index time and a Re-authorize button if the refresh token has failed), the Rescan Drive button, a **Force reset worker** button, and settings.
 
 ### 8.3 iOS specifics
 
@@ -468,11 +508,14 @@ The app has a bottom tab bar with Create, Queue, Results, Library, and a Session
 - Configuration comes from `degas.toml`:
   - the data directory;
   - the `colab` binary path and auth mode;
-  - the Drive root (`degas/`);
+  - the path to Degas's SSH key (ed25519, generated at setup);
+  - the Drive root (`degas/`), the OAuth client file, and the stored refresh token;
   - the VAPID keys;
   - the default idle timeout.
 - The server needs `ffmpeg` (for video posters, frame extraction and stitching) and Pillow with the HEIF/AVIF plugins.
 - The `colab` CLI is installed with `uv tool install google-colab-cli`, and authentication is set up once on the server.
+- The server needs OpenSSH and a static `rclone` binary for linux-amd64. The rclone binary is uploaded to the VM.
+- One-time setup: `degas auth drive` runs the OAuth consent flow for the Drive client.
 - The worker bundle is built from `worker/`. Its content hash is checked at session start, and it is uploaded again if it has changed.
 
 ### Repository layout
@@ -481,8 +524,9 @@ The app has a bottom tab bar with Create, Queue, Results, Library, and a Session
 degas/
   docs/design.md
   server/degas/        app.py, api/, colab/ (CLI wrapper, session mgr, dispatcher),
-                       families/, storage/, push.py, sweeper.py
-  worker/degas_worker/ __init__.py, protocol.py, cache.py, families/, preprocess/
+                       colab/tunnel.py (ssh), drive.py (OAuth, index), families/,
+                       storage/, push.py, sweeper.py
+  worker/degas_worker/ app.py (FastAPI), jobs.py, cache.py (rclone), families/, preprocess/
   worker/requirements-worker.txt
   web/                 Vite React app
   degas.toml.example
@@ -492,9 +536,9 @@ degas/
 
 Phases are numbered from 0.
 
-0. **Spike.** Answer the questions in §3.3 with a throwaway script. Then fix the protocol: a persistent kernel with streamed exec, or the polling-loop fallback.
-1. **Core loop.** Build the session manager, the dispatcher, and the SDXL family in `t2i` mode. Add the blob store, SSE, and a minimal Create/Queue/Results UI. Exit criterion: generate an image from the phone.
-2. **Assets and LoRA.** Drive indexing, sidecars, the local model cache, and LoRA application (with diffing) for SDXL. Model and LoRA pickers in the UI.
+0. **Spike.** ✅ Done: see [phase0-findings.md](phase0-findings.md). Outcome: the worker runs as an HTTP server behind an SSH tunnel, and Drive is accessed with OAuth plus rclone.
+1. **Core loop.** Build the session manager (colab CLI and SSH tunnel), Drive OAuth and indexing, the worker HTTP app, the dispatcher, and the SDXL family in `t2i` mode. Add the blob store, SSE, and a minimal Create/Queue/Results UI. Exit criterion: generate an image from the phone.
+2. **Assets and LoRA.** Sidecars, the rclone-backed model cache with prefetch and eviction, and LoRA application (with diffing) for SDXL. Model and LoRA pickers in the UI.
 3. **Save, library and remix.** Saved configs, saved prompts, the retention sweeper, and remix.
 4. **Wan 2.2.** The 5B variant (t2v and i2v), then the A14B variants with paired LoRAs. Video playback, video extension and stitching. Build the full image picker here (recent results, library, camera-roll upload, URL import, frame selection from videos), together with the crop and resize editor, image transforms, and auto-fit here, since i2v is the first mode that takes a source image.
 5. **Queue UX and push.** Batch generation and seed modes, cancel, reorder, the PWA manifest and service worker, and Web Push.
@@ -505,12 +549,14 @@ Phases are numbered from 0.
 
 | Risk | Impact | Mitigation |
 |---|---|---|
-| `colab exec` does not persist the kernel or stream output | High: the dispatch design depends on both | Phase 0 spike; polling-loop fallback (§3.3) |
-| Per-call CLI overhead is high | Slower SAM interaction; slower transfer of each output | Batch downloads; cache SAM embeddings; tolerate 1–3 s per tap |
+| `colab ssh` is a new CLI feature and could change or break | High: the transport depends on it | Keep the transport behind one interface (`colab/tunnel.py`). An `exec`-based fallback is proven to work (persistent kernel, streamed output, cancel via a flag file uploaded mid-job) |
+| A VM with an idle kernel may be reclaimed even while the worker is busy | Jobs killed partway through | Build the `exec` heartbeat in Phase 1 as a setting that is on by default (one trivial `exec` every 5 min, costing about 1.5 s each) |
+| Drive OAuth app in "testing" mode issues refresh tokens that expire after 7 days | Weekly re-authorization | Publish the OAuth app for your own account only (drive.readonly is a restricted scope, but an unverified app used only by its owner is fine); the UI prompts to re-authorize when a refresh fails |
+| SSH tunnel throughput (about 12 MB/s) | Slow transfer of large video outputs | Acceptable: a 10 MB MP4 takes about 1 s. Encode with a sensible CRF |
 | Colab reclaims the VM or hits usage limits | Running job is lost | Detect the failure and move the session to `error`; queued jobs return to the queue; the notification explains what happened |
-| Copying Wan A14B (two 14B experts) from Drive is slow, and it needs offloading | Cold start of several minutes; slow generation | Show copy progress; keep the session warm; use 5B for drafts |
+| Copying Wan A14B (two 14B experts) from Drive is slow, and it needs offloading | Cold start of about 7 min for the copy; slow generation; standard shapes have only 12 GB of RAM | Show copy progress; prefetch; keep the session warm; default to `--high-mem`; use 5B for drafts |
 | Regional ControlNet needs a custom residual-masking path | Extra complexity | Isolate it in one pipeline wrapper; it is the last item in Phase 7 |
-| Session bootstrap time (VM allocation, `colab install`, worker upload) | Every session start costs a minute or more before model load | Rely on Colab's preinstalled torch; keep worker requirements minimal; measure in Phase 0 |
+| Session bootstrap time | Measured: `colab new` 3.5 s (CPU), SSH 1.5 s, and packages are preinstalled, so bootstrap takes about 10–20 s before model copy | Good enough; the model copy dominates |
 | Web Push on iOS | Needs a home-screen install and iOS 16.4+ | Document it; the in-app SSE path works regardless |
 | diffusers API churn for newer Wan and ControlNet classes | Upgrades break the worker | Pin versions in `requirements-worker.txt`; record versions in each saved config |
 
