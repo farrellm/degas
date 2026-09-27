@@ -156,8 +156,8 @@ See [phase0-findings.md](phase0-findings.md). Summary:
 
 A model family is implemented as a pair of modules that share a name:
 
-- `server/degas/families/<family>.py`: the **descriptor** for the family.
-- `worker/degas_worker/families/<family>.py`: the **runner** for the family.
+- `server/src/degas/families/<family>.py`: the **descriptor** for the family.
+- `worker/src/degas_worker/families/<family>.py`: the **runner** for the family.
 
 ### 4.1 Descriptor (server)
 
@@ -525,10 +525,10 @@ The app has a bottom tab bar with Create and Results, and Library from Phase 3. 
 ```
 degas/
   docs/design.md
-  server/degas/        app.py, api/, colab/ (CLI wrapper, session mgr, dispatcher),
-                       colab/tunnel.py (ssh), drive.py (OAuth, index), families/,
-                       storage/, push.py, sweeper.py
-  worker/degas_worker/ app.py (FastAPI), jobs.py, cache.py (rclone), families/, preprocess/
+  server/src/degas/        app.py, api/, colab/ (CLI wrapper, session mgr, dispatcher),
+                           colab/tunnel.py (ssh), drive.py (OAuth, index), families/,
+                           storage/, push.py, sweeper.py
+  worker/src/degas_worker/ app.py (FastAPI), jobs.py, cache.py (rclone), families/, preprocess/
   worker/requirements-worker.txt
   web/                 Vite React app
   degas.toml.example
