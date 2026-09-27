@@ -1,0 +1,29 @@
+[Unit]
+Description=Degas generative image/video app (served on the tailnet)
+Documentation=file://%h/workspace/degas/docs/design.md
+# No After=network-online.target / tailscaled.service: a *user* manager cannot
+# order against system units. If tailscaled is not up yet, ExecStartPost fails
+# and the unit retries forever instead.
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+# degas.toml is read from here; relative paths in it resolve against the repo.
+WorkingDirectory=%h/workspace/degas
+# The colab CLI is a `uv tool` install in ~/.local/bin; ffmpeg lives in /usr/bin.
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+Environment=PYTHONUNBUFFERED=1
+# Binds to host:port from degas.toml (default 127.0.0.1:8420). Loopback only:
+# the sole way in is the `tailscale serve` proxy below.
+ExecStart=%h/workspace/degas/.venv/bin/degas serve
+# Port 8448, not 443: 443 is nisaba's funnel and 8443-8447 belong to other
+# apps on this host. A non-443 HTTPS origin is still a secure context, which
+# is all PWA install and Web Push need. Idempotent; keeps this unit the single
+# source of truth for how Degas is exposed.
+ExecStartPost=/usr/bin/timeout 15 /usr/bin/tailscale serve --bg --https=8448 http://127.0.0.1:8420
+ExecStopPost=-/usr/bin/timeout 15 /usr/bin/tailscale serve --https=8448 off
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target

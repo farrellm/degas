@@ -25,7 +25,7 @@ Phases 1–3 are implemented: SDXL text-to-image with LoRAs, a model cache on th
 3. `cp degas.toml.example degas.toml` and point `drive.client_file` at that JSON.
 4. `uv run degas auth drive`: open the printed URL in a browser on the server (or forward the loopback port over SSH) and approve read-only Drive access.
 5. Put SDXL checkpoints in Drive under `My Drive/degas/models/sdxl/` and LoRAs under `My Drive/degas/loras/sdxl/`, optionally each with a `<name>.yaml` sidecar (label, trigger words, default weight) and a `<name>.jpg` preview. Then run `uv run degas rescan` (or **Rescan Drive** in the app).
-6. `make build && uv run degas` serves the API and the PWA on `127.0.0.1:8420`; `tailscale serve --bg https / http://127.0.0.1:8420` exposes it on the tailnet.
+6. `make deploy` builds the PWA, installs the systemd user unit `deploy/degas.service` and (re)starts it: the server listens on `127.0.0.1:8420` and `tailscale serve --https=8448` publishes it on the tailnet (`tailscale serve status` prints the URL). `make logs` follows its journal. To survive a reboot it needs `sudo loginctl enable-linger $USER`. For a one-off foreground run, use `make build && uv run degas`.
 
 In the app: tap **No GPU** in the header to start a GPU session, write a prompt in **Create** → Generate, and watch images arrive in **Results**. Open an image and choose **Keep** to save it, with its settings, to the **Library**; **Remix** loads those settings back into Create. Images you don't keep are deleted 24 hours after the session ends. The session stops itself after `idle_timeout_min` without activity.
 
