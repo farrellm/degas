@@ -502,9 +502,11 @@ The app has a bottom tab bar with Create and Results, and Library from Phase 3. 
 
 ## 9. Deployment
 
-- The server and built frontend run as a single process: `uvicorn degas.app:app --host 127.0.0.1 --port 8420`.
-- `tailscale serve --bg https / http://127.0.0.1:8420` exposes it on the tailnet with HTTPS.
-- It runs as a systemd user service.
+- The server and built frontend run as a single process, `degas serve`, bound to `127.0.0.1:8420`.
+- `tailscale serve --bg --https=8448 http://127.0.0.1:8420` exposes it on the tailnet with HTTPS. The port is 8448, not 443, because other apps on the host already hold 443 and 8443–8447. A non-443 HTTPS origin is still a secure context, so PWA install and Web Push work.
+- It runs as a systemd user service, `deploy/degas.service`. `make deploy` builds the PWA, syncs the venv, installs the unit and restarts it. The unit runs the `tailscale serve` above in `ExecStartPost` and turns it off in `ExecStopPost`.
+  - A user unit cannot order against system units such as `tailscaled`. It sets `Restart=always` and `StartLimitIntervalSec=0`, so it retries until tailscaled is up after a reboot.
+  - The unit starts at boot only if `sudo loginctl enable-linger $USER` has been run.
 - Configuration comes from `degas.toml`:
   - the data directory;
   - the `colab` binary path and auth mode;
