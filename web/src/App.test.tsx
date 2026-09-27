@@ -71,6 +71,21 @@ const MODELS = [
   { path: 'models/sdxl/juggernaut.safetensors', family: 'sdxl', kind: 'model', size: 1 },
 ]
 
+const SPEC = {
+  family: 'sdxl',
+  variant: 'base',
+  mode: 't2i',
+  model: { path: 'models/sdxl/juggernaut.safetensors' },
+  params: {
+    prompt: 'a lighthouse',
+    width: 832,
+    height: 1216,
+    steps: 30,
+    seed: -1,
+    scheduler: 'euler',
+  },
+}
+
 class FakeEventSource {
   onmessage: ((e: MessageEvent<string>) => void) | null = null
   close() {
@@ -130,10 +145,10 @@ describe('App', () => {
     )
     expect(screen.getByRole('slider', { name: /Steps/ })).toHaveValue('30')
     expect(screen.getByRole('button', { name: '832×1216' })).toBeInTheDocument()
-    expect(screen.getByText(/No GPU session is running/)).toBeInTheDocument()
+    expect(screen.getByText(/No GPU is running/)).toBeInTheDocument()
   })
 
-  it('submits a job and switches to the queue', async () => {
+  it('submits a job and confirms it was queued', async () => {
     const submitted: unknown[] = []
     mockApi({
       'POST /api/jobs': (init) => {
@@ -147,7 +162,7 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: '832×1216' }))
     await user.click(screen.getByRole('button', { name: 'Generate' }))
 
-    expect(await screen.findByText('No jobs yet.')).toBeInTheDocument()
+    expect(await screen.findByText('Queued 1 image.')).toBeInTheDocument()
     expect(submitted).toEqual([
       {
         spec: {
@@ -170,13 +185,24 @@ describe('App', () => {
     ])
   })
 
-  it('shows job progress in the queue', async () => {
+  it('keeps Generate disabled until there is a prompt', async () => {
+    mockApi()
+    const user = userEvent.setup()
+    renderApp()
+    const generate = await screen.findByRole('button', { name: 'Generate' })
+    expect(generate).toBeDisabled()
+    await user.click(screen.getByRole('button', { name: 'More images' }))
+    await user.type(screen.getByLabelText('Prompt'), 'a lighthouse')
+    expect(screen.getByRole('button', { name: 'Generate 2 images' })).toBeEnabled()
+  })
+
+  it('shows job progress in the results feed', async () => {
     mockApi({
       'GET /api/jobs': () => [
         {
           id: 'j1',
           status: 'running',
-          spec: { params: { prompt: 'a lighthouse' } },
+          spec: SPEC,
           seeds: [1, 2],
           progress: { job: 'j1', item: 1, phase: 'denoise', step: 12, steps: 30 },
           error: null,
@@ -185,9 +211,57 @@ describe('App', () => {
     })
     const user = userEvent.setup()
     renderApp()
-    await user.click(screen.getByRole('button', { name: /Queue/ }))
-    expect(await screen.findByText('Image 2/2 · Denoising 12/30')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /Results/ }))
+    expect(await screen.findByText('Denoising 12/30')).toBeInTheDocument()
     expect(screen.getByText('a lighthouse')).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: 'Image 2: Denoising 12/30' })).toBeInTheDocument()
+  })
+
+  it("reuses a result's settings in the form", async () => {
+    mockApi({
+      'GET /api/results': () => ({
+        results: [
+          {
+            id: 'r1',
+            job_id: 'j1',
+            item_index: 0,
+            blob_sha: 'abc',
+            media_type: 'image/png',
+            seed: 1234,
+            width: 832,
+            height: 1216,
+            created_at: '2026-09-27T12:00:00Z',
+            expires_at: null,
+            spec: SPEC,
+          },
+        ],
+        cursor: null,
+      }),
+    })
+    const user = userEvent.setup()
+    renderApp()
+    await user.click(await screen.findByRole('button', { name: /Results/ }))
+    await user.click(await screen.findByRole('button', { name: /Open image 1, seed 1234/ }))
+    await user.click(screen.getByRole('button', { name: 'Reuse settings' }))
+    expect(await screen.findByLabelText('Prompt')).toHaveValue('a lighthouse')
+    expect(screen.getByLabelText('Seed')).toHaveValue(1234)
+    expect(screen.getByRole('button', { name: '832×1216' })).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('starts a GPU session from the header', async () => {
+    const started: unknown[] = []
+    mockApi({
+      'POST /api/session': (init) => {
+        started.push(JSON.parse(init?.body as string))
+        return SESSION
+      },
+    })
+    const user = userEvent.setup()
+    renderApp()
+    await user.click(await screen.findByRole('button', { name: 'No GPU' }))
+    await user.click(screen.getByRole('button', { name: /T4/ }))
+    await user.click(screen.getByRole('button', { name: 'Start T4 session' }))
+    expect(started).toEqual([{ gpu: 'T4', high_mem: false }])
   })
 
   it('reports an unreachable server', async () => {

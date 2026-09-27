@@ -462,7 +462,7 @@ All endpoints are under `/api`. JSON unless noted.
 
 ### 8.2 Screens
 
-The app has a bottom tab bar with Create, Queue, Results, Library, and a Session indicator.
+The app has a bottom tab bar with Create and Results, and Library from Phase 3. The GPU session is a chip in the header that opens the Session sheet. The visual system and per-phase screen plans are in [ux.md](ux.md).
 
 1. **Create.** The generation form, laid out top to bottom:
    - Family, variant and mode selectors.
@@ -473,7 +473,7 @@ The app has a bottom tab bar with Create, Queue, Results, Library, and a Session
    - Control units (SDXL): each unit has an image slot, a preprocessor button, a model, scale, a start/end range slider, and an optional mask.
    - Parameters, with the advanced ones collapsed.
    - Batch count and seed mode.
-   - A Generate button, sticky above the tab bar.
+   - A Generate bar, sticky above the tab bar, with the batch size stepper. Create stays on screen after Generate.
 2. **Image picker** (a sheet). Tabs for Recent results, Library, Camera roll (`<input type="file" accept="image/*">`), and URL. The URL tab has a text field and a "Paste" button that reads the clipboard (`navigator.clipboard.readText()`), then shows a preview before the image is used. Choosing a video offers its first frame, its last frame, or a scrubbed frame. After an image is picked, the sheet shows it with **Use** and **Crop / resize** buttons. A filled image slot on the Create form also has an edit button that opens the editor.
 3. **Crop and resize editor** (full screen):
    - Pinch and drag to position the image under a fixed crop frame; the crop corners can also be dragged.
@@ -488,10 +488,10 @@ The app has a bottom tab bar with Create, Queue, Results, Library, and a Session
    - Feather preview.
    - The source image appears underneath at adjustable opacity.
 5. **Control editor.** Choose a control image (from the picker or from a preprocessor output), run a preprocessor with its parameters, preview the result, and attach a mask for regional control.
-6. **Queue.** The running job shows live progress: step, item and phase. Queued jobs can be dragged to reorder or swiped to cancel. Results appear under their job as they arrive.
-7. **Results.** A grid of ephemeral results showing expiry countdowns. The detail view has these actions: save, save prompt, remix, use as source, use as control, extend (video), download to the phone (share sheet), and view config.
+6. **Results** (the queue and results in one feed). Each job is a group captioned with its prompt. Running and queued jobs come first; unfinished images are drawn as hatched sketch tiles that fill in with denoising progress. Queued jobs can be cancelled, and from Phase 5 reordered. Finished groups show how long their unsaved images have left.
+7. **Viewer.** A full-screen image with the generation settings as a wall label. Actions: save to Photos (share sheet) and reuse settings in Phase 1; save, save prompt, remix, use as source, use as control and extend (video) as their phases land.
 8. **Library.** A grid of saved items with search by prompt text and tags, plus a saved-prompts tab. The detail view has remix, use as source, and delete.
-9. **Session.** Choose a GPU and start or stop the session. Shows state, bootstrap progress, idle countdown, and GPU/VRAM information. Also contains Drive status (the last index time and a Re-authorize button if the refresh token has failed), the Rescan Drive button, a **Force reset worker** button, and settings.
+9. **Session** (a sheet opened from the header chip, which shows the GPU and the idle countdown). Choose a GPU and start or stop the session. Shows state, bootstrap progress, idle countdown, and GPU/VRAM information. Also contains Drive status (the last index time and a Re-authorize button if the refresh token has failed), the Rescan Drive button, a **Force reset worker** button, and settings.
 
 ### 8.3 iOS specifics
 
