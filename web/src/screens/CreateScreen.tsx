@@ -1,9 +1,12 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { useEffect, useState } from 'react'
-import { api, isActive, type Params } from '../api'
+import { useEffect, useRef, useState } from 'react'
+import { api, isActive, type LoraRef, type Params } from '../api'
+import { assetLabel, useAssets } from '../assets'
+import { AssetPicker } from '../components/AssetPicker'
+import { LoraList } from '../components/LoraList'
 import { SchemaForm } from '../components/SchemaForm'
 import { loadDraft, saveDraft } from '../draft'
-import { modelName } from '../format'
+import { insertWord } from '../prompt'
 import { initialParams } from '../schema'
 
 const MAX_BATCH = 8
@@ -18,8 +21,12 @@ export function CreateScreen({ onOpenSession, onShowResults }: Props) {
   const [familyId, setFamilyId] = useState(draft.family ?? 'sdxl')
   const [chosenModel, setModel] = useState(draft.model ?? '')
   const [editedParams, setParams] = useState<Params | null>(null)
+  const [loras, setLoras] = useState<LoraRef[]>(draft.loras ?? [])
   const [batchCount, setBatchCount] = useState(draft.batchCount ?? 1)
   const [queued, setQueued] = useState<number | null>(null)
+  const [picker, setPicker] = useState<'model' | 'lora' | null>(null)
+  const promptRef = useRef<HTMLTextAreaElement>(null)
+  const promptFocused = useRef(false)
 
   const families = useQuery({ queryKey: ['families'], queryFn: api.families })
   const session = useQuery({ queryKey: ['session'], queryFn: api.session })
@@ -33,21 +40,21 @@ export function CreateScreen({ onOpenSession, onShowResults }: Props) {
     enabled: !!family && !!variant && !!mode,
     staleTime: Infinity,
   })
-  const models = useQuery({
-    queryKey: ['assets', family?.id, 'model'],
-    queryFn: () => api.assets(family?.id ?? '', 'model'),
-    enabled: !!family,
-  })
+  const assets = useAssets()
+  const ofKind = (kind: string) =>
+    assets.data?.filter((a) => a.family === family?.id && a.kind === kind)
+  const models = ofKind('model')
+  const loraIndex = ofKind('lora')
 
   // Until edited, the form shows the saved draft (or the schema defaults).
   const params = editedParams ?? (schema.data ? initialParams(schema.data, draft.params) : null)
-  const model = models.data?.some((m) => m.path === chosenModel)
+  const model = models?.some((m) => m.path === chosenModel)
     ? chosenModel
-    : (models.data?.[0]?.path ?? '')
+    : (models?.[0]?.path ?? '')
 
   useEffect(() => {
-    if (params) saveDraft({ family: familyId, model, params, batchCount })
-  }, [familyId, model, params, batchCount])
+    if (params) saveDraft({ family: familyId, model, loras, params, batchCount })
+  }, [familyId, model, loras, params, batchCount])
 
   useEffect(() => {
     if (queued === null) return
@@ -63,7 +70,14 @@ export function CreateScreen({ onOpenSession, onShowResults }: Props) {
     mutationFn: () => {
       if (!family || !variant || !mode || !params) throw new Error('The form is still loading.')
       return api.submitJob(
-        { family: family.id, variant: variant.id, mode, model: { path: model }, params },
+        {
+          family: family.id,
+          variant: variant.id,
+          mode,
+          model: { path: model },
+          loras: loras.map(({ path, weight }) => ({ path, weight })),
+          params,
+        },
         batchCount,
         'increment',
       )
@@ -84,32 +98,40 @@ export function CreateScreen({ onOpenSession, onShowResults }: Props) {
   const noGpu = session.data !== undefined && !isActive(session.data)
   const items = batchCount === 1 ? 'image' : 'images'
 
-  const modelRow = (
-    <div className="setting">
-      <label className="setting-label" htmlFor="model">
-        Model
-      </label>
-      {models.data?.length ? (
-        <select
-          id="model"
-          value={model}
-          onChange={(e) => {
-            setModel(e.target.value)
+  const insertTrigger = (word: string) => {
+    const text = String(params.prompt ?? '')
+    const el = promptRef.current
+    // Before the prompt has been touched there's no cursor to honour: append.
+    const at = promptFocused.current && el ? el.selectionEnd : text.length
+    setParams({ ...params, prompt: insertWord(text, at, word) })
+  }
+
+  const leadingRows = (
+    <>
+      <button
+        type="button"
+        className="setting setting-button"
+        onClick={() => {
+          setPicker('model')
+        }}
+      >
+        <span className="setting-label">Model</span>{' '}
+        <span className={model ? 'setting-value' : 'setting-value none'}>
+          {model ? assetLabel(model, models) : models ? 'None found' : 'Loading…'}
+        </span>
+      </button>
+      {family?.lora_format === 'single' && (
+        <LoraList
+          loras={loras}
+          index={loraIndex}
+          onChange={setLoras}
+          onAdd={() => {
+            setPicker('lora')
           }}
-        >
-          {models.data.map((m) => (
-            <option key={m.path} value={m.path}>
-              {modelName(m.path)}
-            </option>
-          ))}
-        </select>
-      ) : (
-        <p className="empty-models" id="model">
-          No models found. Put checkpoints in Drive under <code>degas/models/{family?.id}/</code>,
-          then rescan from the GPU menu.
-        </p>
+          onTrigger={insertTrigger}
+        />
       )}
-    </div>
+    </>
   )
 
   return (
@@ -149,8 +171,58 @@ export function CreateScreen({ onOpenSession, onShowResults }: Props) {
         values={params}
         onChange={setParams}
         presets={variant?.size_constraints.presets ?? []}
-        leadingRows={modelRow}
+        leadingRows={leadingRows}
+        promptRef={promptRef}
+        onPromptFocus={() => {
+          promptFocused.current = true
+        }}
       />
+
+      {picker === 'model' && (
+        <AssetPicker
+          title="Model"
+          noun="models"
+          assets={models ?? []}
+          selected={new Set([model])}
+          empty={
+            <p>
+              No models found. Put checkpoints in Drive under{' '}
+              <code>degas/models/{family?.id}/</code>, then rescan.
+            </p>
+          }
+          onPick={(a) => {
+            setModel(a.path)
+            setPicker(null)
+          }}
+          onClose={() => {
+            setPicker(null)
+          }}
+        />
+      )}
+      {picker === 'lora' && (
+        <AssetPicker
+          title="Add LoRA"
+          noun="LoRAs"
+          assets={loraIndex ?? []}
+          selected={new Set(loras.map((l) => l.path))}
+          thumbs
+          empty={
+            <p>
+              No LoRAs found. Put them in Drive under <code>degas/loras/{family?.id}/</code>, then
+              rescan.
+            </p>
+          }
+          onPick={(a) => {
+            if (!loras.some((l) => l.path === a.path)) {
+              setLoras([...loras, { path: a.path, weight: a.sidecar?.default_weight ?? 1 }])
+            }
+            setPicker(null)
+          }}
+          onClose={() => {
+            setPicker(null)
+          }}
+        />
+      )}
 
       <div className="generate-bar">
         <div className="generate-bar-inner">

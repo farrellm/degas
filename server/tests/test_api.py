@@ -1,5 +1,5 @@
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import AsyncIterator, Callable, Iterator
 from typing import Any
 
 import pytest
@@ -7,6 +7,9 @@ from fastapi.testclient import TestClient
 
 from degas import __version__
 from degas.app import create_app
+from degas.colab.worker_client import WorkerClient
+
+from .conftest import LORA, MODEL
 
 
 def wait_for(fn: Callable[[], Any], timeout: float = 5) -> Any:
@@ -23,7 +26,7 @@ def wait_for(fn: Callable[[], Any], timeout: float = 5) -> Any:
 def client(harness: Any) -> Iterator[TestClient]:
     app = create_app(harness.config, harness.services_factory())
     with TestClient(app) as c:
-        c.app.state.services.db.replace_assets([harness.model])  # type: ignore[attr-defined]
+        c.app.state.services.db.replace_assets([harness.model, LORA])  # type: ignore[attr-defined]
         yield c
 
 
@@ -62,7 +65,8 @@ def test_families_and_schema(client: TestClient) -> None:
 def test_assets(client: TestClient) -> None:
     assets = client.get("/api/assets?family=sdxl&kind=model").json()
     assert [a["path"] for a in assets] == ["models/sdxl/studio.safetensors"]
-    assert client.get("/api/assets?kind=lora").json() == []
+    (lora,) = client.get("/api/assets?kind=lora").json()
+    assert lora["sidecar"]["trigger_words"] == ["filmgrain"]
 
 
 def test_job_validation(client: TestClient) -> None:
@@ -146,3 +150,52 @@ def test_vm_reclaimed(client: TestClient, harness: Any) -> None:
     harness.colab.alive = False
     wait_for(lambda: session_state(client) == "error")
     assert "reclaimed" in client.get("/api/session").json()["session"]["error"]
+
+
+def test_loras_are_checked_against_the_index(client: TestClient) -> None:
+    missing = {**SPEC, "loras": [{"path": "loras/sdxl/gone.safetensors", "weight": 1}]}
+    resp = client.post("/api/jobs", json={"spec": missing})
+    assert resp.status_code == 400
+    assert "LoRA loras/sdxl/gone.safetensors" in resp.json()["detail"]
+    model_as_lora = {**SPEC, "loras": [{"path": MODEL["path"], "weight": 1}]}
+    assert client.post("/api/jobs", json={"spec": model_as_lora}).status_code == 400
+
+    ok = {**SPEC, "loras": [{"path": LORA["path"], "weight": 5}]}
+    body = client.post("/api/jobs", json={"spec": ok}).json()
+    assert body["spec"]["loras"] == [{"path": LORA["path"], "weight": 2.0, "size": 10}]
+
+
+def test_next_jobs_assets_are_prefetched(
+    client: TestClient, harness: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fetched: list[list[dict[str, Any]]] = []
+    real_fetch = WorkerClient.fetch_assets
+
+    def spy(self: WorkerClient, assets: list[dict[str, Any]]) -> AsyncIterator[dict[str, Any]]:
+        fetched.append(assets)
+        return real_fetch(self, assets)
+
+    monkeypatch.setattr(WorkerClient, "fetch_assets", spy)
+    svc = client.app.state.services  # type: ignore[attr-defined]
+    other = {**MODEL, "path": "models/sdxl/other.safetensors", "drive_file_id": "f2", "size": 10}
+    svc.db.replace_assets([{**MODEL, "size": 10}, other, LORA])
+    harness.worker_app.state.cache.set_token("tok", "2026-09-27T12:00:00Z", "degas")
+    harness.runner.fetch = True
+
+    client.post("/api/jobs", json={"spec": SPEC})
+    second_spec = {
+        **SPEC,
+        "model": {"path": other["path"]},
+        "loras": [{"path": LORA["path"], "weight": 0.8}],
+    }
+    second = client.post("/api/jobs", json={"spec": second_spec}).json()
+    client.post("/api/session", json={"gpu": "T4"})
+    wait_for(lambda: job(client, second["id"])["status"] == "done")
+
+    # Once the first job was loading, the second job's model and LoRA were requested.
+    assert fetched[0] == [
+        {"path": other["path"], "size": 10},
+        {"path": LORA["path"], "size": 10},
+    ]
+    cache = wait_for(lambda: client.get("/api/session").json()["worker"]["cache"]["files"])
+    assert {f["path"] for f in cache} == {MODEL["path"], other["path"], LORA["path"]}

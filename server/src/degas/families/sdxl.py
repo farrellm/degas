@@ -2,7 +2,14 @@
 
 from typing import Any, Literal
 
-from degas.families.base import JsonSchema, SizeConstraints, SpecError, Variant, validate_params
+from degas.families.base import (
+    JsonSchema,
+    SizeConstraints,
+    SpecError,
+    Variant,
+    validate_params,
+    validate_single_loras,
+)
 
 # Keep in sync with the worker runner (degas_worker/families/sdxl.py).
 SCHEDULERS = {
@@ -13,6 +20,8 @@ SCHEDULERS = {
     "ddim": "DDIM",
     "unipc": "UniPC",
 }
+
+MAX_LORAS = 8
 
 PRESETS = (
     (1024, 1024),
@@ -140,14 +149,13 @@ class Sdxl:
             raise SpecError(
                 f"{params['width']}x{params['height']} is outside SDXL's supported pixel count"
             )
-        if spec.get("loras"):
-            raise SpecError("LoRAs are not supported yet")
+        loras = validate_single_loras(spec.get("loras"), MAX_LORAS)
         return {
             "family": self.id,
             "variant": variant,
             "mode": mode,
             "model": {"path": model["path"], "size": model.get("size")},
-            "loras": [],
+            "loras": loras,
             "params": params,
             "inputs": {},
             "control": [],

@@ -72,6 +72,25 @@ class WorkerClient:
         except httpx2.HTTPError as e:
             raise WorkerError(f"events {job_id}: {e!r}") from e
 
+    async def fetch_assets(self, assets: list[dict[str, Any]]) -> AsyncIterator[dict[str, Any]]:
+        """Copy Drive assets into the VM's cache, yielding `copy` progress, then done/error."""
+        timeout = httpx2.Timeout(30, read=None)
+        try:
+            async with self._http.sse(
+                "/assets/fetch", method="POST", json={"assets": assets}, timeout=timeout
+            ) as source:
+                if source.response.status_code >= 400:
+                    await source.response.aread()
+                    raise WorkerError(
+                        f"fetch assets: HTTP {source.response.status_code}"
+                        f" {source.response.text[:300]}"
+                    )
+                async for sse in source:
+                    if sse.data:
+                        yield json.loads(sse.data)
+        except httpx2.HTTPError as e:
+            raise WorkerError(f"fetch assets: {e!r}") from e
+
     async def cancel(self, job_id: str) -> bool:
         body = await self._json("POST", f"/jobs/{job_id}/cancel")
         return bool(body["cancelled"])

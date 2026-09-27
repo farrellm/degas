@@ -112,7 +112,7 @@ The server talks to the worker through `http://127.0.0.1:<local_port>` on the fo
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/health` | GPU name, VRAM free/total, disk free, loaded family/variant, worker version |
+| GET | `/health` | GPU name, VRAM free/total, disk free, loaded family/variant, worker version, model cache (used, budget, files) |
 | GET | `/state` | Current job (id, status, progress) and outputs not yet acknowledged (for reattach) |
 | PUT | `/blobs/{sha256}` | Upload an input blob (source, control or mask image); `HEAD` to check whether it's already present |
 | POST | `/jobs` | Start a job: `{job_id, spec}`; `409` if a job is already running |
@@ -538,7 +538,7 @@ Phases are numbered from 0.
 
 0. **Spike.** ✅ Done: see [phase0-findings.md](phase0-findings.md). Outcome: the worker runs as an HTTP server behind an SSH tunnel, and Drive is accessed with OAuth plus rclone.
 1. **Core loop.** ✅ Done. Live test on a T4 (2026-09-27, SDXL base 1.0 from Drive, 1024², 30 steps): session `ready` in 30 s; first job 174 s (Drive copy 90 s at ~77 MB/s, model load 30 s, denoise 28 s); next images ~34 s each with the model resident; same seed reproduced a byte-identical PNG. Build the session manager (colab CLI and SSH tunnel), Drive OAuth and indexing, the worker HTTP app, the dispatcher, and the SDXL family in `t2i` mode. Add the blob store, SSE, and a minimal Create/Queue/Results UI. Exit criterion: generate an image from the phone.
-2. **Assets and LoRA.** Sidecars, the rclone-backed model cache with prefetch and eviction, and LoRA application (with diffing) for SDXL. Model and LoRA pickers in the UI.
+2. **Assets and LoRA.** ✅ Built, not yet tested on a live GPU. Sidecars, the rclone-backed model cache with prefetch and eviction, and LoRA application (with diffing) for SDXL. Model and LoRA pickers in the UI. The server prefetches the next queued job's assets once the running job is past its own copy phase. The VM cache budget is `colab.cache_budget_gb` (150 by default), and `/health` reports the cached files so the pickers can say what is already on the GPU.
 3. **Save, library and remix.** Saved configs, saved prompts, the retention sweeper, and remix.
 4. **Wan 2.2.** The 5B variant (t2v and i2v), then the A14B variants with paired LoRAs. Video playback, video extension and stitching. Build the full image picker here (recent results, library, camera-roll upload, URL import, frame selection from videos), together with the crop and resize editor, image transforms, and auto-fit here, since i2v is the first mode that takes a source image.
 5. **Queue UX and push.** Batch generation and seed modes, cancel, reorder, the PWA manifest and service worker, and Web Push.

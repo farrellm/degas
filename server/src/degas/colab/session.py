@@ -35,7 +35,7 @@ BOOTSTRAP = f"""
 import os, subprocess, sys
 subprocess.run(["pkill", "-f", {WORKER_MATCH!r}])
 _env = dict(os.environ, PYTHONPATH="{REMOTE}/worker", DEGAS_WORKER_HOME="{REMOTE}",
-            PATH="{REMOTE}/bin:" + os.environ.get("PATH", ""))
+            DEGAS_CACHE_BUDGET_GB="{{budget}}", PATH="{REMOTE}/bin:" + os.environ.get("PATH", ""))
 _log = open("{REMOTE}/worker.log", "ab")
 _p = subprocess.Popen(
     [sys.executable, "-m", "uvicorn", {WORKER_MATCH!r}, "--host", "127.0.0.1",
@@ -341,7 +341,9 @@ class SessionManager:
         )
 
     async def _start_worker(self) -> None:
-        code = BOOTSTRAP.replace("{port}", str(self.config.colab.worker_port))
+        code = BOOTSTRAP.replace("{port}", str(self.config.colab.worker_port)).replace(
+            "{budget}", str(self.config.colab.cache_budget_gb)
+        )
         out = await self.colab.exec(code, timeout=120)
         if STARTED_MARKER not in out:
             raise SessionError(f"Worker did not start: {out.strip()[-500:]}")
@@ -372,6 +374,17 @@ class SessionManager:
         except (DriveError, WorkerError, OSError) as e:
             log.warning("could not push Drive token: %s", e)
             self.drive_error = str(e)
+
+    async def refresh_health(self) -> None:
+        """Re-read the worker's health now (e.g. after a job changed the model cache)."""
+        if self.worker is None or self.state not in ("ready", "busy"):
+            return
+        try:
+            self.health = await self.worker.health()
+        except WorkerError as e:
+            log.warning("worker health failed: %s", e)
+            return
+        self._publish()
 
     # -- liveness --------------------------------------------------------------------------
 

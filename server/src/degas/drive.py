@@ -7,6 +7,7 @@ it for the Drive API (indexing) and pushed to the worker (rclone copies).
 import base64
 import hashlib
 import json
+import logging
 import os
 import secrets
 import time
@@ -19,6 +20,9 @@ from pathlib import Path
 from typing import Any
 
 import httpx2
+import yaml
+
+log = logging.getLogger(__name__)
 
 SCOPE = "https://www.googleapis.com/auth/drive.readonly"
 DRIVE_API = "https://www.googleapis.com/drive/v3"
@@ -34,6 +38,18 @@ KINDS = {
     "preprocessors": "preprocessor",
 }
 WEIGHT_SUFFIXES = (".safetensors", ".ckpt", ".pt", ".pth", ".bin", ".gguf")
+SIDECAR_SUFFIXES = (".yaml", ".yml")
+PREVIEW_TYPES = {
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".webp": "image/webp",
+}
+MAX_SIDECAR_BYTES = 64 * 1024
+MAX_PREVIEW_BYTES = 16 * 1024 * 1024
+
+# Stores a preview image's bytes (with its media type) and returns the blob's sha256.
+StorePreview = Callable[[bytes, str], str]
 
 
 class DriveError(RuntimeError):
@@ -285,8 +301,12 @@ class DriveIndexer:
             size = sum(int(c.get("size", 0)) for c in children if c["mimeType"] != FOLDER)
             out.append(self._asset(parts, kind, folder_id, size, None, None))
             return
+        # Sidecars and previews sit next to their asset and share its name: foo.yaml, foo.jpg.
+        files = {c["name"]: c for c in children if c["mimeType"] != FOLDER}
+        images = {n: c for n, c in files.items() if Path(n).suffix.lower() in PREVIEW_TYPES}
         for child in children:
             path = [*parts, child["name"]]
+            before = len(out)
             if child["mimeType"] == FOLDER:
                 await self._walk(child["id"], path, kind, out)
             elif child["name"].lower().endswith(WEIGHT_SUFFIXES):
@@ -300,6 +320,79 @@ class DriveIndexer:
                         child.get("md5Checksum"),
                     )
                 )
+            if len(out) > before and out[-1]["path"] == "/".join(path):
+                stem = Path(child["name"]).stem if child["mimeType"] != FOLDER else child["name"]
+                asset = out[-1]
+                asset["sidecar_file"] = next(
+                    (files[stem + s] for s in SIDECAR_SUFFIXES if stem + s in files), None
+                )
+                asset["preview_file"] = next(
+                    (images[n] for n in images if Path(n).stem == stem), None
+                )
+                asset["folder_images"] = images
+
+    async def download(self, file_id: str, limit: int) -> bytes:
+        token = await self.auth.access_token()
+        resp = await self._http.get(
+            f"{DRIVE_API}/files/{file_id}",
+            params={"alt": "media"},
+            headers={"Authorization": f"Bearer {token.token}"},
+        )
+        if resp.status_code >= 400:
+            raise DriveError(f"Drive download error {resp.status_code}: {resp.text[:300]}")
+        if len(resp.content) > limit:
+            raise DriveError(f"File {file_id} is larger than {limit} bytes")
+        return resp.content
+
+    async def enrich(
+        self,
+        assets: list[dict[str, Any]],
+        previous: dict[str, dict[str, Any]],
+        store_preview: StorePreview,
+    ) -> None:
+        """Parse sidecars and store previews, reusing unchanged ones from the previous index."""
+        for asset in assets:
+            prev = previous.get(asset["path"]) or {}
+            sidecar_file = asset.pop("sidecar_file", None)
+            preview_file = asset.pop("preview_file", None)
+            images: dict[str, dict[str, Any]] = asset.pop("folder_images", {})
+
+            asset["sidecar_rev"] = _rev(sidecar_file)
+            if sidecar_file is None:
+                asset["sidecar"] = None
+            elif asset["sidecar_rev"] == prev.get("sidecar_rev"):
+                asset["sidecar"] = prev.get("sidecar")
+            else:
+                asset["sidecar"] = await self._sidecar(asset["path"], sidecar_file)
+
+            named = (asset["sidecar"] or {}).get("preview")
+            if isinstance(named, str) and named in images:
+                preview_file = images[named]
+            asset["preview_rev"] = _rev(preview_file)
+            if preview_file is None:
+                asset["preview_thumb"] = None
+            elif asset["preview_rev"] == prev.get("preview_rev") and prev.get("preview_thumb"):
+                asset["preview_thumb"] = prev["preview_thumb"]
+            else:
+                asset["preview_thumb"] = await self._preview(preview_file, store_preview)
+
+    async def _sidecar(self, path: str, file: dict[str, Any]) -> dict[str, Any] | None:
+        try:
+            text = (await self.download(file["id"], MAX_SIDECAR_BYTES)).decode()
+            return parse_sidecar(text)
+        except (DriveError, UnicodeDecodeError, ValueError, yaml.YAMLError) as e:
+            log.warning("sidecar %s for %s ignored: %s", file["name"], path, e)
+            return None
+
+    async def _preview(self, file: dict[str, Any], store: StorePreview) -> str | None:
+        if int(file.get("size", 0)) > MAX_PREVIEW_BYTES:
+            return None
+        try:
+            data = await self.download(file["id"], MAX_PREVIEW_BYTES)
+        except DriveError as e:
+            log.warning("preview %s ignored: %s", file["name"], e)
+            return None
+        return store(data, PREVIEW_TYPES[Path(file["name"]).suffix.lower()])
 
     @staticmethod
     def _asset(
@@ -324,3 +417,44 @@ class DriveIndexer:
 
     async def aclose(self) -> None:
         await self._http.aclose()
+
+
+def _rev(file: dict[str, Any] | None) -> str | None:
+    """A Drive file's revision marker: its md5, else its id and modification time."""
+    if file is None:
+        return None
+    return str(file.get("md5Checksum") or f"{file['id']}@{file.get('modifiedTime')}")
+
+
+def parse_sidecar(text: str) -> dict[str, Any]:
+    """Keep the known sidecar fields (design §5), with their expected types."""
+    data = yaml.safe_load(text)
+    if data is None:
+        return {}
+    if not isinstance(data, dict):
+        raise ValueError("expected a mapping")
+    out: dict[str, Any] = {}
+    for key in ("label", "preview", "notes"):
+        value = data.get(key)
+        scalar = isinstance(value, str | int | float) and not isinstance(value, bool)
+        if scalar and (clean := str(value).strip()):
+            out[key] = clean
+    words = data.get("trigger_words")
+    if isinstance(words, str):
+        words = words.split(",")
+    if isinstance(words, list):
+        out["trigger_words"] = [w for w in (str(x).strip() for x in words) if w]
+    weight = data.get("default_weight")
+    if isinstance(weight, int | float) and not isinstance(weight, bool):
+        out["default_weight"] = float(weight)
+    variants = data.get("variants")
+    if isinstance(variants, list):
+        out["variants"] = [str(v) for v in variants]
+    pair = data.get("pair")
+    if (
+        isinstance(pair, dict)
+        and isinstance(pair.get("high"), str)
+        and isinstance(pair.get("low"), str)
+    ):
+        out["pair"] = {"high": pair["high"], "low": pair["low"]}
+    return out

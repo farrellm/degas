@@ -2,6 +2,9 @@
 
 Worker events are relayed to the phone over `/api/events`. Each output is fetched
 as soon as it is reported, stored as a blob, and then acknowledged on the worker.
+
+Once the running job is past copying its own assets, the next queued job's
+models and LoRAs are prefetched into the VM's cache (design §5).
 """
 
 import asyncio
@@ -13,6 +16,7 @@ from degas.colab.session import SessionManager
 from degas.colab.worker_client import WorkerBusyError, WorkerClient, WorkerError
 from degas.db import Database, now
 from degas.events import EventBus
+from degas.families.base import spec_assets
 
 log = logging.getLogger(__name__)
 
@@ -32,6 +36,8 @@ class Dispatcher:
         self._running: str | None = None
         self._cancel_requested: set[str] = set()
         self._wake = asyncio.Event()
+        self._prefetch: asyncio.Task[None] | None = None
+        self._prefetched_after: str | None = None  # the running job that triggered a prefetch
         sessions.on_ready.append(self.wake)
         sessions.on_end.append(self._orphans)
         sessions.has_pending_jobs = lambda: self.db.count_pending() > 0
@@ -135,6 +141,7 @@ class Dispatcher:
             self._cancel_requested.discard(job_id)
         self._finish(job_id, status, error)
         self.sessions.set_busy(False)
+        await self.sessions.refresh_health()  # the model cache may have changed
 
     def _finish(self, job_id: str, status: str, error: str | None) -> None:
         self.db.update_job(job_id, status=status, error=error, finished_at=now())
@@ -160,6 +167,8 @@ class Dispatcher:
                     if kind == "progress":
                         self.progress[job_id] = event
                         self.bus.publish({"type": "progress", **event})
+                        if event.get("phase") != "copy":
+                            self._start_prefetch(worker, job_id)
                     elif kind == "output":
                         await self._fetch_output(worker, job_id, event)
                     elif kind in TERMINAL:
@@ -186,6 +195,54 @@ class Dispatcher:
                 continue  # finished meanwhile: replaying the events gives the outcome
             await asyncio.sleep(1)
         return "error", "Could not follow the job's progress"
+
+    # -- prefetch --------------------------------------------------------------------------
+
+    def _start_prefetch(self, worker: WorkerClient, running: str) -> None:
+        if self._prefetched_after == running:
+            return
+        if self._prefetch is not None and not self._prefetch.done():
+            return
+        self._prefetched_after = running
+        self._prefetch = asyncio.create_task(self._prefetch_next(worker))
+
+    async def _prefetch_next(self, worker: WorkerClient) -> None:
+        """Copy the next queued job's assets that aren't on the VM yet."""
+        job = self.db.next_queued()
+        if job is None:
+            return
+        cache = (self.sessions.health or {}).get("cache") or {}
+        cached = {f["path"]: f["size"] for f in cache.get("files", [])}
+        needed = [
+            {"path": a["path"], "size": a.get("size")}
+            for a in spec_assets(job["spec"])
+            if a["path"] not in cached or a.get("size") not in (None, cached[a["path"]])
+        ]
+        if not needed:
+            return
+        job_id = job["id"]
+        try:
+            async for event in worker.fetch_assets(needed):
+                if event.get("t") == "error":
+                    log.warning("prefetch for %s failed: %s", job_id, event.get("message"))
+                if event.get("t") != "progress" or self._running == job_id:
+                    continue  # once the job runs, its own events report progress
+                progress = {
+                    "job": job_id,
+                    "item": 0,
+                    "phase": "copy",
+                    "step": event.get("step", 0),
+                    "steps": event.get("steps", 0),
+                    "asset": event.get("asset"),
+                }
+                self.progress[job_id] = progress
+                self.bus.publish({"type": "progress", **progress})
+        except WorkerError as e:
+            log.warning("prefetch for %s failed: %s", job_id, e)
+        finally:
+            if self._running != job_id and self.progress.pop(job_id, None) is not None:
+                self.publish_job(job_id)
+        await self.sessions.refresh_health()
 
     async def _collect(
         self, worker: WorkerClient, job_id: str, outputs: list[dict[str, Any]] | None = None

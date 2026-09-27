@@ -48,9 +48,10 @@ def create_app(  # noqa: PLR0915 - route definitions
     runners: dict[str, Callable[[], FamilyRunner]] | None = None,
     rclone: str | None = None,
     exit_process: Callable[[], None] | None = None,
+    cache_budget: int | None = None,
 ) -> FastAPI:
     paths = paths or Paths.from_env()
-    cache = AssetCache(paths, rclone)
+    cache = AssetCache(paths, rclone, cache_budget)
     jobs = JobManager(paths, cache, RUNNERS if runners is None else runners)
 
     @asynccontextmanager
@@ -61,6 +62,7 @@ def create_app(  # noqa: PLR0915 - route definitions
 
     app = FastAPI(title="Degas worker", version=__version__, lifespan=lifespan)
     app.state.jobs = jobs
+    app.state.cache = cache
 
     @app.get("/health")
     def health() -> dict[str, Any]:  # sync: may import torch, runs in the threadpool
@@ -72,6 +74,7 @@ def create_app(  # noqa: PLR0915 - route definitions
             "disk_free": disk.free,
             "loaded": jobs.loaded_family,
             "drive_token": cache.has_token,
+            "cache": cache.status(),
         }
 
     @app.get("/state")
@@ -160,7 +163,7 @@ def create_app(  # noqa: PLR0915 - route definitions
                     path, size = asset["path"], asset.get("size")
 
                     def progress(done: int, total: int, path: str = path) -> None:
-                        event = {"t": "progress", "phase": "copy", "path": path, "step": done}
+                        event = {"t": "progress", "phase": "copy", "asset": path, "step": done}
                         event["steps"] = total
                         loop.call_soon_threadsafe(queue.put_nowait, event)
 

@@ -1,8 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
-import { api, blobUrl, thumbUrl, type Job, type Result, type Spec } from '../api'
+import { api, blobUrl, thumbUrl, type Asset, type Job, type Result, type Spec } from '../api'
+import { assetLabel, useAssets } from '../assets'
 import { draftFromSpec } from '../draft'
-import { itemFraction, modelName, phaseText, size } from '../format'
+import { copyText, itemFraction, phaseText, size } from '../format'
 import { shortTime, timeLeft, useNow } from '../time'
 
 /** One job's worth of results: the contact-sheet row under a prompt caption. */
@@ -15,6 +16,22 @@ interface Group {
 }
 
 const PENDING = new Set(['queued', 'running'])
+
+/** "Studio XL v10 + 2 LoRAs" for a group caption. */
+function modelLine(spec: Spec, assets: Asset[] | undefined): string {
+  const n = spec.loras?.length ?? 0
+  const model = assetLabel(spec.model.path, assets)
+  return n === 0 ? model : `${model} + ${String(n)} ${n === 1 ? 'LoRA' : 'LoRAs'}`
+}
+
+/** "Studio XL v10, with Film Grain v3 at 0.8" for the wall label. */
+function modelWithLoras(spec: Spec, assets: Asset[] | undefined): string {
+  const model = assetLabel(spec.model.path, assets)
+  const loras = (spec.loras ?? []).map(
+    (l) => `${assetLabel(l.path, assets)} at ${String(Number(l.weight.toFixed(2)))}`,
+  )
+  return loras.length ? `${model}, with ${loras.join(' and ')}` : model
+}
 
 function buildGroups(jobs: Job[], results: Result[]): Group[] {
   const byId = new Map<string, Group>()
@@ -47,6 +64,7 @@ export function ResultsScreen({
 }) {
   const qc = useQueryClient()
   const now = useNow(30_000)
+  const assets = useAssets()
   const jobs = useQuery({ queryKey: ['jobs'], queryFn: api.jobs })
   const results = useQuery({ queryKey: ['results'], queryFn: () => api.results() })
   const cancel = useMutation({
@@ -88,6 +106,7 @@ export function ResultsScreen({
             key={g.id}
             group={g}
             now={now}
+            assets={assets.data}
             onOpen={setOpen}
             onCancel={(id) => {
               cancel.mutate(id)
@@ -98,6 +117,7 @@ export function ResultsScreen({
       {openIndex >= 0 && (
         <Viewer
           results={flat}
+          assets={assets.data}
           index={openIndex}
           onIndex={(i) => {
             setOpen(flat[i]?.id ?? null)
@@ -118,11 +138,13 @@ export function ResultsScreen({
 function GroupView({
   group,
   now,
+  assets,
   onOpen,
   onCancel,
 }: {
   group: Group
   now: number
+  assets: Asset[] | undefined
   onOpen: (id: string) => void
   onCancel: (jobId: string) => void
 }) {
@@ -144,7 +166,7 @@ function GroupView({
     <section aria-label={prompt || 'Untitled'}>
       <header className="group-caption">
         <p className={prompt ? 'title' : 'title untitled'}>{prompt || 'No prompt'}</p>
-        <p className="meta">{spec ? `${modelName(spec.model.path)}, ${size(w, h)}` : size(w, h)}</p>
+        <p className="meta">{spec ? `${modelLine(spec, assets)}, ${size(w, h)}` : size(w, h)}</p>
         <div className="aside">
           {pending ? (
             <button
@@ -193,7 +215,13 @@ function SketchTile({ job, item, done }: { job: Job; item: number; done: Set<num
   const current = job.status === 'running' && (job.progress?.item ?? 0) === item && !done.has(item)
   const fraction = current ? itemFraction(job) : null
   const cls = !current ? 'waiting' : fraction === null ? 'indeterminate' : ''
-  const label = current ? phaseText(job) : job.status === 'queued' ? 'Queued' : 'Waiting'
+  const label = current
+    ? phaseText(job)
+    : job.status !== 'queued'
+      ? 'Waiting'
+      : job.progress?.phase === 'copy'
+        ? `Queued, copying ${copyText(job)}` // prefetched while another job runs
+        : 'Queued'
   return (
     <div
       className={`tile sketch ${cls}`}
@@ -208,12 +236,14 @@ function SketchTile({ job, item, done }: { job: Job; item: number; done: Set<num
 
 function Viewer({
   results,
+  assets,
   index,
   onIndex,
   onClose,
   onReuse,
 }: {
   results: Result[]
+  assets: Asset[] | undefined
   index: number
   onIndex: (i: number) => void
   onClose: () => void
@@ -332,7 +362,7 @@ function Viewer({
           ) : null}
         </div>
         <p className="lines">
-          <span>{r.spec ? modelName(r.spec.model.path) : 'Unknown model'}</span>
+          <span>{r.spec ? modelWithLoras(r.spec, assets) : 'Unknown model'}</span>
           <span>
             {size(r.width, r.height)}, seed {r.seed}
           </span>

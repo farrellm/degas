@@ -66,6 +66,7 @@ def test_health(client: TestClient) -> None:
     assert body["version"] == __version__
     assert body["drive_token"] is False
     assert body["loaded"] is None
+    assert body["cache"]["files"] == []
 
 
 def test_job_lifecycle(client: TestClient) -> None:

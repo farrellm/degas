@@ -17,6 +17,7 @@ export interface Family {
   id: string
   label: string
   media: 'image' | 'video'
+  lora_format: 'single' | 'paired_hi_lo'
   variants: Variant[]
 }
 
@@ -40,12 +41,29 @@ export interface ParamSchema {
   properties: Record<string, ParamProp>
 }
 
+/** Optional YAML next to an asset in Drive (design §5). */
+export interface Sidecar {
+  label?: string
+  trigger_words?: string[]
+  default_weight?: number
+  notes?: string
+}
+
 export interface Asset {
   path: string
   family: string | null
   kind: string
   size: number | null
+  sidecar: Sidecar | null
+  /** Blob sha of the preview image, served from /api/thumbs. */
+  preview_thumb: string | null
   indexed_at: string
+}
+
+export interface CachedFile {
+  path: string
+  size: number
+  last_used: number
 }
 
 export type SessionState = 'starting' | 'ready' | 'busy' | 'stopping' | 'stopped' | 'error'
@@ -67,6 +85,8 @@ export interface SessionSnapshot {
     vram_free: number | null
     vram_total: number | null
     disk_free: number
+    /** The VM's model cache; absent from workers older than Phase 2. */
+    cache?: { used: number; budget: number; files: CachedFile[] }
   } | null
   idle_deadline: string | null
   idle_timeout_min: number
@@ -88,11 +108,18 @@ export interface DriveStatus {
 
 export type Params = Record<string, string | number | null>
 
+export interface LoraRef {
+  path: string
+  weight: number
+  size?: number | null
+}
+
 export interface Spec {
   family: string
   variant: string
   mode: string
   model: { path: string; size?: number | null }
+  loras?: LoraRef[]
   params: Params
 }
 
@@ -102,6 +129,8 @@ export interface Progress {
   phase: string
   step: number
   steps: number
+  /** The Drive asset being copied, during the `copy` phase. */
+  asset?: string | null
 }
 
 export type JobStatus = 'queued' | 'running' | 'done' | 'cancelled' | 'error'
@@ -166,8 +195,7 @@ export const api = {
       'GET',
       `/families/${family}/schema?variant=${encodeURIComponent(variant)}&mode=${encodeURIComponent(mode)}`,
     ),
-  assets: (family: string, kind: string) =>
-    request<Asset[]>('GET', `/assets?family=${family}&kind=${kind}`),
+  assets: () => request<Asset[]>('GET', '/assets'),
   rescan: () => request<{ count: number; indexed_at: string }>('POST', '/assets/rescan'),
   drive: () => request<DriveStatus>('GET', '/drive'),
   session: () => request<SessionSnapshot>('GET', '/session'),

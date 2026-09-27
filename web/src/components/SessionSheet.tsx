@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { api, isActive, type SessionSnapshot } from '../api'
+import { assetLabel, bytes, useAssets } from '../assets'
 import { GiB, GPU_VRAM } from '../format'
 import { ago, countdown, useNow } from '../time'
 import { Sheet } from './Sheet'
@@ -150,6 +151,7 @@ function SessionBody({ snap }: { snap: SessionSnapshot }) {
         </div>
         {error && <p role="alert">{error.message}</p>}
       </section>
+      {w?.cache && <CacheSection cache={w.cache} />}
       {(s?.state === 'ready' || s?.state === 'busy') && (
         <section className="sheet-section" aria-label="Troubleshooting">
           <h3>Worker stuck?</h3>
@@ -175,6 +177,43 @@ function SessionBody({ snap }: { snap: SessionSnapshot }) {
   )
 }
 
+type Cache = NonNullable<NonNullable<SessionSnapshot['worker']>['cache']>
+
+/** Models and LoRAs already copied to the VM, so choosing them costs no copy. */
+function CacheSection({ cache }: { cache: Cache }) {
+  const assets = useAssets()
+  return (
+    <section className="sheet-section" aria-labelledby="cache-heading">
+      <h3 id="cache-heading">On the GPU</h3>
+      {cache.files.length === 0 ? (
+        <p>Nothing copied yet. Models and LoRAs copy from Drive the first time a job uses them.</p>
+      ) : (
+        <>
+          <div>
+            <div className="meter" aria-hidden>
+              <span
+                style={{ width: `${String(Math.min(100, (100 * cache.used) / cache.budget))}%` }}
+              />
+            </div>
+            <p className="bar-note">
+              {bytes(cache.used)} of {bytes(cache.budget)} used. The least recently used files are
+              removed above that.
+            </p>
+          </div>
+          <ul className="cached">
+            {cache.files.map((f) => (
+              <li key={f.path}>
+                <span>{assetLabel(f.path, assets.data)}</span>
+                <span className="size">{bytes(f.size)}</span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </section>
+  )
+}
+
 function DriveSection({ authorizedHint }: { authorizedHint?: SessionSnapshot['drive'] }) {
   const qc = useQueryClient()
   const now = useNow(60_000)
@@ -182,6 +221,7 @@ function DriveSection({ authorizedHint }: { authorizedHint?: SessionSnapshot['dr
   const rescan = useMutation({
     mutationFn: api.rescan,
     onSettled: () => qc.invalidateQueries({ queryKey: ['drive'] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['assets'] }),
   })
   const d = drive.data
   const problem = d?.error ?? authorizedHint?.push_error

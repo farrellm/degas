@@ -11,7 +11,6 @@ export function size(w: unknown, h: unknown): string {
 }
 
 const PHASES: Record<string, string> = {
-  copy: 'Copying model',
   load: 'Loading model',
   denoise: 'Denoising',
   decode: 'Decoding',
@@ -22,13 +21,18 @@ const PHASES: Record<string, string> = {
 export function phaseText(job: Job): string {
   const p = job.progress
   if (!p) return 'Starting'
+  if (p.phase === 'copy') return `Copying ${copyText(job)}`
   const phase = PHASES[p.phase] ?? p.phase
-  if (p.phase === 'copy' && p.steps > 0) {
-    return `${phase} ${String(Math.round((100 * p.step) / p.steps))}%`
-  }
   return p.steps > 0 && p.phase === 'denoise'
     ? `${phase} ${String(p.step)}/${String(p.steps)}`
     : phase
+}
+
+/** "LoRA 45%": what a job's `copy` progress is copying to the GPU, and how far along. */
+export function copyText(job: Job): string {
+  const p = job.progress
+  const what = p?.asset?.startsWith('loras/') ? 'LoRA' : 'model'
+  return p && p.steps > 0 ? `${what} ${String(Math.round((100 * p.step) / p.steps))}%` : what
 }
 
 /** How far the current item is drawn (0..1), or null while it can't be measured. */
