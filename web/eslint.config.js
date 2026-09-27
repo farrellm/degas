@@ -18,6 +18,9 @@ export default defineConfig([
       reactRefresh.configs.vite,
       prettier,
     ],
+    rules: {
+      '@typescript-eslint/no-unused-vars': ['error', { ignoreRestSiblings: true }],
+    },
     languageOptions: {
       ecmaVersion: 2023,
       globals: globals.browser,

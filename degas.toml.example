@@ -1,0 +1,23 @@
+# Degas server configuration. Copy to degas.toml (git-ignored) and adjust.
+# Relative paths are resolved against this file's directory.
+
+data_dir = "data"          # SQLite, blobs, thumbnails, SSH key, Drive token
+host = "127.0.0.1"         # expose with: tailscale serve --bg https / http://127.0.0.1:8420
+port = 8420
+idle_timeout_min = 15      # stop the GPU session after this long without jobs or interaction
+# web_dist = "web/dist"    # built PWA (default: <repo>/web/dist)
+
+[colab]
+binary = "colab"           # uv tool install google-colab-cli
+# auth = "adc"             # or "oauth2"; default: the CLI's own default
+session_name = "degas"
+# ssh_key = "data/ssh/id_ed25519"   # generated on first session start if missing
+# rclone_binary = "/path/to/static/linux-amd64/rclone"  # default: the VM downloads rclone itself
+worker_port = 8765
+exec_heartbeat = true      # trivial `colab exec` every 5 min while a session is active
+
+[drive]
+root = "degas"             # folder under My Drive (see docs/design.md §5)
+# OAuth client JSON for a Google Cloud "Desktop app" client with the Drive API enabled.
+client_file = "drive_client.json"
+# token_file = "data/drive_token.json"  # written by `degas auth drive`

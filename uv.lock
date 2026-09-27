@@ -258,13 +258,19 @@ name = "degas-server"
 version = "0.1.0"
 source = { editable = "server" }
 dependencies = [
+    { name = "degas-worker" },
     { name = "fastapi" },
+    { name = "httpx2" },
+    { name = "pillow" },
     { name = "uvicorn", extra = ["standard"] },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "degas-worker", editable = "worker" },
     { name = "fastapi", specifier = ">=0.141" },
+    { name = "httpx2", specifier = ">=2.13" },
+    { name = "pillow", specifier = ">=12" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.54" },
 ]
 

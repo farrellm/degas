@@ -36,6 +36,8 @@ select = [
 ]
 ignore = [
     "PLR0913", # too many arguments: diffusers-style call sites
+    "PLR0917", # too many positional arguments: same
+    "ASYNC109", # explicit `timeout` params on subprocess/HTTP wrappers are intentional
     "PLR2004", # magic values
     "S101",    # assert (used in tests)
 ]
