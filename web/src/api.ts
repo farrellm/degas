@@ -147,6 +147,36 @@ export interface Job {
   progress: Progress | null
 }
 
+/** The replayable config a kept image carries (design §6.4): a spec plus its runtime. */
+export interface SavedConfig extends Spec {
+  degas_version: number
+  runtime?: { gpu: string | null; duration_s?: number; diffusers?: string; torch?: string }
+}
+
+export interface LibraryItem {
+  id: string
+  kind: 'image' | 'video'
+  blob_sha: string
+  media_type: string
+  width: number | null
+  height: number | null
+  config: SavedConfig
+  title: string | null
+  tags: string[]
+  created_at: string
+  source_result_id: string | null
+}
+
+export interface SavedPrompt {
+  id: string
+  name: string
+  prompt: string
+  negative_prompt: string
+  family: string | null
+  tags: string[]
+  created_at: string
+}
+
 export interface Result {
   id: string
   job_id: string
@@ -158,6 +188,8 @@ export interface Result {
   height: number | null
   created_at: string
   expires_at: string | null
+  /** The library item keeping this result, if it was kept. */
+  library_id: string | null
   spec: Spec | null
 }
 
@@ -213,6 +245,29 @@ export const api = {
       'GET',
       `/results${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`,
     ),
+  keep: (resultId: string) => request<LibraryItem>('POST', `/results/${resultId}/save`),
+  library: (q: string, cursor?: string) =>
+    request<{ items: LibraryItem[]; cursor: string | null }>(
+      'GET',
+      `/library${query({ q, cursor })}`,
+    ),
+  editLibraryItem: (id: string, edit: { title?: string; tags?: string[] }) =>
+    request<LibraryItem>('PATCH', `/library/${id}`, edit),
+  deleteLibraryItem: (id: string) => request<{ deleted: boolean }>('DELETE', `/library/${id}`),
+  prompts: (q = '') => request<SavedPrompt[]>('GET', `/prompts${query({ q })}`),
+  savePrompt: (p: { prompt: string; negative_prompt: string; family: string | null }) =>
+    request<SavedPrompt>('POST', '/prompts', p),
+  editPrompt: (id: string, edit: { name?: string; tags?: string[] }) =>
+    request<SavedPrompt>('PATCH', `/prompts/${id}`, edit),
+  deletePrompt: (id: string) => request<{ deleted: boolean }>('DELETE', `/prompts/${id}`),
+}
+
+/** "?q=cat&cursor=…", leaving out empty values. */
+function query(params: Record<string, string | undefined>): string {
+  const q = new URLSearchParams()
+  for (const [k, v] of Object.entries(params)) if (v) q.set(k, v)
+  const s = q.toString()
+  return s ? `?${s}` : ''
 }
 
 export function isActive(snapshot: SessionSnapshot | undefined): boolean {

@@ -5,9 +5,10 @@ import { SessionChip } from './components/SessionChip'
 import { SessionSheet } from './components/SessionSheet'
 import { useServerEvents } from './events'
 import { CreateScreen } from './screens/CreateScreen'
+import { LibraryScreen } from './screens/LibraryScreen'
 import { ResultsScreen } from './screens/ResultsScreen'
 
-const TABS = ['Create', 'Results'] as const
+const TABS = ['Create', 'Results', 'Library'] as const
 type Tab = (typeof TABS)[number]
 
 function App() {
@@ -34,7 +35,7 @@ function App() {
           this device is on the tailnet.
         </p>
       )}
-      <main className={tab === 'Results' ? 'app-main results-main' : 'app-main'}>
+      <main className={tab === 'Create' ? 'app-main' : 'app-main results-main'}>
         {tab === 'Create' && (
           <CreateScreen
             onOpenSession={() => {
@@ -47,10 +48,17 @@ function App() {
         )}
         {tab === 'Results' && (
           <ResultsScreen
-            onReuse={() => {
+            onRemix={() => {
               setTab('Create')
             }}
             onCreate={() => {
+              setTab('Create')
+            }}
+          />
+        )}
+        {tab === 'Library' && (
+          <LibraryScreen
+            onRemix={() => {
               setTab('Create')
             }}
           />

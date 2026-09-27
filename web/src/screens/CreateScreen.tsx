@@ -4,6 +4,7 @@ import { api, isActive, type LoraRef, type Params } from '../api'
 import { assetLabel, useAssets } from '../assets'
 import { AssetPicker } from '../components/AssetPicker'
 import { LoraList } from '../components/LoraList'
+import { PromptSheet } from '../components/PromptSheet'
 import { SchemaForm } from '../components/SchemaForm'
 import { loadDraft, saveDraft } from '../draft'
 import { insertWord } from '../prompt'
@@ -24,7 +25,7 @@ export function CreateScreen({ onOpenSession, onShowResults }: Props) {
   const [loras, setLoras] = useState<LoraRef[]>(draft.loras ?? [])
   const [batchCount, setBatchCount] = useState(draft.batchCount ?? 1)
   const [queued, setQueued] = useState<number | null>(null)
-  const [picker, setPicker] = useState<'model' | 'lora' | null>(null)
+  const [picker, setPicker] = useState<'model' | 'lora' | 'prompts' | null>(null)
   const promptRef = useRef<HTMLTextAreaElement>(null)
   const promptFocused = useRef(false)
 
@@ -48,9 +49,10 @@ export function CreateScreen({ onOpenSession, onShowResults }: Props) {
 
   // Until edited, the form shows the saved draft (or the schema defaults).
   const params = editedParams ?? (schema.data ? initialParams(schema.data, draft.params) : null)
-  const model = models?.some((m) => m.path === chosenModel)
-    ? chosenModel
-    : (models?.[0]?.path ?? '')
+  // A model remixed from an older image may have left Drive: keep it, flagged, rather
+  // than silently swapping in another.
+  const model = chosenModel || (models?.[0]?.path ?? '')
+  const modelMissing = !!model && !!models && !models.some((m) => m.path === model)
 
   useEffect(() => {
     if (params) saveDraft({ family: familyId, model, loras, params, batchCount })
@@ -108,18 +110,26 @@ export function CreateScreen({ onOpenSession, onShowResults }: Props) {
 
   const leadingRows = (
     <>
-      <button
-        type="button"
-        className="setting setting-button"
-        onClick={() => {
-          setPicker('model')
-        }}
-      >
-        <span className="setting-label">Model</span>{' '}
-        <span className={model ? 'setting-value' : 'setting-value none'}>
-          {model ? assetLabel(model, models) : models ? 'None found' : 'Loading…'}
-        </span>
-      </button>
+      <div className={modelMissing ? 'model-row missing' : 'model-row'}>
+        <button
+          type="button"
+          className="setting setting-button"
+          aria-describedby={modelMissing ? 'model-missing' : undefined}
+          onClick={() => {
+            setPicker('model')
+          }}
+        >
+          <span className="setting-label">Model</span>{' '}
+          <span className={model ? 'setting-value' : 'setting-value none'}>
+            {model ? assetLabel(model, models) : models ? 'None found' : 'Loading…'}
+          </span>
+        </button>
+        {modelMissing && (
+          <p className="row-warning" id="model-missing">
+            Not found in Drive. Pick another model.
+          </p>
+        )}
+      </div>
       {family?.lora_format === 'single' && (
         <LoraList
           loras={loras}
@@ -153,6 +163,7 @@ export function CreateScreen({ onOpenSession, onShowResults }: Props) {
               value={familyId}
               onChange={(e) => {
                 setFamilyId(e.target.value)
+                setModel('')
                 setParams(null)
               }}
             >
@@ -176,7 +187,35 @@ export function CreateScreen({ onOpenSession, onShowResults }: Props) {
         onPromptFocus={() => {
           promptFocused.current = true
         }}
+        promptAside={
+          <button
+            type="button"
+            className="prompt-aside"
+            onClick={() => {
+              setPicker('prompts')
+            }}
+          >
+            Prompts
+          </button>
+        }
       />
+
+      {picker === 'prompts' && (
+        <PromptSheet
+          prompt={String(params.prompt ?? '')}
+          negativePrompt={String(params.negative_prompt ?? '')}
+          family={familyId}
+          onUse={(p) => {
+            const next: Params = { ...params, prompt: p.prompt }
+            if ('negative_prompt' in params) next.negative_prompt = p.negative_prompt
+            setParams(next)
+            setPicker(null)
+          }}
+          onClose={() => {
+            setPicker(null)
+          }}
+        />
+      )}
 
       {picker === 'model' && (
         <AssetPicker
@@ -274,7 +313,7 @@ export function CreateScreen({ onOpenSession, onShowResults }: Props) {
             <button
               type="submit"
               className="btn"
-              disabled={submit.isPending || !model || !hasPrompt}
+              disabled={submit.isPending || !model || modelMissing || !hasPrompt}
             >
               {submit.isPending
                 ? 'Queuing…'

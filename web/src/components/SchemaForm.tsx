@@ -12,6 +12,8 @@ interface Props {
   /** The main prompt field, e.g. to insert trigger words at the cursor. */
   promptRef?: Ref<HTMLTextAreaElement>
   onPromptFocus?: () => void
+  /** Shown beside the first prompt's label (e.g. saved prompts). */
+  promptAside?: ReactNode
 }
 
 /**
@@ -27,6 +29,7 @@ export function SchemaForm({
   leadingRows,
   promptRef,
   onPromptFocus,
+  promptAside,
 }: Props) {
   const set = (name: string, value: string | number | null) => {
     onChange({ ...values, [name]: value })
@@ -49,7 +52,14 @@ export function SchemaForm({
           {prompts.map(([name, prop], i) => (
             <Fragment key={name}>
               {i > 0 && <hr />}
-              <label htmlFor={`param-${name}`}>{prop.title ?? name}</label>
+              {i === 0 && promptAside ? (
+                <div className="prompt-head">
+                  <label htmlFor={`param-${name}`}>{prop.title ?? name}</label>
+                  {promptAside}
+                </div>
+              ) : (
+                <label htmlFor={`param-${name}`}>{prop.title ?? name}</label>
+              )}
               <textarea
                 ref={i === 0 ? promptRef : undefined}
                 onFocus={i === 0 ? onPromptFocus : undefined}

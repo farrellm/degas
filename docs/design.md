@@ -437,8 +437,8 @@ All endpoints are under `/api`. JSON unless noted.
 | GET | `/results?cursor=` | Recent ephemeral results |
 | POST | `/results/{id}/save` | Save to library (image/video + config) |
 | POST | `/results/{id}/extend` | Create an i2v job spec seeded from the video's last frame (returns spec for editing) |
-| GET/DELETE | `/library`, `/library/{id}` | Browse / delete saved items |
-| GET/POST/DELETE | `/prompts`, `/prompts/{id}` | Saved prompts |
+| GET/PATCH/DELETE | `/library?q=&cursor=`, `/library/{id}` | Browse and search / edit title and tags / delete saved items |
+| GET/POST/PATCH/DELETE | `/prompts?q=`, `/prompts/{id}` | Saved prompts (rename via PATCH) |
 | POST | `/blobs` | Upload (multipart) → `{sha256}` |
 | POST | `/blobs/{sha}/transform` | `{ops}` → derived blob `{sha256, width, height}` (applies to original if `sha` is itself derived) |
 | GET | `/blobs/{sha}/transform` | Original sha + ops for a derived blob (to reopen editor) |
@@ -539,7 +539,7 @@ Phases are numbered from 0.
 0. **Spike.** ✅ Done: see [phase0-findings.md](phase0-findings.md). Outcome: the worker runs as an HTTP server behind an SSH tunnel, and Drive is accessed with OAuth plus rclone.
 1. **Core loop.** ✅ Done. Live test on a T4 (2026-09-27, SDXL base 1.0 from Drive, 1024², 30 steps): session `ready` in 30 s; first job 174 s (Drive copy 90 s at ~77 MB/s, model load 30 s, denoise 28 s); next images ~34 s each with the model resident; same seed reproduced a byte-identical PNG. Build the session manager (colab CLI and SSH tunnel), Drive OAuth and indexing, the worker HTTP app, the dispatcher, and the SDXL family in `t2i` mode. Add the blob store, SSE, and a minimal Create/Queue/Results UI. Exit criterion: generate an image from the phone.
 2. **Assets and LoRA.** ✅ Built, not yet tested on a live GPU. Sidecars, the rclone-backed model cache with prefetch and eviction, and LoRA application (with diffing) for SDXL. Model and LoRA pickers in the UI. The server prefetches the next queued job's assets once the running job is past its own copy phase. The VM cache budget is `colab.cache_budget_gb` (150 by default), and `/health` reports the cached files so the pickers can say what is already on the GPU.
-3. **Save, library and remix.** Saved configs, saved prompts, the retention sweeper, and remix.
+3. **Save, library and remix.** ✅ Built. Keep saves a result with its replayable config (§6.4, including the runtime GPU and library versions reported by `/health`) to `library_items`, and the item holds its own blob refs. Saved prompts. An hourly retention sweeper deletes expired results, finished jobs left with no results, and unreferenced blobs (with a 1 h grace for blobs just written). Remix loads a kept image's or a result's config into Create and flags a model or LoRA that's no longer in the Drive index. Library search matches prompt text, title and tags.
 4. **Wan 2.2.** The 5B variant (t2v and i2v), then the A14B variants with paired LoRAs. Video playback, video extension and stitching. Build the full image picker here (recent results, library, camera-roll upload, URL import, frame selection from videos), together with the crop and resize editor, image transforms, and auto-fit here, since i2v is the first mode that takes a source image.
 5. **Queue UX and push.** Batch generation and seed modes, cancel, reorder, the PWA manifest and service worker, and Web Push.
 6. **i2i, inpaint and outpaint.** The mask editor with brush tools, and outpaint canvas extension.

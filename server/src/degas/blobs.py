@@ -3,6 +3,8 @@
 import hashlib
 import io
 import re
+import time
+from collections.abc import Iterator
 from pathlib import Path
 
 from PIL import Image
@@ -76,3 +78,20 @@ class BlobStore:
         tmp.write_bytes(buf.getvalue())
         tmp.replace(dest)
         return dest
+
+    def delete(self, sha: str) -> bool:
+        """Remove a blob and its thumbnail."""
+        path = self.path(sha)
+        (self.thumbs / f"{sha}.webp").unlink(missing_ok=True)
+        if path is None:
+            return False
+        path.unlink(missing_ok=True)
+        return True
+
+    def stored(self, older_than_s: float = 0) -> Iterator[str]:
+        """Shas of stored blobs last written more than `older_than_s` ago."""
+        cutoff = time.time() - older_than_s
+        for path in self.blobs.glob("*/*"):
+            name = path.name.split(".", 1)[0]
+            if _SHA256.match(name) and path.stat().st_mtime <= cutoff:
+                yield name

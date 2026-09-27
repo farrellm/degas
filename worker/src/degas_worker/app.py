@@ -20,7 +20,7 @@ from degas_worker import __version__
 from degas_worker.cache import AssetCache
 from degas_worker.families import RUNNERS
 from degas_worker.families.base import FamilyRunner
-from degas_worker.gpu import gpu_info
+from degas_worker.gpu import gpu_info, versions
 from degas_worker.jobs import JobManager, WorkerBusy
 from degas_worker.paths import Paths
 
@@ -71,6 +71,7 @@ def create_app(  # noqa: PLR0915 - route definitions
             "status": "ok",
             "version": __version__,
             **gpu_info(),
+            "versions": versions(),
             "disk_free": disk.free,
             "loaded": jobs.loaded_family,
             "drive_token": cache.has_token,

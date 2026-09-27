@@ -21,10 +21,15 @@ export function countdown(deadline: string | null, now: number): string | null {
   return `${String(Math.floor(s / 60))}:${String(s % 60).padStart(2, '0')}`
 }
 
+/** Hours (fractional) until `iso`. */
+export function hoursLeft(iso: string, now: number): number {
+  return (new Date(iso).getTime() - now) / 3_600_000
+}
+
 /** Hours or minutes left before `expiresAt`, e.g. "17 h left". */
 export function timeLeft(expiresAt: string | null, now: number): string | null {
   if (!expiresAt) return null
-  const hours = (new Date(expiresAt).getTime() - now) / 3_600_000
+  const hours = hoursLeft(expiresAt, now)
   if (hours <= 0) return 'Deleting soon'
   return hours >= 1
     ? `${String(Math.floor(hours))} h left`
