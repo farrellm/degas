@@ -10,9 +10,23 @@ Personal generative image/video web app: an iPhone PWA over Tailscale, with infe
 | Path | What |
 |---|---|
 | `server/` | Home server (FastAPI): API, job queue, Colab session manager — package `degas` |
-| `worker/` | GPU worker (FastAPI) that runs on the Colab VM — package `degas_worker` |
+|  | `colab/` CLI wrapper, SSH tunnel, worker client, session manager · `dispatcher.py` job loop · `drive.py` OAuth + index · `families/` descriptors |
+| `worker/` | GPU worker (FastAPI) that runs on the Colab VM — package `degas_worker` (`jobs.py`, `cache.py` rclone, `families/` runners) |
 | `web/` | React + Vite PWA |
 | `spike/` | Throwaway Phase 0 scripts, kept for reference (not linted) |
+
+## Running
+
+Phase 1 (core loop: SDXL text-to-image) is implemented. One-time setup on the home server:
+
+1. Install and authenticate the Colab CLI: `uv tool install google-colab-cli`, then run any `colab` command once to sign in.
+2. Create a Google Cloud OAuth client of type *Desktop app* with the Drive API enabled, and download its JSON.
+3. `cp degas.toml.example degas.toml` and point `drive.client_file` at that JSON.
+4. `uv run degas auth drive`: open the printed URL in a browser on the server (or forward the loopback port over SSH) and approve read-only Drive access.
+5. Put SDXL checkpoints in Drive under `My Drive/degas/models/sdxl/`, then `uv run degas rescan` (or **Rescan Drive** in the app).
+6. `make build && uv run degas` serves the API and the PWA on `127.0.0.1:8420`; `tailscale serve --bg https / http://127.0.0.1:8420` exposes it on the tailnet.
+
+In the app: **Session** → start a GPU session, **Create** → Generate, and watch **Queue** / **Results**. The session stops itself after `idle_timeout_min` without activity.
 
 ## Development
 

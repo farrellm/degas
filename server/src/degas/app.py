@@ -1,12 +1,38 @@
 """FastAPI application: REST API and static PWA."""
 
+from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 
 from degas import __version__
+from degas.api import router
+from degas.config import Config, load_config
+from degas.services import Services, build_services
 
-app = FastAPI(title="Degas", version=__version__)
+
+def create_app(
+    config: Config | None = None,
+    services: Callable[[Config], Services] = build_services,
+) -> FastAPI:
+    config = config or load_config()
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        svc = services(config)
+        app.state.services = svc
+        await svc.start()
+        try:
+            yield
+        finally:
+            await svc.stop()
+
+    app = FastAPI(title="Degas", version=__version__, lifespan=lifespan)
+    app.include_router(router)
+    if config.web_dist_dir.is_dir():
+        app.mount("/", StaticFiles(directory=config.web_dist_dir, html=True), name="web")
+    return app
 
 
-@app.get("/api/health")
-async def health() -> dict[str, str]:
-    return {"status": "ok", "version": __version__}
+app = create_app()

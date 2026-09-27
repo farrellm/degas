@@ -4,9 +4,15 @@ version = "0.1.0"
 description = "Degas home server: API, job queue, Colab session manager"
 requires-python = ">=3.13,<3.14"
 dependencies = [
+    "degas-worker",  # the worker bundle is built from the installed package
     "fastapi>=0.141",
+    "httpx2>=2.13",
+    "pillow>=12",
     "uvicorn[standard]>=0.54",
 ]
+
+[tool.uv.sources]
+degas-worker = { workspace = true }
 
 [project.scripts]
 degas = "degas.cli:main"
