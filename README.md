@@ -3,6 +3,7 @@
 Personal generative image/video web app: an iPhone PWA over Tailscale, with inference on Google Colab GPUs driven by the [Colab CLI](https://github.com/googlecolab/google-colab-cli).
 
 - Design: [docs/design.md](docs/design.md)
+- UX and visual design: [docs/ux.md](docs/ux.md)
 - Phase 0 (Colab CLI spike): [docs/phase0-findings.md](docs/phase0-findings.md)
 
 ## Layout
@@ -26,7 +27,7 @@ Phase 1 (core loop: SDXL text-to-image) is implemented. One-time setup on the ho
 5. Put SDXL checkpoints in Drive under `My Drive/degas/models/sdxl/`, then `uv run degas rescan` (or **Rescan Drive** in the app).
 6. `make build && uv run degas` serves the API and the PWA on `127.0.0.1:8420`; `tailscale serve --bg https / http://127.0.0.1:8420` exposes it on the tailnet.
 
-In the app: **Session** → start a GPU session, **Create** → Generate, and watch **Queue** / **Results**. The session stops itself after `idle_timeout_min` without activity.
+In the app: tap **No GPU** in the header to start a GPU session, write a prompt in **Create** → Generate, and watch images arrive in **Results**. The session stops itself after `idle_timeout_min` without activity.
 
 ## Development
 

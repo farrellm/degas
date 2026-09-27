@@ -1,43 +1,28 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
-import { api, type Params } from '../api'
+import { api, isActive, type Params } from '../api'
 import { SchemaForm } from '../components/SchemaForm'
-import { SessionPrompt } from '../components/SessionPrompt'
+import { loadDraft, saveDraft } from '../draft'
+import { modelName } from '../format'
 import { initialParams } from '../schema'
 
-const DRAFT_KEY = 'degas.create.draft'
+const MAX_BATCH = 8
 
-interface Draft {
-  family: string
-  model: string
-  params: Params
-  batchCount: number
+interface Props {
+  onOpenSession: () => void
+  onShowResults: () => void
 }
 
-function loadDraft(): Partial<Draft> {
-  try {
-    return JSON.parse(localStorage.getItem(DRAFT_KEY) ?? '{}') as Partial<Draft>
-  } catch {
-    return {}
-  }
-}
-
-function saveDraft(draft: Draft) {
-  try {
-    localStorage.setItem(DRAFT_KEY, JSON.stringify(draft))
-  } catch {
-    // storage unavailable (private mode): the draft just isn't kept
-  }
-}
-
-export function CreateScreen({ onQueued }: { onQueued: () => void }) {
+export function CreateScreen({ onOpenSession, onShowResults }: Props) {
   const [draft] = useState(loadDraft)
   const [familyId, setFamilyId] = useState(draft.family ?? 'sdxl')
   const [chosenModel, setModel] = useState(draft.model ?? '')
   const [editedParams, setParams] = useState<Params | null>(null)
   const [batchCount, setBatchCount] = useState(draft.batchCount ?? 1)
+  const [queued, setQueued] = useState<number | null>(null)
 
   const families = useQuery({ queryKey: ['families'], queryFn: api.families })
+  const session = useQuery({ queryKey: ['session'], queryFn: api.session })
   const family = families.data?.find((f) => f.id === familyId) ?? families.data?.[0]
   const variant = family?.variants[0]
   const mode = variant?.modes[0]
@@ -64,24 +49,68 @@ export function CreateScreen({ onQueued }: { onQueued: () => void }) {
     if (params) saveDraft({ family: familyId, model, params, batchCount })
   }, [familyId, model, params, batchCount])
 
+  useEffect(() => {
+    if (queued === null) return
+    const id = setTimeout(() => {
+      setQueued(null)
+    }, 5000)
+    return () => {
+      clearTimeout(id)
+    }
+  }, [queued])
+
   const submit = useMutation({
     mutationFn: () => {
-      if (!family || !variant || !mode || !params) throw new Error('Form not ready')
+      if (!family || !variant || !mode || !params) throw new Error('The form is still loading.')
       return api.submitJob(
         { family: family.id, variant: variant.id, mode, model: { path: model }, params },
         batchCount,
         'increment',
       )
     },
-    onSuccess: onQueued,
+    onSuccess: () => {
+      setQueued(batchCount)
+    },
   })
 
   if (families.isPending || schema.isPending || !params) {
-    return <p className="muted">Loading…</p>
+    return <p className="loading">Loading…</p>
   }
   if (families.error || schema.error) {
     return <p role="alert">{(families.error ?? schema.error)?.message}</p>
   }
+
+  const hasPrompt = String(params.prompt ?? '').trim() !== ''
+  const noGpu = session.data !== undefined && !isActive(session.data)
+  const items = batchCount === 1 ? 'image' : 'images'
+
+  const modelRow = (
+    <div className="setting">
+      <label className="setting-label" htmlFor="model">
+        Model
+      </label>
+      {models.data?.length ? (
+        <select
+          id="model"
+          value={model}
+          onChange={(e) => {
+            setModel(e.target.value)
+          }}
+        >
+          {models.data.map((m) => (
+            <option key={m.path} value={m.path}>
+              {modelName(m.path)}
+            </option>
+          ))}
+        </select>
+      ) : (
+        <p className="empty-models" id="model">
+          No models found. Put checkpoints in Drive under <code>degas/models/{family?.id}/</code>,
+          then rescan from the GPU menu.
+        </p>
+      )}
+    </div>
+  )
 
   return (
     <form
@@ -91,77 +120,98 @@ export function CreateScreen({ onQueued }: { onQueued: () => void }) {
         submit.mutate()
       }}
     >
-      <SessionPrompt />
-
       {families.data.length > 1 && (
-        <label className="field">
-          <span>Family</span>
-          <select
-            value={familyId}
-            onChange={(e) => {
-              setFamilyId(e.target.value)
-              setParams(null)
-            }}
-          >
-            {families.data.map((f) => (
-              <option key={f.id} value={f.id}>
-                {f.label}
-              </option>
-            ))}
-          </select>
-        </label>
+        <div className="settings">
+          <div className="setting">
+            <label className="setting-label" htmlFor="family">
+              Family
+            </label>
+            <select
+              id="family"
+              value={familyId}
+              onChange={(e) => {
+                setFamilyId(e.target.value)
+                setParams(null)
+              }}
+            >
+              {families.data.map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
       )}
-
-      <label className="field">
-        <span>Model</span>
-        {models.data?.length ? (
-          <select
-            value={model}
-            onChange={(e) => {
-              setModel(e.target.value)
-            }}
-          >
-            {models.data.map((m) => (
-              <option key={m.path} value={m.path}>
-                {m.path.split('/').pop()}
-              </option>
-            ))}
-          </select>
-        ) : (
-          <span className="muted">
-            No models indexed. Put checkpoints in Drive under{' '}
-            <code>degas/models/{family?.id}/</code> and rescan from the Session tab.
-          </span>
-        )}
-      </label>
 
       <SchemaForm
         schema={schema.data}
         values={params}
         onChange={setParams}
         presets={variant?.size_constraints.presets ?? []}
+        leadingRows={modelRow}
       />
 
-      <label className="field">
-        <span>
-          Batch <output>{batchCount}</output>
-        </span>
-        <input
-          type="range"
-          min={1}
-          max={8}
-          value={batchCount}
-          onChange={(e) => {
-            setBatchCount(Number(e.target.value))
-          }}
-        />
-      </label>
-
-      {submit.error && <p role="alert">{submit.error.message}</p>}
-      <div className="sticky-action">
-        <button type="submit" disabled={submit.isPending || !model}>
-          {submit.isPending ? 'Queuing…' : 'Generate'}
-        </button>
+      <div className="generate-bar">
+        <div className="generate-bar-inner">
+          {submit.error ? (
+            <p className="bar-note error" role="alert">
+              {submit.error.message}
+            </p>
+          ) : queued !== null ? (
+            <p className="toast" role="status">
+              <span>
+                Queued {queued} {queued === 1 ? 'image' : 'images'}.
+              </span>
+              <button type="button" className="link" onClick={onShowResults}>
+                See results
+              </button>
+            </p>
+          ) : noGpu ? (
+            <p className="bar-note">
+              No GPU is running, so jobs will wait.{' '}
+              <button type="button" className="link" onClick={onOpenSession}>
+                Start a session
+              </button>
+            </p>
+          ) : null}
+          <div className="generate-row">
+            <div className="stepper" role="group" aria-label="Batch size">
+              <button
+                type="button"
+                aria-label="Fewer images"
+                disabled={batchCount <= 1}
+                onClick={() => {
+                  setBatchCount((n) => Math.max(1, n - 1))
+                }}
+              >
+                −
+              </button>
+              <output aria-label="Images per job">{batchCount}</output>
+              <button
+                type="button"
+                aria-label="More images"
+                disabled={batchCount >= MAX_BATCH}
+                onClick={() => {
+                  setBatchCount((n) => Math.min(MAX_BATCH, n + 1))
+                }}
+              >
+                +
+              </button>
+            </div>
+            <button
+              type="submit"
+              className="btn"
+              disabled={submit.isPending || !model || !hasPrompt}
+            >
+              {submit.isPending
+                ? 'Queuing…'
+                : batchCount === 1
+                  ? 'Generate'
+                  : `Generate ${String(batchCount)} ${items}`}
+            </button>
+          </div>
+        </div>
       </div>
     </form>
   )
