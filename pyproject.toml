@@ -1,0 +1,65 @@
+[project]
+name = "degas-workspace"
+version = "0.0.0"
+requires-python = ">=3.13,<3.14"
+
+[tool.uv]
+package = false
+
+[tool.uv.workspace]
+members = ["server", "worker"]
+
+[tool.uv.sources]
+degas-server = { workspace = true }
+degas-worker = { workspace = true }
+
+[dependency-groups]
+dev = [
+    "degas-server",
+    "degas-worker",
+    "httpx2>=2.13",
+    "mypy>=2.3",
+    "pytest>=9.1",
+    "pytest-asyncio>=1.4",
+    "ruff>=0.16",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+extend-exclude = ["spike"]  # throwaway Phase 0 scripts, kept as a record
+
+[tool.ruff.lint]
+select = [
+    "E", "W", "F", "I", "B", "UP", "SIM", "C4", "RUF", "PTH", "ASYNC", "S", "N", "PL", "PT", "TID",
+]
+ignore = [
+    "PLR0913", # too many arguments: diffusers-style call sites
+    "PLR2004", # magic values
+    "S101",    # assert (used in tests)
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["degas", "degas_worker"]
+
+[tool.ruff.lint.per-file-ignores]
+"*/tests/**" = ["S", "PLR"]
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+warn_unreachable = true
+mypy_path = ["server/src", "worker/src"]
+packages = ["degas", "degas_worker"]
+
+[[tool.mypy.overrides]]
+# GPU-only deps: installed on Colab, not in CI
+module = ["torch.*", "diffusers.*", "transformers.*", "peft.*", "accelerate.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["server/tests", "worker/tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+addopts = ["--import-mode=importlib"]
+filterwarnings = ["error"]
