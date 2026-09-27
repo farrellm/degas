@@ -12,7 +12,7 @@ from degas import __version__
 from degas.colab.session import SessionError
 from degas.drive import DriveError
 from degas.families import FAMILIES
-from degas.families.base import SpecError, describe
+from degas.families.base import SpecError, describe, lora_files, spec_assets
 from degas.services import Services
 
 router = APIRouter(prefix="/api")
@@ -141,10 +141,7 @@ async def submit_job(svc: Svc, body: SubmitJob) -> dict[str, Any]:
         spec = family.validate(body.spec)
     except SpecError as e:
         raise HTTPException(400, str(e)) from None
-    model = svc.db.get_asset(spec["model"]["path"])
-    if model is None or model["kind"] != "model" or model["family"] != family.id:
-        raise HTTPException(400, f"Model {spec['model']['path']} is not in the Drive index")
-    spec["model"]["size"] = model["size"]
+    _resolve_assets(svc, family.id, spec)
 
     seed = spec["params"].pop("seed", -1)
     base = seed if seed is not None and seed >= 0 else svc.rng.randrange(SEED_MAX)
@@ -154,6 +151,21 @@ async def submit_job(svc: Svc, body: SubmitJob) -> dict[str, Any]:
         seeds = [(base + i) % SEED_MAX for i in range(body.batch_count)]
     job = svc.dispatcher.submit(spec, seeds)
     return svc.dispatcher.describe(job)
+
+
+def _resolve_assets(svc: Services, family: str, spec: dict[str, Any]) -> None:
+    """Check that every asset the spec names is in the Drive index, and record its size."""
+    sizes: dict[str, int | None] = {}
+    for need in spec_assets(spec):
+        asset = svc.db.get_asset(need["path"])
+        if asset is None or asset["kind"] != need["kind"] or asset["family"] != family:
+            what = "Model" if need["kind"] == "model" else "LoRA"
+            raise HTTPException(400, f"{what} {need['path']} is not in the Drive index")
+        sizes[need["path"]] = asset["size"]
+    spec["model"]["size"] = sizes[spec["model"]["path"]]
+    for lora in spec["loras"]:
+        for part in lora_files(lora):
+            part["size"] = sizes[part["path"]]
 
 
 @router.delete("/jobs/{job_id}")

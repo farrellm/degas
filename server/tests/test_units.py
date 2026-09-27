@@ -8,7 +8,7 @@ from degas.colab.bundle import build_bundle
 from degas.colab.cli import ColabCli, ColabError
 from degas.config import load_config
 from degas.db import Database
-from degas.families.base import SpecError
+from degas.families.base import SpecError, spec_assets
 from degas.families.sdxl import Sdxl
 
 # -- colab CLI -----------------------------------------------------------------------------
@@ -89,6 +89,67 @@ def test_sdxl_validate_rejects(change: dict[str, object], message: str) -> None:
     spec = {"model": {"path": "m"}, "params": {"prompt": "x"}, **change}
     with pytest.raises(SpecError, match=message):
         Sdxl().validate(spec)
+
+
+def test_sdxl_loras() -> None:
+    spec = Sdxl().validate(
+        {
+            "model": {"path": "m", "size": 5},
+            "params": {"prompt": "x"},
+            "loras": [{"path": "a", "weight": -3}, {"path": "b"}],
+        }
+    )
+    assert spec["loras"] == [
+        {"path": "a", "weight": -2.0, "size": None},
+        {"path": "b", "weight": 1.0, "size": None},
+    ]
+    assert spec_assets(spec) == [
+        {"path": "m", "size": 5, "kind": "model"},
+        {"path": "a", "size": None, "kind": "lora"},
+        {"path": "b", "size": None, "kind": "lora"},
+    ]
+
+
+@pytest.mark.parametrize(
+    ("loras", "message"),
+    [
+        ("a", "list"),
+        ([{"path": "a"}, {"path": "a"}], "twice"),
+        ([{"weight": 1}], "path"),
+        ([{"path": str(i)} for i in range(9)], "At most 8"),
+        ([{"path": "a", "weight": "high"}], "number"),
+    ],
+)
+def test_sdxl_rejects_bad_loras(loras: object, message: str) -> None:
+    with pytest.raises(SpecError, match=message):
+        Sdxl().validate({"model": {"path": "m"}, "params": {"prompt": "x"}, "loras": loras})
+
+
+def test_asset_index_keeps_previews_referenced(tmp_path: Path) -> None:
+    db = Database(tmp_path / "db.sqlite")
+    lora = {"path": "loras/sdxl/a.safetensors", "kind": "lora", "drive_file_id": "a"}
+    db.replace_assets([{**lora, "preview_thumb": "p1", "sidecar": {"label": "A"}}])
+    assert db.list_assets(kind="lora")[0]["sidecar"] == {"label": "A"}
+    db.replace_assets([{**lora, "preview_thumb": "p2"}])
+    refs = db.conn.execute("SELECT blob_sha FROM blob_refs WHERE ref_type = 'asset'").fetchall()
+    assert [r[0] for r in refs] == ["p2"]
+    db.close()
+
+
+def test_database_migrates_old_asset_tables(tmp_path: Path) -> None:
+    import sqlite3  # noqa: PLC0415
+
+    conn = sqlite3.connect(tmp_path / "db.sqlite")
+    conn.execute(
+        "CREATE TABLE assets (path TEXT PRIMARY KEY, family TEXT, kind TEXT NOT NULL,"
+        " drive_file_id TEXT NOT NULL, size INTEGER, mtime TEXT, md5 TEXT, sidecar TEXT,"
+        " preview_thumb TEXT, indexed_at TEXT NOT NULL)"
+    )
+    conn.close()
+    db = Database(tmp_path / "db.sqlite")
+    db.replace_assets([{"path": "p", "kind": "lora", "drive_file_id": "a", "sidecar_rev": "r"}])
+    assert db.get_asset("p")["sidecar_rev"] == "r"  # type: ignore[index]
+    db.close()
 
 
 # -- storage, config, bundle ---------------------------------------------------------------

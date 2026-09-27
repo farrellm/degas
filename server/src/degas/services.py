@@ -34,6 +34,7 @@ class Services:
     sessions: SessionManager
     dispatcher: Dispatcher
     _tasks: list[asyncio.Task[None]] = field(default_factory=list)
+    _rescan_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     rng: random.Random = field(default_factory=random.SystemRandom)
 
     async def start(self) -> None:
@@ -53,8 +54,11 @@ class Services:
         self.db.close()
 
     async def rescan(self) -> int:
-        assets = await self.indexer.scan()
-        count = self.db.replace_assets(assets)
+        async with self._rescan_lock:
+            assets = await self.indexer.scan()
+            previous = {a["path"]: a for a in self.db.list_assets()}
+            await self.indexer.enrich(assets, previous, self.blobs.put)
+            count = self.db.replace_assets(assets)
         self.bus.publish({"type": "assets", "count": count})
         return count
 

@@ -1,6 +1,7 @@
 """Fakes for the Colab CLI and SSH tunnel; the worker is the real app over ASGI."""
 
 import io
+import stat
 from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
@@ -79,10 +80,23 @@ def png(seed: int) -> bytes:
     return buf.getvalue()
 
 
+# Stand-in for rclone: `copyto SRC DEST ...` writes 10 bytes to DEST.
+FAKE_RCLONE = """#!/bin/sh
+mkdir -p "$(dirname "$3")"
+printf '0123456789' > "$3"
+echo '{"level":"notice","msg":"stats","stats":{"bytes":10,"totalBytes":10}}' >&2
+"""
+
+
 class FakeSdxl:
     fail: str | None = None
+    fetch = False  # copy the spec's model and LoRAs into the VM cache, like the real runner
 
     def run(self, spec: dict[str, Any], seeds: list[int], ctx: RunContext) -> Iterator[Output]:
+        if self.fetch:
+            for asset in [spec["model"], *spec.get("loras", [])]:
+                ctx.fetch_asset(asset["path"], asset.get("size"))
+            ctx.progress(0, "load", 1, 1)
         for item, seed in enumerate(seeds):
             for step in range(2):
                 ctx.check_cancelled()
@@ -121,8 +135,14 @@ class Harness:
         def exit_process() -> None:
             self.worker_exits += 1
 
+        rclone = tmp_path / "rclone"
+        rclone.write_text(FAKE_RCLONE)
+        rclone.chmod(rclone.stat().st_mode | stat.S_IEXEC)
         self.worker_app = create_worker_app(
-            self.worker_paths, {"sdxl": runner_factory}, exit_process=exit_process
+            self.worker_paths,
+            {"sdxl": runner_factory},
+            rclone=str(rclone),
+            exit_process=exit_process,
         )
         self.config = Config(data_dir=tmp_path / "data", web_dist=tmp_path / "no-web")
         key = self.config.ssh_key
@@ -163,4 +183,12 @@ MODEL = {
     "kind": "model",
     "drive_file_id": "f1",
     "size": 1234,
+}
+LORA = {
+    "path": "loras/sdxl/film.safetensors",
+    "family": "sdxl",
+    "kind": "lora",
+    "drive_file_id": "l1",
+    "size": 10,
+    "sidecar": {"label": "Film Grain v3", "trigger_words": ["filmgrain"]},
 }

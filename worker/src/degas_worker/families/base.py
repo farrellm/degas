@@ -20,7 +20,9 @@ class Output:
 
 
 class RunContext(Protocol):
-    def progress(self, item: int, phase: str, step: int, steps: int) -> None: ...
+    def progress(
+        self, item: int, phase: str, step: int, steps: int, asset: str | None = None
+    ) -> None: ...
 
     def check_cancelled(self) -> None:
         """Raise `JobCancelled` if the job has been cancelled."""

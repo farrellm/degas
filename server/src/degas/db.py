@@ -66,7 +66,9 @@ CREATE TABLE IF NOT EXISTS assets (
     mtime TEXT,
     md5 TEXT,
     sidecar TEXT,
+    sidecar_rev TEXT,
     preview_thumb TEXT,
+    preview_rev TEXT,
     indexed_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS settings (
@@ -74,6 +76,12 @@ CREATE TABLE IF NOT EXISTS settings (
     value TEXT NOT NULL
 );
 """
+
+# Columns added after a table was first created: (table, column, type).
+MIGRATIONS = (
+    ("assets", "sidecar_rev", "TEXT"),
+    ("assets", "preview_rev", "TEXT"),
+)
 
 ACTIVE_SESSION_STATES = ("starting", "ready", "busy", "stopping")
 RESULT_TTL = timedelta(hours=24)
@@ -103,6 +111,10 @@ class Database:
         self.conn.row_factory = sqlite3.Row
         self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.executescript(SCHEMA)
+        for table, column, type_ in MIGRATIONS:
+            cols = {r["name"] for r in self.conn.execute(f"PRAGMA table_info({table})")}
+            if column not in cols:
+                self.conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {type_}")
 
     def close(self) -> None:
         self.conn.close()
@@ -265,6 +277,7 @@ class Database:
     # -- assets ----------------------------------------------------------------------------
 
     def replace_assets(self, assets: Iterable[dict[str, Any]]) -> int:
+        """Replace the Drive index. Preview images are held by `asset` blob refs."""
         ts = now()
         rows = [
             (
@@ -276,6 +289,9 @@ class Database:
                 a.get("mtime"),
                 a.get("md5"),
                 json.dumps(a["sidecar"]) if a.get("sidecar") is not None else None,
+                a.get("sidecar_rev"),
+                a.get("preview_thumb"),
+                a.get("preview_rev"),
                 ts,
             )
             for a in assets
@@ -285,8 +301,15 @@ class Database:
             self.conn.execute("DELETE FROM assets")
             self.conn.executemany(
                 "INSERT INTO assets (path, family, kind, drive_file_id, size, mtime, md5,"
-                " sidecar, indexed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                " sidecar, sidecar_rev, preview_thumb, preview_rev, indexed_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 rows,
+            )
+            self.conn.execute("DELETE FROM blob_refs WHERE ref_type = 'asset'")
+            self.conn.executemany(
+                "INSERT OR IGNORE INTO blob_refs (blob_sha, ref_type, ref_id)"
+                " VALUES (?, 'asset', ?)",
+                [(r[9], r[0]) for r in rows if r[9]],
             )
         self.set_setting("drive.indexed_at", ts)
         return len(rows)

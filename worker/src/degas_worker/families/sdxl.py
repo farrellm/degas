@@ -1,5 +1,6 @@
-"""Stable Diffusion XL runner (t2i)."""
+"""Stable Diffusion XL runner (t2i, with LoRAs)."""
 
+import contextlib
 import gc
 import io
 from collections.abc import Iterator
@@ -17,6 +18,7 @@ from diffusers import (
 )
 
 from degas_worker.families.base import Output, RunContext
+from degas_worker.families.lora import plan_loras
 
 # Keep in sync with the server descriptor (degas/families/sdxl.py).
 SCHEDULERS: dict[str, tuple[Any, dict[str, Any]]] = {
@@ -36,6 +38,7 @@ class SdxlRunner:
     def __init__(self) -> None:
         self.pipe: Any = None
         self.model_path: Path | None = None
+        self.adapters: dict[str, str] = {}  # LoRA asset path → loaded adapter name
         self._scheduler_config: Any = None
 
     def run(self, spec: dict[str, Any], seeds: list[int], ctx: RunContext) -> Iterator[Output]:
@@ -44,9 +47,14 @@ class SdxlRunner:
             raise ValueError(f"SDXL mode {mode!r} is not supported yet")
         model = spec["model"]
         path = ctx.fetch_asset(model["path"], model.get("size"))
+        loras = [
+            (lora["path"], ctx.fetch_asset(lora["path"], lora.get("size")), float(lora["weight"]))
+            for lora in spec.get("loras") or []
+        ]
         ctx.check_cancelled()
         ctx.progress(0, "load", 0, 1)
         self._load(path)
+        self._apply_loras(loras)
         ctx.progress(0, "load", 1, 1)
 
         params = spec["params"]
@@ -98,7 +106,26 @@ class SdxlRunner:
         pipe.set_progress_bar_config(disable=True)
         self.pipe = pipe
         self.model_path = path
+        self.adapters = {}
         self._scheduler_config = pipe.scheduler.config
+
+    def _apply_loras(self, loras: list[tuple[str, Path, float]]) -> None:
+        """Load only new adapters, delete ones no longer requested, then set the weights."""
+        plan = plan_loras(self.adapters, [(path, weight) for path, _, weight in loras])
+        if plan.remove:
+            self.pipe.delete_adapters(plan.remove)
+            self.adapters = {p: n for p, n in self.adapters.items() if n not in plan.remove}
+        local = {path: file for path, file, _ in loras}
+        for path, name in plan.add:
+            try:
+                self.pipe.load_lora_weights(str(local[path]), adapter_name=name)
+            except Exception as e:
+                with contextlib.suppress(Exception):
+                    self.pipe.delete_adapters([name])
+                raise ValueError(f"Could not load LoRA {path}: {e}") from e
+            self.adapters[path] = name
+        if plan.names:
+            self.pipe.set_adapters(plan.names, adapter_weights=plan.weights)
 
     def _set_scheduler(self, name: str) -> None:
         try:
@@ -112,5 +139,6 @@ class SdxlRunner:
             return
         self.pipe = None
         self.model_path = None
+        self.adapters = {}
         gc.collect()
         torch.cuda.empty_cache()

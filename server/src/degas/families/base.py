@@ -69,6 +69,44 @@ def describe(family: FamilyDescriptor) -> dict[str, Any]:
     }
 
 
+LORA_WEIGHT: JsonSchema = {"type": "number", "minimum": -2, "maximum": 2}
+
+
+def spec_assets(spec: dict[str, Any]) -> list[dict[str, Any]]:
+    """The Drive assets a validated spec needs on the GPU: `[{path, size, kind}]`."""
+    assets = [{**spec["model"], "kind": "model"}]
+    for lora in spec.get("loras") or []:
+        for part in lora_files(lora):
+            assets.append({"path": part["path"], "size": part.get("size"), "kind": "lora"})
+    return assets
+
+
+def lora_files(lora: dict[str, Any]) -> list[dict[str, Any]]:
+    """The file entries of a LoRA: itself, or the high/low halves of a Wan A14B pair."""
+    if "high" in lora or "low" in lora:
+        return [part for part in (lora.get("high"), lora.get("low")) if part]
+    return [lora]
+
+
+def validate_single_loras(loras: Any, limit: int) -> list[dict[str, Any]]:
+    """Validate a list of single-file LoRAs: `[{path, weight}]`."""
+    if loras is None:
+        return []
+    if not isinstance(loras, list):
+        raise SpecError("loras: expected a list")
+    if len(loras) > limit:
+        raise SpecError(f"At most {limit} LoRAs can be applied at once")
+    out: list[dict[str, Any]] = []
+    for lora in loras:
+        if not isinstance(lora, dict) or not isinstance(lora.get("path"), str):
+            raise SpecError("Each LoRA needs a path")
+        if any(o["path"] == lora["path"] for o in out):
+            raise SpecError(f"LoRA {lora['path']} is listed twice")
+        weight = _coerce("LoRA weight", LORA_WEIGHT, lora.get("weight", 1.0))
+        out.append({"path": lora["path"], "weight": weight, "size": lora.get("size")})
+    return out
+
+
 def validate_params(schema: JsonSchema, params: dict[str, Any]) -> dict[str, Any]:
     """Fill defaults and clamp/coerce values according to a (flat) param schema."""
     out: dict[str, Any] = {}

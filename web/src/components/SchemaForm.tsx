@@ -1,4 +1,4 @@
-import { Fragment, type ReactNode } from 'react'
+import { Fragment, type ReactNode, type Ref } from 'react'
 import type { ParamProp, ParamSchema, Params } from '../api'
 import { size } from '../format'
 
@@ -9,6 +9,9 @@ interface Props {
   presets: [number, number][]
   /** Rows shown first in the settings list (e.g. the model picker). */
   leadingRows?: ReactNode
+  /** The main prompt field, e.g. to insert trigger words at the cursor. */
+  promptRef?: Ref<HTMLTextAreaElement>
+  onPromptFocus?: () => void
 }
 
 /**
@@ -16,7 +19,15 @@ interface Props {
  * go in the prompt block, everything else in the settings list, with
  * advanced params under "More settings".
  */
-export function SchemaForm({ schema, values, onChange, presets, leadingRows }: Props) {
+export function SchemaForm({
+  schema,
+  values,
+  onChange,
+  presets,
+  leadingRows,
+  promptRef,
+  onPromptFocus,
+}: Props) {
   const set = (name: string, value: string | number | null) => {
     onChange({ ...values, [name]: value })
   }
@@ -40,6 +51,8 @@ export function SchemaForm({ schema, values, onChange, presets, leadingRows }: P
               {i > 0 && <hr />}
               <label htmlFor={`param-${name}`}>{prop.title ?? name}</label>
               <textarea
+                ref={i === 0 ? promptRef : undefined}
+                onFocus={i === 0 ? onPromptFocus : undefined}
                 id={`param-${name}`}
                 className={i > 0 ? 'secondary-prompt' : undefined}
                 rows={i === 0 ? 3 : 1}

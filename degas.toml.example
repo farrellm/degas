@@ -14,6 +14,7 @@ session_name = "degas"
 # ssh_key = "data/ssh/id_ed25519"   # generated on first session start if missing
 # rclone_binary = "/path/to/static/linux-amd64/rclone"  # default: the VM downloads rclone itself
 worker_port = 8765
+cache_budget_gb = 150      # models and LoRAs copied to the VM are evicted LRU above this
 exec_heartbeat = true      # trivial `colab exec` every 5 min while a session is active
 
 [drive]

@@ -192,8 +192,8 @@ A *Denoise strength* slider row appears for i2i and inpaint, from the schema.
 | `SchemaForm` | Phase 1 | Prompt block + settings rows; `leadingRows` slot for non-schema rows |
 | Sketch tile | Phase 1 | `.tile.sketch` with `--p` in 0..1; `.waiting` and `.indeterminate` variants |
 | Viewer + wall label | Phase 1 | Shared by Results and Library |
-| Asset picker sheet | Phase 2 | Models, LoRAs, ControlNets |
-| LoRA row | Phase 2 | Single weight; paired high/low weights in Phase 4 |
+| `AssetPicker` | Phase 2 | Models and LoRAs (ControlNets in Phase 7); search from 7 rows |
+| `LoraList` | Phase 2 | Single weight 0–2; paired high/low weights in Phase 4 |
 | Image picker sheet | Phase 4 | |
 | Crop editor | Phase 4 | Full screen |
 | Mask editor | Phase 6 | Full screen, canvas; SAM in Phase 7 |

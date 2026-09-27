@@ -23,6 +23,8 @@ class ColabConfig(_Section):
     # Static linux-amd64 rclone to upload. If unset, the VM downloads the official build.
     rclone_binary: Path | None = None
     worker_port: int = 8765
+    # The VM's model cache is evicted least-recently-used above this size (it has ~190 GB free).
+    cache_budget_gb: float = 150
     # Trivial `colab exec` every few minutes in case an idle kernel gets the VM reclaimed.
     exec_heartbeat: bool = True
 

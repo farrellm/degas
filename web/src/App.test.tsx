@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
@@ -9,6 +9,7 @@ const FAMILIES = [
     id: 'sdxl',
     label: 'Stable Diffusion XL',
     media: 'image',
+    lora_format: 'single',
     variants: [
       {
         id: 'base',
@@ -57,19 +58,71 @@ const SCHEMA = {
   },
 }
 
-const SESSION = {
-  session: null,
-  step: null,
-  worker: null,
-  idle_deadline: null,
-  idle_timeout_min: 15,
-  drive: { configured: true, authorized: true, error: null, push_error: null },
-  gpus: ['T4', 'L4'],
+function SESSION_BASE() {
+  return {
+    session: null,
+    step: null,
+    worker: null,
+    idle_deadline: null,
+    idle_timeout_min: 15,
+    drive: { configured: true, authorized: true, error: null, push_error: null },
+    gpus: ['T4', 'L4'],
+  }
 }
 
-const MODELS = [
-  { path: 'models/sdxl/juggernaut.safetensors', family: 'sdxl', kind: 'model', size: 1 },
+const SESSION = SESSION_BASE()
+
+const ASSETS = [
+  {
+    path: 'models/sdxl/juggernaut.safetensors',
+    family: 'sdxl',
+    kind: 'model',
+    size: 6_938_040_682,
+    sidecar: { label: 'Juggernaut XL v10' },
+    preview_thumb: null,
+  },
+  {
+    path: 'models/sdxl/base.safetensors',
+    family: 'sdxl',
+    kind: 'model',
+    size: 6_938_040_682,
+    sidecar: null,
+    preview_thumb: null,
+  },
+  {
+    path: 'loras/sdxl/film.safetensors',
+    family: 'sdxl',
+    kind: 'lora',
+    size: 144_000_000,
+    sidecar: { label: 'Film Grain v3', trigger_words: ['filmgrain'], default_weight: 0.8 },
+    preview_thumb: 'abc',
+  },
 ]
+
+const RUNNING = {
+  ...SESSION_BASE(),
+  session: {
+    id: 's1',
+    gpu: 'L4',
+    high_mem: false,
+    state: 'ready',
+    started_at: '2026-09-27T12:00:00Z',
+    ended_at: null,
+    last_activity_at: '2026-09-27T12:00:00Z',
+    error: null,
+  },
+  worker: {
+    gpu: 'NVIDIA L4',
+    vram_free: 20e9,
+    vram_total: 24e9,
+    disk_free: 150e9,
+    cache: {
+      used: 6_938_040_682,
+      budget: 150e9,
+      files: [{ path: 'models/sdxl/juggernaut.safetensors', size: 6_938_040_682, last_used: 1 }],
+    },
+  },
+}
 
 const SPEC = {
   family: 'sdxl',
@@ -99,7 +152,13 @@ function mockApi(overrides: Record<string, Handler> = {}) {
   const routes: Record<string, Handler> = {
     'GET /api/families': () => FAMILIES,
     'GET /api/families/sdxl/schema': () => SCHEMA,
-    'GET /api/assets': () => MODELS,
+    'GET /api/assets': () => ASSETS,
+    'GET /api/drive': () => ({
+      configured: true,
+      authorized: true,
+      error: null,
+      indexed_at: '2026-09-27T12:00:00Z',
+    }),
     'GET /api/session': () => SESSION,
     'GET /api/jobs': () => [],
     'GET /api/results': () => ({ results: [], cursor: null }),
@@ -140,9 +199,7 @@ describe('App', () => {
     mockApi()
     renderApp()
     expect(await screen.findByLabelText('Prompt')).toBeInTheDocument()
-    expect(screen.getByRole('combobox', { name: 'Model' })).toHaveValue(
-      'models/sdxl/juggernaut.safetensors',
-    )
+    expect(screen.getByRole('button', { name: 'Model Juggernaut XL v10' })).toBeInTheDocument()
     expect(screen.getByRole('slider', { name: /Steps/ })).toHaveValue('30')
     expect(screen.getByRole('button', { name: '832×1216' })).toBeInTheDocument()
     expect(screen.getByText(/No GPU is running/)).toBeInTheDocument()
@@ -170,6 +227,7 @@ describe('App', () => {
           variant: 'base',
           mode: 't2i',
           model: { path: 'models/sdxl/juggernaut.safetensors' },
+          loras: [],
           params: {
             prompt: 'a lighthouse',
             width: 832,
@@ -183,6 +241,79 @@ describe('App', () => {
         seed_mode: 'increment',
       },
     ])
+  })
+
+  it('picks a model, showing which ones are already on the GPU', async () => {
+    mockApi({ 'GET /api/session': () => RUNNING })
+    const user = userEvent.setup()
+    renderApp()
+    await user.click(await screen.findByRole('button', { name: 'Model Juggernaut XL v10' }))
+    const sheet = screen.getByRole('dialog', { name: 'Model' })
+    const current = within(sheet).getByRole('button', { name: /Juggernaut XL v10/ })
+    expect(current).toHaveAttribute('aria-pressed', 'true')
+    expect(current).toHaveTextContent('6.9 GB, on the GPU')
+    const other = within(sheet).getByRole('button', { name: /^base/ })
+    expect(other).toHaveTextContent('6.9 GB, about 100 s to copy')
+    expect(within(sheet).getByText('Indexed', { exact: false })).toBeInTheDocument()
+    await user.click(other)
+    expect(screen.queryByRole('dialog', { name: 'Model' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Model base' })).toBeInTheDocument()
+  })
+
+  it('adds a LoRA, weights it, and taps its trigger word into the prompt', async () => {
+    const submitted: { spec: { loras: unknown; params: { prompt: string } } }[] = []
+    mockApi({
+      'POST /api/jobs': (init) => {
+        submitted.push(JSON.parse(init?.body as string) as (typeof submitted)[number])
+        return { id: 'j1' }
+      },
+    })
+    const user = userEvent.setup()
+    renderApp()
+    await user.type(await screen.findByLabelText('Prompt'), 'a lighthouse')
+    await user.click(screen.getByRole('button', { name: 'Add LoRA' }))
+    await user.click(
+      within(screen.getByRole('dialog', { name: 'Add LoRA' })).getByRole('button', {
+        name: /Film Grain v3/,
+      }),
+    )
+    const weight = screen.getByRole('slider', { name: 'Film Grain v3 weight' })
+    expect(weight).toHaveValue('0.8') // the sidecar's default weight
+    fireEvent.change(weight, { target: { value: '0.55' } })
+    expect(screen.getByText('0.55')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Add “filmgrain” to the prompt' }))
+    expect(screen.getByLabelText('Prompt')).toHaveValue('a lighthouse, filmgrain')
+
+    await user.click(screen.getByRole('button', { name: 'Generate' }))
+    await screen.findByText('Queued 1 image.')
+    expect(submitted[0]?.spec.loras).toEqual([
+      { path: 'loras/sdxl/film.safetensors', weight: 0.55 },
+    ])
+
+    await user.click(screen.getByRole('button', { name: 'Remove Film Grain v3' }))
+    expect(screen.queryByRole('slider', { name: 'Film Grain v3 weight' })).not.toBeInTheDocument()
+  })
+
+  it('flags a LoRA from an old draft that is no longer in Drive', async () => {
+    localStorage.setItem(
+      'degas.create.draft',
+      JSON.stringify({ loras: [{ path: 'loras/sdxl/gone.safetensors', weight: 1 }] }),
+    )
+    mockApi()
+    renderApp()
+    expect(await screen.findByText(/Not found in Drive/)).toBeInTheDocument()
+    expect(screen.getByRole('slider', { name: 'gone weight' })).toBeInTheDocument()
+  })
+
+  it('lists what is on the GPU in the session sheet', async () => {
+    mockApi({ 'GET /api/session': () => RUNNING })
+    const user = userEvent.setup()
+    renderApp()
+    await user.click(await screen.findByRole('button', { name: /L4 session ready/ }))
+    const section = screen.getByRole('region', { name: 'On the GPU' })
+    expect(within(section).getByText('Juggernaut XL v10')).toBeInTheDocument()
+    expect(within(section).getByText(/6.9 GB of 150 GB used/)).toBeInTheDocument()
   })
 
   it('keeps Generate disabled until there is a prompt', async () => {

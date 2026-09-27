@@ -85,26 +85,38 @@ class _Context:
     def __init__(self, record: JobRecord, cache: AssetCache) -> None:
         self._record = record
         self._cache = cache
+        self.pins: list[str] = []  # assets this job uses, kept out of eviction until it ends
 
-    def progress(self, item: int, phase: str, step: int, steps: int) -> None:
-        self._record.emit(
-            {"t": "progress", "item": item, "phase": phase, "step": step, "steps": steps}
-        )
+    def progress(
+        self, item: int, phase: str, step: int, steps: int, asset: str | None = None
+    ) -> None:
+        event: Event = {"t": "progress", "item": item, "phase": phase, "step": step}
+        event["steps"] = steps
+        if asset is not None:
+            event["asset"] = asset
+        self._record.emit(event)
 
     def check_cancelled(self) -> None:
         if self._record.cancel.is_set():
             raise JobCancelled
 
     def fetch_asset(self, path: str, size: int | None = None, item: int = 0) -> Path:
+        self._cache.pin(path)
+        self.pins.append(path)
         if self._cache.is_cached(path, size):
             return self._cache.ensure(path, size)
-        self.progress(item, "copy", 0, size or 0)
+        self.progress(item, "copy", 0, size or 0, path)
 
         def on_progress(done: int, total: int) -> None:
             self.check_cancelled()
-            self.progress(item, "copy", done, total)
+            self.progress(item, "copy", done, total, path)
 
         return self._cache.ensure(path, size, on_progress)
+
+    def release(self) -> None:
+        for path in self.pins:
+            self._cache.unpin(path)
+        self.pins.clear()
 
 
 class JobManager:
@@ -191,6 +203,8 @@ class JobManager:
             log.exception("job %s failed", record.id)
             message = str(e) or type(e).__name__
             record.emit({"t": "error", "message": message, "trace": traceback.format_exc()})
+        finally:
+            ctx.release()
 
     # -- outputs ---------------------------------------------------------------------------
 
