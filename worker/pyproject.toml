@@ -1,0 +1,29 @@
+[project]
+name = "degas-worker"
+version = "0.1.0"
+description = "Degas GPU worker: HTTP server running on the Colab VM"
+# Must match the Colab runtime's Python (3.13 as of 2026-09).
+requires-python = ">=3.13,<3.14"
+# Keep this minimal: the Colab image already provides these (see docs/phase0-findings.md).
+dependencies = [
+    "fastapi>=0.141",
+    "uvicorn>=0.52",
+]
+
+[project.optional-dependencies]
+# Preinstalled on Colab; never installed in CI.
+gpu = [
+    "torch>=2.11",
+    "diffusers>=0.40",
+    "transformers>=5.16",
+    "accelerate>=1.14",
+    "peft>=0.20",
+    "safetensors>=0.8",
+]
+
+[build-system]
+requires = ["uv_build>=0.12,<0.13"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "degas_worker"

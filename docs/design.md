@@ -49,7 +49,7 @@ The initial model families are Stable Diffusion XL (images) and Wan 2.2 (video).
 ```
 
 - **Frontend**: a React + Vite single-page PWA. The FastAPI server serves it as static files.
-- **Server**: Python 3.12 and FastAPI. SQLite (via SQLModel or plain SQLAlchemy) holds the metadata. Media lives on the local filesystem. The server is the only component that invokes the `colab` CLI, using asyncio subprocesses.
+- **Server**: Python 3.13 (matching the Colab runtime) and FastAPI. SQLite (via SQLModel or plain SQLAlchemy) holds the metadata. Media lives on the local filesystem. The server is the only component that invokes the `colab` CLI, using asyncio subprocesses.
 - **Worker**: a Python package (`degas_worker`) that runs a small FastAPI/uvicorn HTTP server on the VM, bound to `127.0.0.1`. The server reaches it through an SSH tunnel (§3.2). Loaded pipelines stay in the worker's memory between jobs. The worker process is started from the Colab kernel, so it inherits the kernel's CUDA environment (Phase 0 finding 6).
 
 ### Network and security
