@@ -9,6 +9,7 @@ models and LoRAs are prefetched into the VM's cache (design §5).
 
 import asyncio
 import logging
+from datetime import UTC, datetime
 from typing import Any
 
 from degas.blobs import BlobStore
@@ -17,6 +18,7 @@ from degas.colab.worker_client import WorkerBusyError, WorkerClient, WorkerError
 from degas.db import Database, now
 from degas.events import EventBus
 from degas.families.base import spec_assets
+from degas.library import input_blobs
 
 log = logging.getLogger(__name__)
 
@@ -57,6 +59,8 @@ class Dispatcher:
 
     def submit(self, spec: dict[str, Any], seeds: list[int]) -> dict[str, Any]:
         job = self.db.insert_job(spec, seeds)
+        for sha in input_blobs(spec):
+            self.db.add_blob_ref(sha, "job", job["id"])
         self.publish_job(job["id"])
         self.sessions.touch()
         self.wake()
@@ -139,9 +143,24 @@ class Dispatcher:
         finally:
             self._running = None
             self._cancel_requested.discard(job_id)
+        self._record_runtime(job_id)
         self._finish(job_id, status, error)
         self.sessions.set_busy(False)
         await self.sessions.refresh_health()  # the model cache may have changed
+
+    def _record_runtime(self, job_id: str) -> None:
+        """What the job ran on, for saved configs (design §6.4)."""
+        job = self.db.get_job(job_id)
+        session = self.sessions.session
+        health = self.sessions.health or {}
+        runtime: dict[str, Any] = {"gpu": session["gpu"] if session else None}
+        for key in ("diffusers", "torch"):
+            if (health.get("versions") or {}).get(key):
+                runtime[key] = health["versions"][key]
+        if job and job.get("started_at"):
+            started = datetime.fromisoformat(job["started_at"])
+            runtime["duration_s"] = round((datetime.now(UTC) - started).total_seconds(), 1)
+        self.db.update_job(job_id, runtime=runtime)
 
     def _finish(self, job_id: str, status: str, error: str | None) -> None:
         self.db.update_job(job_id, status=status, error=error, finished_at=now())

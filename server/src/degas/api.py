@@ -13,6 +13,7 @@ from degas.colab.session import SessionError
 from degas.drive import DriveError
 from degas.families import FAMILIES
 from degas.families.base import SpecError, describe, lora_files, spec_assets
+from degas.library import input_blobs, release, saved_config
 from degas.services import Services
 
 router = APIRouter(prefix="/api")
@@ -37,6 +38,45 @@ class SubmitJob(BaseModel):
     spec: dict[str, Any]
     batch_count: int = Field(1, ge=1, le=16)
     seed_mode: Literal["increment", "random"] = "increment"
+
+
+Tags = Annotated[list[Annotated[str, Field(min_length=1, max_length=40)]], Field(max_length=20)]
+
+
+class LibraryEdit(BaseModel):
+    title: Annotated[str, Field(max_length=200)] | None = None
+    tags: Tags | None = None
+
+
+class NewPrompt(BaseModel):
+    name: Annotated[str, Field(max_length=200)] = ""
+    prompt: str
+    negative_prompt: str = ""
+    family: str | None = None
+    tags: Tags = []
+
+
+class PromptEdit(BaseModel):
+    name: Annotated[str, Field(min_length=1, max_length=200)] | None = None
+    tags: Tags | None = None
+
+
+PROMPT_NAME_WORDS = 6
+
+
+def prompt_name(prompt: str) -> str:
+    """A saved prompt's default name: its first few words."""
+    words = prompt.replace(",", " ").split()
+    name = " ".join(words[:PROMPT_NAME_WORDS])
+    return name + ("…" if len(words) > PROMPT_NAME_WORDS else "")
+
+
+def _clean_tags(tags: list[str]) -> list[str]:
+    out: list[str] = []
+    for tag in (t.strip() for t in tags):
+        if tag and tag.lower() not in (o.lower() for o in out):
+            out.append(tag)
+    return out
 
 
 @router.get("/health")
@@ -176,7 +216,7 @@ async def cancel_job(svc: Svc, job_id: str) -> dict[str, Any]:
     return {"cancelled": cancelled}
 
 
-# -- results and blobs ---------------------------------------------------------------------
+# -- results -----------------------------------------------------------------------------
 
 
 @router.get("/results")
@@ -195,6 +235,122 @@ async def list_results(
         r["spec"] = specs[r["job_id"]]
     next_cursor = results[-1]["created_at"] if len(results) == limit else None
     return {"results": results, "cursor": next_cursor}
+
+
+@router.post("/results/{result_id}/save")
+async def save_result(svc: Svc, result_id: str) -> dict[str, Any]:
+    """Keep a result in the library, with the config that reproduces it."""
+    result = svc.db.get_result(result_id)
+    if result is None:
+        raise HTTPException(404, "Unknown result")
+    existing = svc.db.library_item_for_result(result_id)
+    if existing is not None:
+        return existing
+    job = svc.db.get_job(result["job_id"])
+    if job is None:
+        raise HTTPException(409, "The job for this result is gone")
+    config = saved_config(job, result)
+    item = svc.db.insert_library_item(result, config, input_blobs(config))
+    svc.bus.publish({"type": "library", "result": result_id, "item": item["id"]})
+    return item
+
+
+# -- library -------------------------------------------------------------------------------
+
+
+@router.get("/library")
+async def list_library(
+    svc: Svc,
+    q: str | None = None,
+    cursor: str | None = None,
+    limit: Annotated[int, Query(ge=1, le=200)] = 60,
+) -> dict[str, Any]:
+    items = svc.db.list_library(q, cursor, limit)
+    next_cursor = items[-1]["created_at"] if len(items) == limit else None
+    return {"items": items, "cursor": next_cursor}
+
+
+def _library_item(svc: Services, item_id: str) -> dict[str, Any]:
+    item = svc.db.get_library_item(item_id)
+    if item is None:
+        raise HTTPException(404, "Unknown library item")
+    return item
+
+
+@router.get("/library/{item_id}")
+async def get_library_item(svc: Svc, item_id: str) -> dict[str, Any]:
+    return _library_item(svc, item_id)
+
+
+@router.patch("/library/{item_id}")
+async def edit_library_item(svc: Svc, item_id: str, body: LibraryEdit) -> dict[str, Any]:
+    _library_item(svc, item_id)
+    fields: dict[str, Any] = {}
+    if body.title is not None:
+        fields["title"] = body.title.strip() or None
+    if body.tags is not None:
+        fields["tags"] = _clean_tags(body.tags)
+    svc.db.update_library_item(item_id, **fields)
+    svc.bus.publish({"type": "library", "item": item_id})
+    return _library_item(svc, item_id)
+
+
+@router.delete("/library/{item_id}")
+async def delete_library_item(svc: Svc, item_id: str) -> dict[str, Any]:
+    item = _library_item(svc, item_id)
+    release(svc.db, svc.blobs, svc.db.delete_library_item(item_id))
+    svc.bus.publish({"type": "library", "result": item["source_result_id"], "item": item_id})
+    return {"deleted": True}
+
+
+# -- saved prompts -------------------------------------------------------------------------
+
+
+@router.get("/prompts")
+async def list_prompts(svc: Svc, q: str | None = None) -> list[dict[str, Any]]:
+    return svc.db.list_prompts(q)
+
+
+@router.post("/prompts", status_code=201)
+async def save_prompt(svc: Svc, body: NewPrompt) -> dict[str, Any]:
+    if not body.prompt.strip():
+        raise HTTPException(400, "The prompt is empty")
+    saved = svc.db.insert_prompt(
+        body.name.strip() or prompt_name(body.prompt),
+        body.prompt,
+        body.negative_prompt,
+        body.family,
+        _clean_tags(body.tags),
+    )
+    svc.bus.publish({"type": "prompts"})
+    return saved
+
+
+@router.patch("/prompts/{prompt_id}")
+async def edit_prompt(svc: Svc, prompt_id: str, body: PromptEdit) -> dict[str, Any]:
+    if svc.db.get_prompt(prompt_id) is None:
+        raise HTTPException(404, "Unknown prompt")
+    fields: dict[str, Any] = {}
+    if body.name is not None and body.name.strip():
+        fields["name"] = body.name.strip()
+    if body.tags is not None:
+        fields["tags"] = _clean_tags(body.tags)
+    svc.db.update_prompt(prompt_id, **fields)
+    svc.bus.publish({"type": "prompts"})
+    saved = svc.db.get_prompt(prompt_id)
+    assert saved is not None
+    return saved
+
+
+@router.delete("/prompts/{prompt_id}")
+async def delete_prompt(svc: Svc, prompt_id: str) -> dict[str, Any]:
+    if not svc.db.delete_prompt(prompt_id):
+        raise HTTPException(404, "Unknown prompt")
+    svc.bus.publish({"type": "prompts"})
+    return {"deleted": True}
+
+
+# -- blobs ---------------------------------------------------------------------------------
 
 
 @router.get("/blobs/{sha}")

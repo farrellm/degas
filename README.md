@@ -18,7 +18,7 @@ Personal generative image/video web app: an iPhone PWA over Tailscale, with infe
 
 ## Running
 
-Phases 1–2 are implemented: SDXL text-to-image with LoRAs, and a model cache on the GPU VM. One-time setup on the home server:
+Phases 1–3 are implemented: SDXL text-to-image with LoRAs, a model cache on the GPU VM, and a library of kept images and saved prompts with remix. One-time setup on the home server:
 
 1. Install and authenticate the Colab CLI: `uv tool install google-colab-cli`, then run any `colab` command once to sign in.
 2. Create a Google Cloud OAuth client of type *Desktop app* with the Drive API enabled, and download its JSON.
@@ -27,7 +27,7 @@ Phases 1–2 are implemented: SDXL text-to-image with LoRAs, and a model cache o
 5. Put SDXL checkpoints in Drive under `My Drive/degas/models/sdxl/` and LoRAs under `My Drive/degas/loras/sdxl/`, optionally each with a `<name>.yaml` sidecar (label, trigger words, default weight) and a `<name>.jpg` preview. Then run `uv run degas rescan` (or **Rescan Drive** in the app).
 6. `make build && uv run degas` serves the API and the PWA on `127.0.0.1:8420`; `tailscale serve --bg https / http://127.0.0.1:8420` exposes it on the tailnet.
 
-In the app: tap **No GPU** in the header to start a GPU session, write a prompt in **Create** → Generate, and watch images arrive in **Results**. The session stops itself after `idle_timeout_min` without activity.
+In the app: tap **No GPU** in the header to start a GPU session, write a prompt in **Create** → Generate, and watch images arrive in **Results**. Open an image and choose **Keep** to save it, with its settings, to the **Library**; **Remix** loads those settings back into Create. Images you don't keep are deleted 24 hours after the session ends. The session stops itself after `idle_timeout_min` without activity.
 
 ## Development
 

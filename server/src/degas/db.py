@@ -71,6 +71,29 @@ CREATE TABLE IF NOT EXISTS assets (
     preview_rev TEXT,
     indexed_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS library_items (
+    id TEXT PRIMARY KEY,
+    kind TEXT NOT NULL,
+    blob_sha TEXT NOT NULL,
+    media_type TEXT NOT NULL,
+    width INTEGER,
+    height INTEGER,
+    config TEXT NOT NULL,
+    title TEXT,
+    tags TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    source_result_id TEXT UNIQUE
+);
+CREATE INDEX IF NOT EXISTS library_created ON library_items (created_at);
+CREATE TABLE IF NOT EXISTS prompts (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    prompt TEXT NOT NULL,
+    negative_prompt TEXT NOT NULL,
+    family TEXT,
+    tags TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
@@ -81,6 +104,7 @@ CREATE TABLE IF NOT EXISTS settings (
 MIGRATIONS = (
     ("assets", "sidecar_rev", "TEXT"),
     ("assets", "preview_rev", "TEXT"),
+    ("jobs", "runtime", "TEXT"),
 )
 
 ACTIVE_SESSION_STATES = ("starting", "ready", "busy", "stopping")
@@ -180,7 +204,7 @@ class Database:
 
     def get_job(self, id_: str) -> dict[str, Any] | None:
         row = self.conn.execute("SELECT * FROM jobs WHERE id = ?", (id_,)).fetchone()
-        return _row(row, ("spec", "seeds"))
+        return _row(row, JOB_JSON)
 
     def list_jobs(self, limit: int = 50) -> list[dict[str, Any]]:
         """Queued and running jobs (in queue order), then the most recent finished ones."""
@@ -205,7 +229,7 @@ class Database:
         row = self.conn.execute(
             "SELECT * FROM jobs WHERE status = 'queued' ORDER BY queue_position LIMIT 1"
         ).fetchone()
-        return _row(row, ("spec", "seeds"))
+        return _row(row, JOB_JSON)
 
     def count_pending(self) -> int:
         (n,) = self.conn.execute(
@@ -214,6 +238,8 @@ class Database:
         return int(n)
 
     def update_job(self, id_: str, **fields: Any) -> None:
+        if "runtime" in fields:
+            fields["runtime"] = json.dumps(fields["runtime"])
         self._update("jobs", id_, fields)
 
     # -- results ---------------------------------------------------------------------------
@@ -240,7 +266,7 @@ class Database:
         return result
 
     def get_result(self, id_: str) -> dict[str, Any] | None:
-        row = self.conn.execute("SELECT * FROM results WHERE id = ?", (id_,)).fetchone()
+        row = self.conn.execute(RESULTS_QUERY + " AND r.id = ?", (id_,)).fetchone()
         return _row(row)
 
     def has_result(self, job_id: str, item_index: int) -> bool:
@@ -253,15 +279,15 @@ class Database:
         self, before: str | None = None, limit: int = 60, job_id: str | None = None
     ) -> list[dict[str, Any]]:
         """Newest first. `before` is a `created_at` cursor."""
-        query = "SELECT * FROM results WHERE 1 = 1"
+        query = RESULTS_QUERY
         args: list[Any] = []
         if before:
-            query += " AND created_at < ?"
+            query += " AND r.created_at < ?"
             args.append(before)
         if job_id:
-            query += " AND job_id = ?"
+            query += " AND r.job_id = ?"
             args.append(job_id)
-        query += " ORDER BY created_at DESC, item_index DESC LIMIT ?"
+        query += " ORDER BY r.created_at DESC, r.item_index DESC LIMIT ?"
         args.append(limit)
         return [dict(r) for r in self.conn.execute(query, args).fetchall()]
 
@@ -273,6 +299,186 @@ class Database:
             " VALUES (?, ?, ?, ?)",
             (sha, ref_type, ref_id, expires_at),
         )
+
+    def remove_blob_refs(self, ref_type: str, ref_id: str) -> list[str]:
+        """Drop one referrer's refs; returns the blobs it held."""
+        rows = self.conn.execute(
+            "DELETE FROM blob_refs WHERE ref_type = ? AND ref_id = ? RETURNING blob_sha",
+            (ref_type, ref_id),
+        ).fetchall()
+        return [r[0] for r in rows]
+
+    def is_referenced(self, sha: str) -> bool:
+        row = self.conn.execute("SELECT 1 FROM blob_refs WHERE blob_sha = ?", (sha,)).fetchone()
+        return row is not None
+
+    def referenced_blobs(self) -> set[str]:
+        return {r[0] for r in self.conn.execute("SELECT DISTINCT blob_sha FROM blob_refs")}
+
+    # -- retention (design §6.3) -----------------------------------------------------------
+
+    def expire(self, at: str | None = None) -> dict[str, int]:
+        """Delete expired results, and finished jobs left with nothing to show.
+
+        Blobs are not touched here: whatever lost its last reference is removed by
+        the blob sweep afterwards.
+        """
+        at = at or now()
+        cutoff = (datetime.fromisoformat(at) - RESULT_TTL).isoformat(timespec="milliseconds")
+        with self.conn:
+            self.conn.execute("BEGIN")
+            results = self.conn.execute(
+                "DELETE FROM results WHERE expires_at IS NOT NULL AND expires_at <= ? RETURNING id",
+                (at,),
+            ).fetchall()
+            self.conn.executemany(
+                "DELETE FROM blob_refs WHERE ref_type = 'result' AND ref_id = ?",
+                [(r[0],) for r in results],
+            )
+            jobs = self.conn.execute(
+                "DELETE FROM jobs WHERE status NOT IN ('queued', 'running')"
+                " AND finished_at <= ? AND id NOT IN (SELECT job_id FROM results)"
+                " RETURNING id",
+                (cutoff,),
+            ).fetchall()
+            self.conn.executemany(
+                "DELETE FROM blob_refs WHERE ref_type = 'job' AND ref_id = ?",
+                [(r[0],) for r in jobs],
+            )
+            refs = self.conn.execute(
+                "DELETE FROM blob_refs WHERE expires_at IS NOT NULL AND expires_at <= ?", (at,)
+            ).rowcount
+        return {"results": len(results), "jobs": len(jobs), "refs": refs}
+
+    # -- library ---------------------------------------------------------------------------
+
+    def insert_library_item(
+        self, result: dict[str, Any], config: dict[str, Any], inputs: Iterable[str] = ()
+    ) -> dict[str, Any]:
+        """Keep a result: the item holds its own refs to the image and every input."""
+        id_ = new_id()
+        kind = "video" if result["media_type"].startswith("video/") else "image"
+        with self.conn:
+            self.conn.execute("BEGIN")
+            self.conn.execute(
+                "INSERT INTO library_items (id, kind, blob_sha, media_type, width, height,"
+                " config, title, tags, created_at, source_result_id)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, NULL, '[]', ?, ?)",
+                (
+                    id_,
+                    kind,
+                    result["blob_sha"],
+                    result["media_type"],
+                    result["width"],
+                    result["height"],
+                    json.dumps(config),
+                    now(),
+                    result["id"],
+                ),
+            )
+            for sha in {result["blob_sha"], *inputs}:
+                self.add_blob_ref(sha, "library", id_)
+        item = self.get_library_item(id_)
+        assert item is not None
+        return item
+
+    def get_library_item(self, id_: str) -> dict[str, Any] | None:
+        row = self.conn.execute("SELECT * FROM library_items WHERE id = ?", (id_,)).fetchone()
+        return _row(row, LIBRARY_JSON)
+
+    def library_item_for_result(self, result_id: str) -> dict[str, Any] | None:
+        row = self.conn.execute(
+            "SELECT * FROM library_items WHERE source_result_id = ?", (result_id,)
+        ).fetchone()
+        return _row(row, LIBRARY_JSON)
+
+    def list_library(
+        self, query: str | None = None, before: str | None = None, limit: int = 60
+    ) -> list[dict[str, Any]]:
+        """Newest first, optionally matching prompt text, title or tags."""
+        sql = "SELECT * FROM library_items WHERE 1 = 1"
+        args: list[Any] = []
+        for word in (query or "").split():
+            like = f"%{_escape_like(word)}%"
+            sql += (
+                " AND (json_extract(config, '$.params.prompt') LIKE ? ESCAPE '\\'"
+                " OR json_extract(config, '$.params.negative_prompt') LIKE ? ESCAPE '\\'"
+                " OR title LIKE ? ESCAPE '\\' OR tags LIKE ? ESCAPE '\\')"
+            )
+            args += [like] * 4
+        if before:
+            sql += " AND created_at < ?"
+            args.append(before)
+        sql += " ORDER BY created_at DESC LIMIT ?"
+        args.append(limit)
+        rows = self.conn.execute(sql, args).fetchall()
+        return [i for r in rows if (i := _row(r, LIBRARY_JSON)) is not None]
+
+    def update_library_item(self, id_: str, **fields: Any) -> None:
+        if "tags" in fields:
+            fields["tags"] = json.dumps(fields["tags"], ensure_ascii=False)
+        self._update("library_items", id_, fields)
+
+    def delete_library_item(self, id_: str) -> list[str]:
+        """Delete a kept item; returns the blobs it held."""
+        with self.conn:
+            self.conn.execute("BEGIN")
+            self.conn.execute("DELETE FROM library_items WHERE id = ?", (id_,))
+            return self.remove_blob_refs("library", id_)
+
+    # -- saved prompts ---------------------------------------------------------------------
+
+    def insert_prompt(
+        self,
+        name: str,
+        prompt: str,
+        negative_prompt: str,
+        family: str | None,
+        tags: list[str],
+    ) -> dict[str, Any]:
+        id_ = new_id()
+        self.conn.execute(
+            "INSERT INTO prompts (id, name, prompt, negative_prompt, family, tags, created_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                id_,
+                name,
+                prompt,
+                negative_prompt,
+                family,
+                json.dumps(tags, ensure_ascii=False),
+                now(),
+            ),
+        )
+        saved = self.get_prompt(id_)
+        assert saved is not None
+        return saved
+
+    def get_prompt(self, id_: str) -> dict[str, Any] | None:
+        row = self.conn.execute("SELECT * FROM prompts WHERE id = ?", (id_,)).fetchone()
+        return _row(row, ("tags",))
+
+    def list_prompts(self, query: str | None = None) -> list[dict[str, Any]]:
+        sql = "SELECT * FROM prompts WHERE 1 = 1"
+        args: list[Any] = []
+        for word in (query or "").split():
+            like = f"%{_escape_like(word)}%"
+            sql += (
+                " AND (name LIKE ? ESCAPE '\\' OR prompt LIKE ? ESCAPE '\\'"
+                " OR negative_prompt LIKE ? ESCAPE '\\' OR tags LIKE ? ESCAPE '\\')"
+            )
+            args += [like] * 4
+        sql += " ORDER BY created_at DESC"
+        rows = self.conn.execute(sql, args).fetchall()
+        return [p for r in rows if (p := _row(r, ("tags",))) is not None]
+
+    def update_prompt(self, id_: str, **fields: Any) -> None:
+        if "tags" in fields:
+            fields["tags"] = json.dumps(fields["tags"], ensure_ascii=False)
+        self._update("prompts", id_, fields)
+
+    def delete_prompt(self, id_: str) -> bool:
+        return self.conn.execute("DELETE FROM prompts WHERE id = ?", (id_,)).rowcount > 0
 
     # -- assets ----------------------------------------------------------------------------
 
@@ -347,6 +553,20 @@ class Database:
         )
 
 
+JOB_JSON = ("spec", "seeds", "runtime")
+LIBRARY_JSON = ("config", "tags")
+
+# Results with the library item that keeps each one, if any.
+RESULTS_QUERY = (
+    "SELECT r.*, l.id AS library_id FROM results r"
+    " LEFT JOIN library_items l ON l.source_result_id = r.id WHERE 1 = 1"
+)
+
+
+def _escape_like(text: str) -> str:
+    return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 def _session(row: sqlite3.Row | None) -> dict[str, Any] | None:
     d = _row(row)
     if d is not None:
@@ -355,6 +575,6 @@ def _session(row: sqlite3.Row | None) -> dict[str, Any] | None:
 
 
 def _job(row: sqlite3.Row) -> dict[str, Any]:
-    d = _row(row, ("spec", "seeds"))
+    d = _row(row, JOB_JSON)
     assert d is not None
     return d

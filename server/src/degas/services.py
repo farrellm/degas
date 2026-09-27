@@ -17,10 +17,12 @@ from degas.db import Database
 from degas.dispatcher import Dispatcher
 from degas.drive import DriveAuth, DriveIndexer
 from degas.events import EventBus
+from degas.library import sweep
 
 log = logging.getLogger(__name__)
 
 RESCAN_INTERVAL_S = 6 * 3600
+SWEEP_INTERVAL_S = 3600
 
 
 @dataclass
@@ -41,6 +43,7 @@ class Services:
         await self.sessions.recover()
         self._tasks.append(asyncio.create_task(self.dispatcher.run()))
         self._tasks.append(asyncio.create_task(self._periodic_rescan()))
+        self._tasks.append(asyncio.create_task(self._periodic_sweep()))
 
     async def stop(self) -> None:
         for task in self._tasks:
@@ -61,6 +64,20 @@ class Services:
             count = self.db.replace_assets(assets)
         self.bus.publish({"type": "assets", "count": count})
         return count
+
+    def sweep(self) -> dict[str, int]:
+        counts = sweep(self.db, self.blobs)
+        if counts["results"] or counts["jobs"]:
+            self.bus.publish({"type": "swept", **counts})
+        return counts
+
+    async def _periodic_sweep(self) -> None:
+        while True:
+            try:
+                self.sweep()
+            except Exception:
+                log.exception("retention sweep failed")
+            await asyncio.sleep(SWEEP_INTERVAL_S)
 
     async def _periodic_rescan(self) -> None:
         while True:

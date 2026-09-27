@@ -8,8 +8,10 @@ from typing import Any
 
 import httpx2
 import pytest
+from fastapi.testclient import TestClient
 from PIL import Image
 
+from degas.app import create_app
 from degas.colab.session import STARTED_MARKER, Intervals
 from degas.colab.tunnel import Tunnel
 from degas.colab.worker_client import WorkerClient
@@ -192,3 +194,11 @@ LORA = {
     "size": 10,
     "sidecar": {"label": "Film Grain v3", "trigger_words": ["filmgrain"]},
 }
+
+
+@pytest.fixture
+def client(harness: Harness) -> Iterator[TestClient]:
+    app = create_app(harness.config, harness.services_factory())
+    with TestClient(app) as c:
+        c.app.state.services.db.replace_assets([harness.model, LORA])  # type: ignore[attr-defined]
+        yield c

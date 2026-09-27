@@ -1,10 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useEffect, useRef, useState, type CSSProperties } from 'react'
-import { api, blobUrl, thumbUrl, type Asset, type Job, type Result, type Spec } from '../api'
+import { useState, type CSSProperties } from 'react'
+import { api, thumbUrl, type Asset, type Job, type Result, type Spec } from '../api'
 import { assetLabel, useAssets } from '../assets'
+import { SaveToPhotos, Viewer } from '../components/Viewer'
 import { draftFromSpec } from '../draft'
 import { copyText, itemFraction, phaseText, size } from '../format'
-import { shortTime, timeLeft, useNow } from '../time'
+import { hoursLeft, shortTime, timeLeft, useNow } from '../time'
 
 /** One job's worth of results: the contact-sheet row under a prompt caption. */
 interface Group {
@@ -24,14 +25,8 @@ function modelLine(spec: Spec, assets: Asset[] | undefined): string {
   return n === 0 ? model : `${model} + ${String(n)} ${n === 1 ? 'LoRA' : 'LoRAs'}`
 }
 
-/** "Studio XL v10, with Film Grain v3 at 0.8" for the wall label. */
-function modelWithLoras(spec: Spec, assets: Asset[] | undefined): string {
-  const model = assetLabel(spec.model.path, assets)
-  const loras = (spec.loras ?? []).map(
-    (l) => `${assetLabel(l.path, assets)} at ${String(Number(l.weight.toFixed(2)))}`,
-  )
-  return loras.length ? `${model}, with ${loras.join(' and ')}` : model
-}
+// Unkept images closer than this to deletion get a warning colour.
+const SOON_HOURS = 2
 
 function buildGroups(jobs: Job[], results: Result[]): Group[] {
   const byId = new Map<string, Group>()
@@ -56,10 +51,10 @@ function buildGroups(jobs: Job[], results: Result[]): Group[] {
 }
 
 export function ResultsScreen({
-  onReuse,
+  onRemix,
   onCreate,
 }: {
-  onReuse: () => void
+  onRemix: () => void
   onCreate: () => void
 }) {
   const qc = useQueryClient()
@@ -72,6 +67,16 @@ export function ResultsScreen({
     onSettled: () => qc.invalidateQueries({ queryKey: ['jobs'] }),
   })
   const [open, setOpen] = useState<string | null>(null)
+  const keep = useMutation({
+    mutationFn: async (r: Result) => {
+      await (r.library_id ? api.deleteLibraryItem(r.library_id) : api.keep(r.id))
+    },
+    onSettled: () =>
+      Promise.all([
+        qc.invalidateQueries({ queryKey: ['results'] }),
+        qc.invalidateQueries({ queryKey: ['library'] }),
+      ]),
+  })
 
   if (jobs.isPending || results.isPending) return <p className="loading">Loading…</p>
   if (jobs.error ?? results.error) {
@@ -88,8 +93,8 @@ export function ResultsScreen({
         <div className="tile sketch" aria-hidden />
         <p className="lede">Nothing here yet.</p>
         <p>
-          Images appear here as they finish. Unsaved images are deleted 24 hours after the GPU
-          session ends.
+          Images appear here as they finish. Images you don’t keep are deleted 24 hours after the
+          GPU session ends.
         </p>
         <button type="button" className="btn" onClick={onCreate}>
           Write a prompt
@@ -116,7 +121,7 @@ export function ResultsScreen({
       </div>
       {openIndex >= 0 && (
         <Viewer
-          results={flat}
+          items={flat}
           assets={assets.data}
           index={openIndex}
           onIndex={(i) => {
@@ -125,10 +130,38 @@ export function ResultsScreen({
           onClose={() => {
             setOpen(null)
           }}
-          onReuse={(r) => {
-            if (r.spec) draftFromSpec(r.spec, r.seed)
-            onReuse()
-          }}
+          actions={(r) => (
+            <>
+              <button
+                type="button"
+                className={r.library_id ? 'btn quiet kept wide' : 'btn wide'}
+                aria-pressed={!!r.library_id}
+                disabled={keep.isPending}
+                onClick={() => {
+                  keep.mutate(r)
+                }}
+              >
+                {r.library_id ? 'Kept' : 'Keep'}
+              </button>
+              <SaveToPhotos item={r} />
+              <button
+                type="button"
+                className="btn quiet"
+                disabled={!r.spec}
+                onClick={() => {
+                  if (r.spec) draftFromSpec(r.spec, r.seed)
+                  onRemix()
+                }}
+              >
+                Remix
+              </button>
+              {keep.error && (
+                <p className="viewer-note" role="alert">
+                  {keep.error.message}
+                </p>
+              )}
+            </>
+          )}
         />
       )}
     </>
@@ -158,7 +191,10 @@ function GroupView({
     '--cols': w > h ? 2 : 3,
   } as CSSProperties
   const pending = job && PENDING.has(job.status)
-  const expiry = timeLeft(results[0]?.expires_at ?? null, now)
+  const expiresAt = results[0]?.expires_at ?? null
+  const allKept = results.length > 0 && results.every((r) => r.library_id)
+  const expiry = allKept ? 'Kept' : timeLeft(expiresAt, now)
+  const soon = !allKept && expiresAt !== null && hoursLeft(expiresAt, now) < SOON_HOURS
   const total = job?.seeds.length ?? results.length
   const done = new Set(results.map((r) => r.item_index))
 
@@ -179,7 +215,7 @@ function GroupView({
               Cancel
             </button>
           ) : (
-            <span>{expiry ?? shortTime(group.at, now)}</span>
+            <span className={soon ? 'soon' : undefined}>{expiry ?? shortTime(group.at, now)}</span>
           )}
         </div>
       </header>
@@ -192,11 +228,11 @@ function GroupView({
               <button
                 key={r.id}
                 type="button"
-                className="tile"
+                className={r.library_id ? 'tile kept' : 'tile'}
                 onClick={() => {
                   onOpen(r.id)
                 }}
-                aria-label={`Open image ${String(i + 1)}, seed ${String(r.seed)}`}
+                aria-label={`Open image ${String(i + 1)}, seed ${String(r.seed)}${r.library_id ? ', kept' : ''}`}
               >
                 <img src={thumbUrl(r.blob_sha)} alt="" loading="lazy" />
               </button>
@@ -230,173 +266,6 @@ function SketchTile({ job, item, done }: { job: Job; item: number; done: Set<num
       aria-label={`Image ${String(item + 1)}: ${label}`}
     >
       {(current || item === 0) && <span className="sketch-label">{label}</span>}
-    </div>
-  )
-}
-
-function Viewer({
-  results,
-  assets,
-  index,
-  onIndex,
-  onClose,
-  onReuse,
-}: {
-  results: Result[]
-  assets: Asset[] | undefined
-  index: number
-  onIndex: (i: number) => void
-  onClose: () => void
-  onReuse: (r: Result) => void
-}) {
-  const r = results[index]
-  const ref = useRef<HTMLDivElement>(null)
-  const swipe = useRef<number | null>(null)
-  const [shareError, setShareError] = useState<string | null>(null)
-
-  useEffect(() => {
-    ref.current?.focus()
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
-      if (e.key === 'ArrowRight' && index < results.length - 1) onIndex(index + 1)
-      if (e.key === 'ArrowLeft' && index > 0) onIndex(index - 1)
-    }
-    document.addEventListener('keydown', onKey)
-    const overflow = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-    return () => {
-      document.removeEventListener('keydown', onKey)
-      document.body.style.overflow = overflow
-    }
-  }, [index, results.length, onIndex, onClose])
-
-  const spec = r?.spec
-  const schema = useQuery({
-    queryKey: ['schema', spec?.family, spec?.variant, spec?.mode],
-    queryFn: () => api.schema(spec?.family ?? '', spec?.variant ?? '', spec?.mode ?? ''),
-    enabled: !!spec,
-    staleTime: Infinity,
-  })
-
-  if (!r) return null
-  const params = spec?.params ?? {}
-  const sampler = schema.data?.properties.scheduler
-  const samplerIndex = sampler?.enum?.indexOf(String(params.scheduler)) ?? -1
-  const samplerLabel = sampler?.['x-enum-labels']?.[samplerIndex] ?? String(params.scheduler)
-
-  const share = async () => {
-    setShareError(null)
-    const blob = await (await fetch(blobUrl(r.blob_sha))).blob()
-    const file = new File([blob], `degas-${String(r.seed)}.png`, { type: r.media_type })
-    if ('canShare' in navigator && navigator.canShare({ files: [file] })) {
-      await navigator.share({ files: [file] })
-    } else {
-      const a = document.createElement('a')
-      a.href = blobUrl(r.blob_sha)
-      a.download = file.name
-      a.click()
-    }
-  }
-
-  return (
-    <div
-      ref={ref}
-      className="viewer"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Image"
-      tabIndex={-1}
-    >
-      <div className="viewer-bar">
-        <button type="button" className="btn quiet small" onClick={onClose}>
-          Close
-        </button>
-        <span className="position">
-          {index + 1} of {results.length}
-        </span>
-        <span className="sheet-actions">
-          <button
-            type="button"
-            className="btn quiet small"
-            aria-label="Previous image"
-            disabled={index === 0}
-            onClick={() => {
-              onIndex(index - 1)
-            }}
-          >
-            ‹
-          </button>
-          <button
-            type="button"
-            className="btn quiet small"
-            aria-label="Next image"
-            disabled={index === results.length - 1}
-            onClick={() => {
-              onIndex(index + 1)
-            }}
-          >
-            ›
-          </button>
-        </span>
-      </div>
-      <div
-        className="viewer-image"
-        onPointerDown={(e) => {
-          swipe.current = e.clientX
-        }}
-        onPointerUp={(e) => {
-          if (swipe.current === null) return
-          const dx = e.clientX - swipe.current
-          swipe.current = null
-          if (dx < -50 && index < results.length - 1) onIndex(index + 1)
-          if (dx > 50 && index > 0) onIndex(index - 1)
-        }}
-      >
-        <img src={blobUrl(r.blob_sha)} alt={String(params.prompt ?? '')} draggable={false} />
-      </div>
-      <div className="wall-label">
-        <div>
-          <p className="title">{String(params.prompt ?? '') || 'No prompt'}</p>
-          {params.negative_prompt ? (
-            <p className="avoid">Negative: {String(params.negative_prompt)}</p>
-          ) : null}
-        </div>
-        <p className="lines">
-          <span>{r.spec ? modelWithLoras(r.spec, assets) : 'Unknown model'}</span>
-          <span>
-            {size(r.width, r.height)}, seed {r.seed}
-          </span>
-          <span>
-            {String(params.steps)} steps, CFG {String(params.cfg)}, {samplerLabel}
-          </span>
-        </p>
-        <div className="viewer-actions">
-          <button
-            type="button"
-            className="btn"
-            onClick={() => {
-              void share().catch((e: unknown) => {
-                if (!(e instanceof DOMException && e.name === 'AbortError')) {
-                  setShareError('Saving failed. Try again, or long-press the image.')
-                }
-              })
-            }}
-          >
-            Save to Photos
-          </button>
-          <button
-            type="button"
-            className="btn quiet"
-            disabled={!r.spec}
-            onClick={() => {
-              onReuse(r)
-            }}
-          >
-            Reuse settings
-          </button>
-        </div>
-        {shareError && <p role="alert">{shareError}</p>}
-      </div>
     </div>
   )
 }

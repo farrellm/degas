@@ -109,6 +109,8 @@ Each phase lists the screens it adds or changes, then any new components. Wirefr
 
 ### Phase 3: Save, library and remix
 
+Built. Notes on what shipped: *Kept* in the viewer is a toggle, so tapping it again removes the image from the library (the result stays in the feed until it expires). The kept mark is a rose dog-ear with a paper edge; the *Kept* button repeats it beside its label. The library's viewer adds a *Tags* field (comma-separated, saved on blur) so tag search has something to match. The library grid keeps each image's proportions in three columns under day headings (*Today*, *Yesterday*, *Sep 24*). Deleting from the library asks for confirmation inline.
+
 - **Keep.** In the viewer, *Keep* becomes the primary action and *Save to Photos* moves to second place. Kept tiles carry a small rose corner mark in the feed. A group whose images are all kept shows *Kept* instead of the time left, and the time left turns ochre under 2 hours.
 - **Library tab** (the third tab). It has a search field for prompt text and tags, and an *Images / Prompts* switch. The images grid is by date, and opens the same viewer and wall label with *Remix*, *Delete* and (from Phase 4) *Use as source*.
 - **Remix** replaces *Reuse settings*. It restores LoRAs and inputs as well as parameters. Any asset that's no longer in the Drive index is flagged on its row: *Not found in Drive. Pick another model.*
@@ -194,6 +196,9 @@ A *Denoise strength* slider row appears for i2i and inpaint, from the schema.
 | Viewer + wall label | Phase 1 | Shared by Results and Library |
 | `AssetPicker` | Phase 2 | Models and LoRAs (ControlNets in Phase 7); search from 7 rows |
 | `LoraList` | Phase 2 | Single weight 0–2; paired high/low weights in Phase 4 |
+| `Viewer`, `SaveToPhotos` | Phase 3 | Shared by Results and Library; actions and extra wall-label rows are slots |
+| `PromptSheet` | Phase 3 | Saved prompts from the prompt block |
+| `LibraryScreen` | Phase 3 | Images / Prompts, search, day-grouped grid |
 | Image picker sheet | Phase 4 | |
 | Crop editor | Phase 4 | Full screen |
 | Mask editor | Phase 6 | Full screen, canvas; SAM in Phase 7 |

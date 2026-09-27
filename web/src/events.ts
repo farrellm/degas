@@ -9,6 +9,9 @@ type ServerEvent =
   | ({ type: 'progress' } & Progress)
   | { type: 'result' }
   | { type: 'assets' }
+  | { type: 'library' }
+  | { type: 'prompts' }
+  | { type: 'swept' }
 
 /** Follow `/api/events` and keep the query cache in sync with the server. */
 export function useServerEvents() {
@@ -49,6 +52,17 @@ export function useServerEvents() {
         }
         case 'result':
           void qc.invalidateQueries({ queryKey: ['results'] })
+          break
+        case 'library':
+          void qc.invalidateQueries({ queryKey: ['library'] })
+          void qc.invalidateQueries({ queryKey: ['results'] })
+          break
+        case 'prompts':
+          void qc.invalidateQueries({ queryKey: ['prompts'] })
+          break
+        case 'swept':
+          void qc.invalidateQueries({ queryKey: ['results'] })
+          void qc.invalidateQueries({ queryKey: ['jobs'] })
           break
         case 'assets':
           void qc.invalidateQueries({ queryKey: ['assets'] })

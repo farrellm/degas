@@ -1,12 +1,11 @@
 import time
-from collections.abc import AsyncIterator, Callable, Iterator
+from collections.abc import AsyncIterator, Callable
 from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
 
 from degas import __version__
-from degas.app import create_app
 from degas.colab.worker_client import WorkerClient
 
 from .conftest import LORA, MODEL
@@ -20,14 +19,6 @@ def wait_for(fn: Callable[[], Any], timeout: float = 5) -> Any:
             return value
         time.sleep(0.02)
     raise AssertionError("condition not reached")
-
-
-@pytest.fixture
-def client(harness: Any) -> Iterator[TestClient]:
-    app = create_app(harness.config, harness.services_factory())
-    with TestClient(app) as c:
-        c.app.state.services.db.replace_assets([harness.model, LORA])  # type: ignore[attr-defined]
-        yield c
 
 
 def session_state(client: TestClient) -> str | None:

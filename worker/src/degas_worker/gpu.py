@@ -1,6 +1,18 @@
 """GPU information for /health (torch is optional so the worker runs without a GPU)."""
 
+from importlib import metadata
 from typing import Any
+
+
+def versions() -> dict[str, str | None]:
+    """Versions of the libraries that decide what a seed produces."""
+    out: dict[str, str | None] = {}
+    for name in ("diffusers", "torch"):
+        try:
+            out[name] = metadata.version(name)
+        except metadata.PackageNotFoundError:
+            out[name] = None
+    return out
 
 
 def gpu_info() -> dict[str, Any]:

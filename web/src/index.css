@@ -322,6 +322,32 @@ p {
   font-size: var(--step--1);
 }
 
+.prompt-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: -12px 0 -10px; /* the aside's tap target reaches into the block's padding */
+}
+
+.prompt-aside {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding-left: 16px;
+  font-size: var(--step--1);
+  font-weight: 560;
+}
+
+.prompt-aside::after {
+  content: '';
+  width: 5px;
+  height: 5px;
+  border-right: 1.5px solid var(--ink-muted);
+  border-bottom: 1.5px solid var(--ink-muted);
+  transform: rotate(-45deg);
+}
+
 .prompt-block textarea {
   display: block;
   width: 100%;
@@ -672,6 +698,24 @@ input[type='range']::-moz-range-thumb {
   color: var(--ink);
 }
 
+.model-row .setting {
+  border-bottom: none;
+}
+
+.model-row {
+  border-bottom: 1px solid var(--rule);
+}
+
+.row-warning {
+  margin: -8px 0 10px;
+  color: var(--warn);
+  font-size: var(--step--1);
+}
+
+.model-row.missing .setting-value {
+  color: var(--warn);
+}
+
 .lora-missing {
   grid-column: 1 / -1;
   margin-top: -4px;
@@ -840,6 +884,10 @@ code {
   white-space: nowrap;
 }
 
+.group-caption .aside .soon {
+  color: var(--warn);
+}
+
 .group-error {
   margin-bottom: 10px;
   color: var(--danger);
@@ -868,6 +916,31 @@ code {
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+/*
+ * A kept image: the top corner is marked in rose chalk, like a dog-eared
+ * sheet, with a paper edge so it reads over any image.
+ */
+.tile.kept::before,
+.tile.kept::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  clip-path: polygon(0 0, 100% 0, 100% 100%);
+}
+
+.tile.kept::before {
+  width: 24px;
+  height: 24px;
+  background: var(--paper);
+}
+
+.tile.kept::after {
+  width: 20px;
+  height: 20px;
+  background: var(--accent);
 }
 
 /*
@@ -1334,6 +1407,218 @@ code {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 10px;
+}
+
+.viewer-actions .wide,
+.viewer-note {
+  grid-column: 1 / -1;
+}
+
+/* Kept: the button carries the tile's rose corner beside its label. */
+.btn.kept {
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+}
+
+.btn.kept::before {
+  content: '';
+  width: 10px;
+  height: 10px;
+  background: var(--accent);
+  clip-path: polygon(0 0, 100% 0, 100% 100%);
+}
+
+.confirm {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.confirm p {
+  grid-column: 1 / -1;
+  font-size: 0.9375rem;
+}
+
+.tags-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.tags-field:focus-within {
+  border-bottom-color: var(--accent);
+}
+
+.tags-field label {
+  color: var(--ink-muted);
+  font-size: var(--step--1);
+}
+
+.tags-field input {
+  min-height: 40px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  font-size: 16px;
+}
+
+.tags-field input:focus {
+  outline: none;
+}
+
+/* ---------- Library ---------- */
+
+.library-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 4px 0 8px;
+}
+
+.library-search {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 14px;
+  border: none;
+  border-radius: 10px;
+  background: var(--paper-raised);
+  font-size: 16px;
+}
+
+.library-search:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 0;
+}
+
+.segmented {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  padding: 3px;
+  border-radius: 12px;
+  box-shadow: inset 0 0 0 1px var(--rule);
+}
+
+.segmented button {
+  min-height: 38px;
+  border-radius: 9px;
+  color: var(--ink-muted);
+  font-weight: 520;
+}
+
+.segmented button[aria-pressed='true'] {
+  background: var(--paper-raised);
+  color: var(--ink);
+}
+
+.day h2 {
+  margin: 18px 0 8px;
+  color: var(--ink-muted);
+  font-size: var(--step--1);
+  font-weight: 540;
+}
+
+/* Kept images keep their own proportions: three columns, filled top to bottom. */
+.shelf {
+  columns: 3;
+  column-gap: 4px;
+}
+
+.shelf .tile {
+  margin-bottom: 4px;
+  break-inside: avoid;
+}
+
+.library-prompts {
+  margin-top: 8px;
+}
+
+.library-empty {
+  padding: 24px 0;
+  color: var(--ink-muted);
+}
+
+.more-button {
+  width: 100%;
+  margin-top: 20px;
+}
+
+/* Saved prompts: set in the serif, like every prompt. */
+.prompt-save {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-bottom: 12px;
+}
+
+.prompt-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--rule);
+}
+
+.prompt-row,
+.prompt-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--rule);
+  text-align: left;
+}
+
+.prompt-row:focus-visible {
+  outline-offset: -2px;
+}
+
+.prompt-name {
+  font-weight: 560;
+}
+
+.prompt-text {
+  display: -webkit-box;
+  overflow: hidden;
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 1.0625rem;
+  line-height: 1.4;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+
+.prompt-negative {
+  color: var(--ink-muted);
+  font-size: var(--step--1);
+}
+
+.row-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.confirm-text {
+  flex: 1 1 100%;
+  font-size: 0.9375rem;
+}
+
+.rename {
+  display: flex;
+  gap: 8px;
+}
+
+.rename input {
+  flex: 1;
+  min-width: 0;
+  min-height: 34px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 8px;
+  background: var(--paper-raised);
+  font-size: 16px;
 }
 
 @keyframes fade {
