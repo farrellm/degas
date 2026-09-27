@@ -19,11 +19,13 @@ Personal generative image/video web app: an iPhone PWA over Tailscale, with infe
 Requires [uv](https://docs.astral.sh/uv/), Node ≥ 24 and pnpm.
 
 ```sh
-make install     # uv sync + pnpm install
+make install     # uv sync + pnpm install + git hooks
 make check       # lint + typecheck + test (what CI runs)
 make fmt         # ruff format/fix + prettier
 make dev-server  # API on 127.0.0.1:8420
 make dev-web     # Vite dev server, proxies /api to the API
 ```
+
+Git hooks ([pre-commit](https://pre-commit.com), config in `.pre-commit-config.yaml`): on commit, ruff / Prettier / ESLint fix staged files plus generic file checks; on push, `make check`. Bypass once with `--no-verify`.
 
 Tooling: ruff (lint + format), mypy (strict), pytest · ESLint (typescript-eslint strict, type-checked), Prettier, Vitest + Testing Library.

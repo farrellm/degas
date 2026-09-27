@@ -1,0 +1,57 @@
+# Install: `make install` (runs `uv run pre-commit install`).
+# Fast, per-file checks run on commit; the full `make check` (mypy, tsc, tests) runs on push.
+# Tool hooks are `language: system` so they use the versions pinned in uv.lock / pnpm-lock.yaml.
+default_install_hook_types: [pre-commit, pre-push]
+default_stages: [pre-commit]
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-json
+        exclude: ^web/tsconfig.*\.json$ # JSONC (comments)
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: [--maxkb=1024]
+      - id: detect-private-key # this repo sits next to OAuth tokens and SSH keys
+
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: ruff check
+        entry: uv run ruff check --fix --force-exclude
+        language: system
+        types_or: [python, pyi]
+        require_serial: true
+      - id: ruff-format
+        name: ruff format
+        entry: uv run ruff format --force-exclude
+        language: system
+        types_or: [python, pyi]
+        require_serial: true
+      - id: prettier
+        name: prettier
+        entry: web/node_modules/.bin/prettier --write --ignore-unknown
+        language: system
+        files: ^web/
+        exclude: ^web/(dist|coverage)/|^web/pnpm-lock\.yaml$
+        types: [text]
+      - id: eslint
+        name: eslint
+        entry: web/node_modules/.bin/eslint --fix --max-warnings=0
+        language: system
+        files: ^web/.*\.(ts|tsx|js)$
+        exclude: ^web/(dist|coverage)/
+        require_serial: true
+      - id: make-check
+        name: make check (lint, typecheck, tests)
+        entry: make check
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push]

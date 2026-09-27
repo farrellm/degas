@@ -3,6 +3,7 @@
 install:
 	uv sync
 	cd web && pnpm install
+	uv run pre-commit install
 
 fmt:
 	uv run ruff format .
