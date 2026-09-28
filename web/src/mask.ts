@@ -77,24 +77,47 @@ export function lumaToAlpha(data: Uint8ClampedArray): void {
   }
 }
 
+/**
+ * Make an RGBA buffer's alpha all-or-nothing. Growing stamps a layer over itself many times,
+ * which turns even 1/255 of haze fully opaque, so a layer is made crisp before it's grown.
+ */
+export function binarizeAlpha(data: Uint8ClampedArray): void {
+  for (let i = 3; i < data.length; i += 4) data[i] = (data[i] ?? 0) >= 128 ? 255 : 0
+}
+
 /** Whether any pixel of an RGBA buffer has alpha. */
 export function hasAlpha(data: Uint8ClampedArray): boolean {
   for (let i = 3; i < data.length; i += 4) if ((data[i] ?? 0) > 0) return true
   return false
 }
 
-/** Offsets that, drawn over each other, grow a shape by `r` px in every direction. */
-export function growOffsets(r: number): { x: number; y: number }[] {
-  if (r <= 0) return []
-  const out: { x: number; y: number }[] = []
-  for (const radius of r > 4 ? [r / 2, r] : [r]) {
-    const n = Math.max(8, Math.ceil(radius * 1.5))
-    for (let i = 0; i < n; i++) {
-      const a = (i / n) * 2 * Math.PI
-      out.push({ x: Math.cos(a) * radius, y: Math.sin(a) * radius })
-    }
+/**
+ * Radii that grow a shape by `r` px when applied one after another (growing by a then b
+ * grows by a + b). They double, so a big margin takes a handful of passes, not hundreds.
+ */
+export function growSteps(r: number): number[] {
+  const out: number[] = []
+  let left = r
+  let step = 1
+  while (left > 0) {
+    const s = Math.min(step, left)
+    out.push(s)
+    left -= s
+    if (out.length > 1) step *= 2
   }
   return out
+}
+
+/**
+ * Whole-pixel offsets on a circle; drawn over each other they grow a shape by `radius` px.
+ * Whole pixels, so drawing a crisp layer at them adds no soft edge for later passes to grow.
+ */
+export function ringOffsets(radius: number): { x: number; y: number }[] {
+  const n = 16
+  return Array.from({ length: n }, (_, i) => {
+    const a = (i / n) * 2 * Math.PI
+    return { x: Math.round(Math.cos(a) * radius), y: Math.round(Math.sin(a) * radius) }
+  })
 }
 
 /** The stage rect of the image at a view. */

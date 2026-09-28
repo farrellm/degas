@@ -1,14 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import {
   amend,
+  binarizeAlpha,
   clampView,
   emptyHistory,
   fitView,
-  growOffsets,
+  growSteps,
   hasAlpha,
   lumaToAlpha,
   push,
   redo,
+  ringOffsets,
   undo,
   workingSize,
 } from './mask'
@@ -50,10 +52,19 @@ describe('mask editor helpers', () => {
     expect(hasAlpha(new Uint8ClampedArray([9, 9, 9, 0]))).toBe(false)
   })
 
-  it('grows in every direction', () => {
-    const offsets = growOffsets(8)
+  it('grows in every direction, in a few doubling steps', () => {
+    const offsets = ringOffsets(8)
     expect(Math.max(...offsets.map((o) => o.x))).toBeCloseTo(8)
     expect(Math.min(...offsets.map((o) => o.y))).toBeCloseTo(-8)
-    expect(growOffsets(0)).toEqual([])
+    expect(offsets.every((o) => Number.isInteger(o.x) && Number.isInteger(o.y))).toBe(true)
+    const haze = new Uint8ClampedArray([255, 255, 255, 2, 255, 255, 255, 127, 255, 255, 255, 200])
+    binarizeAlpha(haze)
+    expect([haze[3], haze[7], haze[11]]).toEqual([0, 0, 255])
+    expect(growSteps(0)).toEqual([])
+    expect(growSteps(8)).toEqual([1, 1, 2, 4])
+    expect(growSteps(10)).toEqual([1, 1, 2, 4, 2])
+    const big = growSteps(256 * 1.5)
+    expect(big.reduce((a, b) => a + b)).toBeCloseTo(384)
+    expect(big.length).toBeLessThanOrEqual(10)
   })
 })
