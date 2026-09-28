@@ -71,8 +71,23 @@ def test_sdxl_validate_fills_defaults_and_clamps() -> None:
     assert (params["width"], params["height"]) == (1016, 1024)
     assert params["steps"] == 100
     assert params["cfg"] == 7.0
-    assert params["scheduler"] == "dpmpp_2m_karras"
+    assert (params["scheduler"], params["schedule"]) == ("dpmpp_2m", "karras")
     assert spec["mode"] == "t2i"
+
+
+@pytest.mark.parametrize(
+    ("given", "expected"),
+    [
+        ({"scheduler": "dpmpp_3m_sde", "schedule": "exponential"}, ("dpmpp_3m_sde", "exponential")),
+        ({"scheduler": "ddim", "schedule": "karras"}, ("ddim", "default")),
+        # From before the schedule was its own control.
+        ({"scheduler": "dpmpp_2m_karras"}, ("dpmpp_2m", "karras")),
+        ({"scheduler": "euler"}, ("euler", "default")),
+    ],
+)
+def test_sdxl_schedule(given: dict[str, str], expected: tuple[str, str]) -> None:
+    spec = Sdxl().validate({"model": {"path": "m"}, "params": {"prompt": "x", **given}})
+    assert (spec["params"]["scheduler"], spec["params"]["schedule"]) == expected
 
 
 @pytest.mark.parametrize(
@@ -152,6 +167,27 @@ def test_database_migrates_old_asset_tables(tmp_path: Path) -> None:
     db = Database(tmp_path / "db.sqlite")
     db.replace_assets([{"path": "p", "kind": "lora", "drive_file_id": "a", "sidecar_rev": "r"}])
     assert db.get_asset("p")["sidecar_rev"] == "r"  # type: ignore[index]
+    db.close()
+
+
+def test_database_upgrades_sdxl_schedules(tmp_path: Path) -> None:
+    db = Database(tmp_path / "db.sqlite")
+    specs = [
+        {"family": "sdxl", "params": {"scheduler": "dpmpp_2m_karras"}},
+        {"family": "sdxl", "params": {"scheduler": "euler_a"}},
+        {"family": "sdxl", "params": {"scheduler": "unipc", "schedule": "exponential"}},
+        {"family": "wan22", "params": {"scheduler": "unipc"}},
+    ]
+    ids = [db.insert_job(spec, [1])["id"] for spec in specs]
+    db.close()
+    db = Database(tmp_path / "db.sqlite")
+    params = [db.get_job(id_)["spec"]["params"] for id_ in ids]  # type: ignore[index]
+    assert params == [
+        {"scheduler": "dpmpp_2m", "schedule": "karras"},
+        {"scheduler": "euler_a", "schedule": "default"},
+        {"scheduler": "unipc", "schedule": "exponential"},
+        {"scheduler": "unipc"},
+    ]
     db.close()
 
 

@@ -119,6 +119,24 @@ MIGRATIONS = (
     ("library_items", "duration", "REAL"),
 )
 
+# Stored SDXL params from before the noise schedule was its own control: a Karras sampler
+# becomes its plain one plus schedule "karras", and every other sampler gets "default". Mirrors
+# `degas.families.sdxl.upgrade_params`; `{col}` is jobs.spec or library_items.config.
+SDXL_SCHEDULE_UPGRADE = """
+UPDATE {table} SET {col} = json_set(
+    {col},
+    '$.params.schedule',
+    CASE json_extract({col}, '$.params.scheduler')
+        WHEN 'dpmpp_2m_karras' THEN 'karras' ELSE 'default' END,
+    '$.params.scheduler',
+    CASE json_extract({col}, '$.params.scheduler')
+        WHEN 'dpmpp_2m_karras' THEN 'dpmpp_2m' ELSE json_extract({col}, '$.params.scheduler') END
+)
+WHERE json_extract({col}, '$.family') = 'sdxl'
+    AND json_extract({col}, '$.params.scheduler') IS NOT NULL
+    AND json_extract({col}, '$.params.schedule') IS NULL
+"""
+
 ACTIVE_SESSION_STATES = ("starting", "ready", "busy", "stopping")
 RESULT_TTL = timedelta(hours=24)
 # Uploads, URL imports, frames and transformed images that no job or kept item holds yet.
@@ -153,6 +171,8 @@ class Database:
             cols = {r["name"] for r in self.conn.execute(f"PRAGMA table_info({table})")}
             if column not in cols:
                 self.conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {type_}")
+        for table, col in (("jobs", "spec"), ("library_items", "config")):
+            self.conn.execute(SDXL_SCHEDULE_UPGRADE.format(table=table, col=col))
 
     def close(self) -> None:
         self.conn.close()

@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { api, blobUrl, isPair, isVideo, type Asset, type SavedConfig, type Spec } from '../api'
 import { assetLabel, loraLabel } from '../assets'
 import { duration, size } from '../format'
+import { enumLabel } from '../schema'
 
 /** What the viewer shows: a result from the feed or a kept library item. */
 export interface ViewerItem {
@@ -94,12 +95,13 @@ export function Viewer<T extends ViewerItem>({
 
   if (!r) return null
   const params = spec?.params ?? {}
-  const sampler = schema.data?.properties.scheduler
-  const samplerIndex = sampler?.enum?.indexOf(String(params.scheduler)) ?? -1
-  const samplerLabel =
-    params.scheduler == null
-      ? null
-      : (sampler?.['x-enum-labels']?.[samplerIndex] ?? String(params.scheduler))
+  const props = schema.data?.properties
+  const samplerLabel = [
+    enumLabel(props?.scheduler, params.scheduler),
+    params.schedule === 'default' ? null : enumLabel(props?.schedule, params.schedule),
+  ]
+    .filter(Boolean)
+    .join(' ')
   const video = isVideo(r.media_type)
   const cfg =
     params.cfg_low == null

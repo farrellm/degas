@@ -153,6 +153,7 @@ function Field({ name, prop, value, set, seeds }: FieldProps) {
             </option>
           ))}
         </select>
+        {prop.description && <small className="setting-note">{prop.description}</small>}
       </div>
     )
   }
