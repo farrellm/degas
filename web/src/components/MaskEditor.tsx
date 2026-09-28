@@ -1,6 +1,7 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import {
   useCallback,
+  useDeferredValue,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -13,14 +14,16 @@ import { api, blobUrl, isActive, type BlobInfo, type SelectPoint, type Selection
 import { useAssets } from '../assets'
 import { zoomAt, type Size, type View } from '../crop'
 import {
+  binarizeAlpha,
   clampView,
   emptyHistory,
   fitView,
-  growOffsets,
+  growSteps,
   hasAlpha,
   lumaToAlpha,
   push,
   redo,
+  ringOffsets,
   toImage,
   undo,
   workingSize,
@@ -67,6 +70,7 @@ const FALLBACK_STAGE: Size = { w: 360, h: 480 }
 const HATCH_GAP = 7 // screen px between hatching strokes at the fitted zoom, like a sketch tile
 const TAP_SLOP = 8
 const LONG_PRESS_MS = 500
+const MAX_GROW = 128 // image px of margin a selection can be grown by
 
 function canvas(size: Size): HTMLCanvasElement {
   const c = document.createElement('canvas')
@@ -168,12 +172,26 @@ async function loadLayer(sha: string, size: Size): Promise<HTMLCanvasElement> {
 
 /** A layer grown by `r` px, to give a selection a margin to blend into. */
 function grow(layer: HTMLCanvasElement, r: number): HTMLCanvasElement {
-  const out = canvas({ w: layer.width, h: layer.height })
-  const ctx = context(out)
-  if (!ctx) return layer
-  ctx.drawImage(layer, 0, 0)
-  for (const o of growOffsets(r)) ctx.drawImage(layer, o.x, o.y)
-  return out
+  const steps = growSteps(r)
+  if (!steps.length) return layer
+  const size = { w: layer.width, h: layer.height }
+  let from = canvas(size)
+  const first = context(from)
+  if (!first) return layer
+  first.drawImage(layer, 0, 0)
+  const data = first.getImageData(0, 0, size.w, size.h)
+  binarizeAlpha(data.data)
+  first.putImageData(data, 0, 0)
+  for (const step of steps) {
+    const out = canvas(size)
+    const ctx = context(out)
+    if (!ctx) return from
+    ctx.imageSmoothingEnabled = false
+    ctx.drawImage(from, 0, 0)
+    for (const o of ringOffsets(step)) ctx.drawImage(from, o.x, o.y)
+    from = out
+  }
+  return from
 }
 
 /** The edge of a layer, `width` px thick, for showing a selection before it's used. */
@@ -367,16 +385,22 @@ export function MaskEditor({
   })
   const candidate = selection?.candidates[shown]
   const layer = candidate ? layers[candidate.sha256] : undefined
+  // The outline shows the selection as it will be added: grown by the slider's margin.
+  const previewGrow = useDeferredValue(growBy)
+  const grown = useMemo(
+    () => (layer ? grow(layer, previewGrow * toWork) : undefined),
+    [layer, previewGrow, toWork],
+  )
 
   useEffect(() => {
     const ctx = context(outlineRef.current)
     if (!ctx) return
     ctx.clearRect(0, 0, work.w, work.h)
-    if (!layer) return
+    if (!grown) return
     const accent =
       getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#efa3b5'
-    ctx.drawImage(outline(layer, Math.max(1, 2 / v.s), accent), 0, 0)
-  }, [layer, v.s, work.w, work.h])
+    ctx.drawImage(outline(grown, Math.max(1, 2 / v.s), accent), 0, 0)
+  }, [grown, v.s, work.w, work.h])
 
   const addPoint = (x: number, y: number, include: boolean) => {
     const next = [...points, { x: x / toWork, y: y / toWork, include }]
@@ -391,8 +415,9 @@ export function MaskEditor({
   }
 
   const combine = (op: Combine) => {
-    if (!layer) return
-    setHistory((h) => push(h, { kind: 'selection', op, layer: grow(layer, growBy * toWork) }))
+    if (!layer || !grown) return
+    const added = previewGrow === growBy ? grown : grow(layer, growBy * toWork)
+    setHistory((h) => push(h, { kind: 'selection', op, layer: added }))
     clearSelection()
   }
 
@@ -880,6 +905,20 @@ function SelectControls(p: SelectProps) {
                 : 'Tap what to select. Long-press, or choose Exclude, to leave something out.'}
       </p>
       {p.error && <p role="alert">{p.error}</p>}
+      <div className="mask-row">
+        <label htmlFor="grow">Grow</label>
+        <input
+          id="grow"
+          type="range"
+          min={0}
+          max={MAX_GROW}
+          value={p.growBy}
+          onChange={(e) => {
+            p.onGrow(Number(e.target.value))
+          }}
+        />
+        <output htmlFor="grow">{p.growBy} px</output>
+      </div>
       {count > 0 && (
         <>
           <div className="mask-row">
@@ -903,18 +942,6 @@ function SelectControls(p: SelectProps) {
             >
               Bigger
             </button>
-            <label htmlFor="grow">Grow</label>
-            <input
-              id="grow"
-              type="range"
-              min={0}
-              max={32}
-              value={p.growBy}
-              onChange={(e) => {
-                p.onGrow(Number(e.target.value))
-              }}
-            />
-            <output htmlFor="grow">{p.growBy} px</output>
           </div>
           <div className="mask-row combine">
             <button
