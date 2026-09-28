@@ -182,7 +182,9 @@ class SdxlRunner:
                 if key == "i2i"
                 else StableDiffusionXLInpaintPipeline
             )
-            derived = cls.from_pipe(self.pipe)
+            # from_pipe defaults to float32 and casts the *shared* modules in place, which
+            # would double the loaded pipeline's VRAM (OOM on a T4).
+            derived = cls.from_pipe(self.pipe, torch_dtype=torch.float16)
             if self.offload:
                 derived.enable_model_cpu_offload()
             derived.set_progress_bar_config(disable=True)
