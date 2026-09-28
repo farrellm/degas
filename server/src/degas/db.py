@@ -457,6 +457,32 @@ class Database:
             ).rowcount
         return {"results": len(results), "jobs": len(jobs), "refs": refs}
 
+    def clear_results(self) -> dict[str, Any]:
+        """Delete every finished job and its results now, without waiting for them to expire.
+
+        Queued and running jobs stay. Kept images hold their own refs in the library.
+        Returns the counts and the blobs that lost a reference.
+        """
+        with self.conn:
+            self.conn.execute("BEGIN")
+            jobs = [
+                r[0]
+                for r in self.conn.execute(
+                    "DELETE FROM jobs WHERE status NOT IN ('queued', 'running') RETURNING id"
+                ).fetchall()
+            ]
+            results = [
+                r[0]
+                for r in self.conn.execute(
+                    "DELETE FROM results WHERE job_id NOT IN (SELECT id FROM jobs) RETURNING id"
+                ).fetchall()
+            ]
+            shas: set[str] = set()
+            for ref_type, ids in (("job", jobs), ("result", results)):
+                for id_ in ids:
+                    shas.update(self.remove_blob_refs(ref_type, id_))
+        return {"results": len(results), "jobs": len(jobs), "blobs": sorted(shas)}
+
     # -- library ---------------------------------------------------------------------------
 
     def insert_library_item(

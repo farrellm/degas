@@ -70,6 +70,7 @@ One name per action, used in buttons, confirmations and empty states:
 | Load a result's spec into Create | Reuse settings (becomes **Remix** in Phase 3) | — |
 | Keep a result (Phase 3) | Keep | Kept |
 | Export to the phone | Save to Photos | — |
+| Delete every finished result now | Clear results | Delete every finished image and clip? Kept ones stay in the library. |
 | GPU | Start L4 session / Stop session / Keep running | Starting L4 / Ready on NVIDIA L4 / Generating on … |
 | Worker | Restart worker | — |
 | Drive | Rescan Drive | Models indexed 3 h ago. |

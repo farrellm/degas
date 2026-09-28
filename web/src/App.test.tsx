@@ -1134,6 +1134,26 @@ describe('App', () => {
     expect(document.activeElement).toHaveAccessibleName('Queue position 2 of 3')
   })
 
+  it('clears finished results after asking', async () => {
+    let cleared = false
+    mockApi({
+      'GET /api/jobs': () => (cleared ? [] : [JOB_DONE]),
+      'GET /api/results': () => ({ results: cleared ? [] : [RESULT], cursor: null }),
+      'DELETE /api/results': () => {
+        cleared = true
+        return { results: 1, jobs: 1 }
+      },
+    })
+    const user = userEvent.setup()
+    renderApp()
+    await user.click(screen.getByRole('button', { name: /Results/ }))
+    await user.click(await screen.findByRole('button', { name: 'Clear results' }))
+    const confirm = screen.getByRole('group', { name: 'Confirm clear' })
+    expect(cleared).toBe(false)
+    await user.click(within(confirm).getByRole('button', { name: 'Clear results' }))
+    expect(await screen.findByText('Nothing here yet.')).toBeInTheDocument()
+  })
+
   it('undoes cancelling a queued job', async () => {
     let status = 'queued'
     mockApi({

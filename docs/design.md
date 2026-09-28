@@ -445,6 +445,7 @@ All endpoints are under `/api`. JSON unless noted.
 | POST | `/jobs/{id}/restore` | Undo cancelling a job that hadn't started |
 | DELETE | `/jobs/{id}` | Cancel |
 | GET | `/results?cursor=` | Recent ephemeral results |
+| DELETE | `/results` | Delete every finished job and its results now (queued and running jobs stay; kept items keep their own refs) |
 | POST | `/results/{id}/save` | Save to library (image/video + config) |
 | POST | `/results/{id}/extend`, `/library/{id}/extend` | Create an i2v job spec seeded from the video's last frame (returns spec for editing, and the frame) |
 | GET/PATCH/DELETE | `/library?q=&cursor=`, `/library/{id}` | Browse and search / edit title and tags / delete saved items |
