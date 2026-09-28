@@ -136,3 +136,39 @@ def test_drive_token_writes_rclone_config(client: TestClient, paths: Paths) -> N
     assert '"access_token": "ya29.x"' in conf
     assert paths.rclone_conf.stat().st_mode & 0o077 == 0
     assert client.get("/health").json()["drive_token"] is True
+
+
+class FakePre:
+    def __init__(self) -> None:
+        self.calls: list[tuple[Path, Path, dict[str, Any]]] = []
+
+    def run(self, model: Path, image: Path, params: dict[str, Any]) -> dict[str, Any]:
+        self.calls.append((model, image, params))
+        return {"candidates": [], "chosen": 0}
+
+    def unload(self) -> None:
+        pass
+
+
+def test_preprocess(paths: Paths, tmp_path: Path) -> None:
+    pre = FakePre()
+    rclone = tmp_path / "rclone"
+    rclone.write_text('#!/bin/sh\nmkdir -p "$(dirname "$3")"\nprintf 0123456789 > "$3"\n')
+    rclone.chmod(0o755)
+    app = create_app(paths, {}, rclone=str(rclone), preprocessors={"sam": lambda: pre})
+    with TestClient(app) as c:
+        data = b"image bytes"
+        sha = hashlib.sha256(data).hexdigest()
+        body = {"id": "sam", "image": f"sha256:{sha}", "asset": {"path": "preprocessors/sam3"}}
+        assert c.post("/preprocess", json=body).status_code == 400  # not staged
+        c.put(f"/blobs/{sha}", content=data)
+        assert c.post("/preprocess", json=body).status_code == 503  # no Drive token
+        c.post("/drive-token", json={"access_token": "t", "expiry": "2099-01-01T00:00:00Z"})
+        resp = c.post("/preprocess", json={**body, "params": {"text": "a cat"}})
+        assert resp.status_code == 200, resp.text
+        assert resp.json() == {"candidates": [], "chosen": 0}
+        model, image, params = pre.calls[0]
+        assert model == paths.models / "preprocessors/sam3"
+        assert image.name == sha
+        assert params == {"text": "a cat"}
+        assert c.post("/preprocess", json={**body, "id": "depth"}).status_code == 400

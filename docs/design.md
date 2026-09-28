@@ -76,7 +76,7 @@ The user starts a session from the UI and chooses a GPU type: T4, L4, A100 or H1
    ```
    Degas has its own ed25519 key, set in `degas.toml`. The ControlPath must be under 108 bytes, which is why it lives in `$XDG_RUNTIME_DIR`.
 3. `scp` the worker bundle and the `rclone` binary to `/content/degas/`. The bundle is only re-sent if its content hash has changed.
-4. Install packages only if something is missing. The Colab image already has torch, diffusers, transformers, peft, fastapi, uvicorn and ffmpeg, so this is usually a no-op. Extra packages such as `sam2` and DWPose dependencies are installed lazily, the first time they're used.
+4. Install packages only if something is missing. The Colab image already has torch, diffusers, transformers, peft, fastapi, uvicorn and ffmpeg, so this is usually a no-op. Extra packages such as DWPose's dependencies are installed lazily, the first time they're used.
 5. `colab exec -s degas` with a bootstrap snippet. It starts the worker with `subprocess.Popen([... "uvicorn", "degas_worker.app:app", "--host", "127.0.0.1", "--port", "8765"], start_new_session=True)` and returns immediately. Starting from the kernel means the worker inherits `LD_LIBRARY_PATH=/usr/lib64-nvidia` and the rest of the CUDA environment.
 6. Poll `GET /health` through the tunnel until the worker reports the GPU name and free VRAM and free disk. Then `POST /drive-token` with a fresh access token. The session is now `ready`.
 
@@ -119,7 +119,7 @@ The server talks to the worker through `http://127.0.0.1:<local_port>` on the fo
 | GET | `/jobs/{id}/events` | SSE stream of `progress`, `output`, `done`, `error`, `cancelled` events |
 | POST | `/jobs/{id}/cancel` | Cooperative cancel |
 | GET | `/outputs/{job}/{item}` | Download one output; `DELETE` acknowledges it and frees disk |
-| POST | `/preprocess` | Run depth, pose, canny or SAM on a blob, returning the output as the response body |
+| POST | `/preprocess` | Run a preprocessor on a staged blob: `{id, image, asset: {path, size}, params}`. SAM answers `{candidates: [{mask (base64 PNG), score}], chosen}`, smallest mask first |
 | POST | `/drive-token` | Store a fresh Drive access token |
 | POST | `/assets/fetch` | Copy the given Drive paths into the local model cache (progress is reported via SSE) |
 | POST | `/shutdown` | Unload models and exit (used before `colab stop`) |
@@ -141,7 +141,7 @@ The job's final state comes from the terminal event (`done`, `error` or `cancell
 
 **Cancellation** is cooperative. `POST /jobs/{id}/cancel` sets a flag that the step callback (`callback_on_step_end`) checks. The worker then aborts and emits `cancelled`. Phase 0 showed that killing a client never stops running code on the VM. If the worker is stuck, the last resort is **Force reset worker**: kill the worker process over SSH and restart it. This reloads the models. `colab restart-kernel` is only needed if the kernel itself is wedged.
 
-**Interactive preprocessing.** SAM point prompts, and depth or pose extraction, use `POST /preprocess`. For SAM, the worker caches the image embedding by image hash, so each extra tap only runs the lightweight mask decoder. The expected round trip is 0.12 s of transport plus the inference time. When a generation job is running, a preprocessing request is served between denoising steps.
+**Interactive preprocessing.** SAM prompts, and later depth or pose extraction, use `POST /preprocess`. The server stages the image blob first (as for a job), names the preprocessor's model asset, and the worker copies that asset into its cache on first use, so the first SAM request of a session waits for the copy. For taps, the worker caches the image embedding by image hash, so each extra tap only runs the lightweight mask decoder. The expected round trip is 0.12 s of transport plus the inference time. Preprocessing runs in the worker's threadpool, one request at a time, alongside a generation job on the same GPU rather than waiting for it.
 
 ### 3.3 Phase 0 results
 
@@ -205,7 +205,9 @@ class FamilyRunner:
 - **Modes:**
   - `t2i` and `i2i`: `StableDiffusionXLPipeline` and `StableDiffusionXLImg2ImgPipeline`.
   - `inpaint`: `StableDiffusionXLInpaintPipeline`.
-  - `outpaint`: an inpaint on a padded canvas. The worker builds the mask automatically from the requested extension (pixels to add on each side).
+  - `outpaint`: an inpaint on a larger canvas. The canvas is the form's width and height, and `inputs.place` (`{x, y, w, h}` in canvas pixels) says where the source goes; the server fits the source to `w × h`. The worker fills the margins with a blurred stretch of the source, and masks the margins plus a *blend* band (32 px by default) inside the source's edges that face a margin. Outpaint always runs at strength 1.
+  - Regular checkpoints do all four modes: the text-to-image pipeline is loaded, and the image-to-image and inpaint pipelines are made from it with `from_pipe`, sharing its weights and LoRAs. Inpainting checkpoints (9-channel UNets) are the `inpaint` variant, found under `models/sdxl/inpaint/`, and only inpaint and outpaint.
+  - After inpaint and outpaint, the worker pastes the original back outside the blurred mask, so the untouched area skips the VAE round trip. *Redraw: around the mask* uses diffusers' `padding_mask_crop` (the masked area plus *Space around the mask*, redrawn at full resolution).
 - **Checkpoints:** any SDXL-architecture `.safetensors` file on Drive, including Pony and Illustrious derivatives. Loaded with `from_single_file`.
 - **ControlNet:** one or more ControlNet units. Each unit has:
   - a ControlNet model,
@@ -238,7 +240,7 @@ Preprocessors run on the GPU, in the worker, as a family-independent registry:
 | `depth` | Depth Anything V2 | Depth map image |
 | `pose` | DWPose | Pose skeleton image (OpenPose format) |
 | `canny` | OpenCV | Edge image (thresholds are parameters) |
-| `sam` | SAM 2 | Mask from positive and negative point prompts (and an optional box) |
+| `sam` | SAM 3 (`preprocessors/sam3/`, the transformers-format `facebook/sam3` folder) | Masks from included and excluded taps (`Sam3TrackerModel`, three candidates), or from a description (`Sam3Model`: every match, as one mask; taps then keep or drop matches) |
 
 Preprocessor outputs are ordinary images. They go into the blob store and can be edited, saved, or reused.
 
@@ -248,13 +250,14 @@ Preprocessor outputs are ordinary images. They go into the blob store and can be
 MyDrive/degas/
   models/
     sdxl/          *.safetensors (+ optional *.yaml sidecar)
+      inpaint/     inpainting checkpoints (9-channel UNet): the `inpaint` variant
     wan22/         <variant>/…   (diffusers-format directories)
   loras/
     sdxl/          *.safetensors (+ *.yaml, preview *.jpg/png)
     wan22/         *.safetensors; A14B pairs named *_high_noise.safetensors / *_low_noise.safetensors or declared in sidecar
   controlnets/
     sdxl/          *.safetensors or diffusers dirs
-  preprocessors/   depth-anything-v2/, dwpose/, sam2/
+  preprocessors/   sam3/ (a transformers folder: config.json + weights), later depth-anything-v2/, dwpose/
   vae/
     sdxl/
 ```
@@ -351,6 +354,7 @@ Saving an image or video stores a config that is self-contained and can be repla
   "inputs": {
     "source": "sha256:…",
     "mask": "sha256:…",
+    "place": { "x": 0, "y": 0, "w": 1024, "h": 1024 },
     "transforms": {
       "sha256:<source>": { "original": "sha256:…",
         "ops": [ { "op": "rotate", "deg": 90 },
@@ -414,7 +418,8 @@ The server resolves `fit` into explicit transform operations when the job is sub
 
 **Interaction with masks and control images.**
 
-- A mask belongs to a specific source blob. Changing the source's transform makes its mask invalid. The UI asks before discarding the mask. It offers to transform the mask with the same operations instead, when the change is only a resize or rotate.
+- A mask belongs to a specific source blob, and is stored at that blob's pixel size (the editor paints at up to 2048 px a side and the server scales it back up). When the source is cropped again, the mask follows it: `POST /blobs/{mask}/remap` undoes the old crop's operations back onto the original (a crop comes back as a paste, so what it cut off is unmasked), then applies the new crop's. Whatever the new crop leaves out is dropped, and the UI says so. Picking a different image drops the mask.
+- At submit, the mask gets exactly the fit operations its source gets, and is recorded in `inputs.transforms` like the source. An empty mask is refused.
 - A control image that has not been edited is automatically fitted to the output resolution using the same `fit` rules.
 
 ## 7. Server API
@@ -446,7 +451,9 @@ All endpoints are under `/api`. JSON unless noted.
 | POST | `/blobs/{sha}/frame` | `{at: "first"\|"last"\|seconds}` → one frame of a video blob as an image blob |
 | POST | `/blobs/from-url` | `{url}` → server fetches and stores → `{sha256, media_type, width, height}` |
 | GET | `/blobs/{sha}` / `/thumbs/{sha}` | Media (Range support for video) |
-| POST | `/preprocess` | `{id: depth\|pose\|canny\|sam, image, params}` → `{blob}` |
+| POST | `/blobs/{sha}/mask` | A mask painted over image `sha` (raw PNG body; alpha or white is redrawn) → a single-channel mask blob at the image's size |
+| POST | `/blobs/{mask}/remap` | `{source, to}` → the mask carried from `source` onto `to`, another crop of the same original, plus `empty` |
+| POST | `/preprocess` | `{id: "sam", image, params: {points: [{x, y, include}], text?}}` → `{candidates: [blob], chosen}`, smallest first (depth, pose and canny in Phase 7) |
 | GET | `/push` | VAPID public key (`applicationServerKey`) |
 | POST | `/push/subscribe`, `/push/unsubscribe` | Store or drop this device's Web Push subscription |
 | GET | `/events` | SSE: session state, job progress, outputs |
@@ -472,7 +479,7 @@ The app has a bottom tab bar with Create and Results, and Library from Phase 3. 
    - Prompt fields, with a "Saved prompts" picker and a Save-prompt button.
    - A model picker and a LoRA list: add, remove, and a weight slider per LoRA. A14B LoRAs show a pair of weight sliders.
    - A source-image slot (i2i, i2v, inpaint, outpaint), which opens the image picker.
-   - Inpaint: a mask slot that opens the mask editor on the source image. Outpaint: controls for how many pixels to add on each side, with a live preview of the padded canvas.
+   - Inpaint: a mask slot that opens the mask editor on the source image. Outpaint: a preview of the source on the canvas (the Size), which can be dragged, scaled and pushed to an edge.
    - Control units (SDXL): each unit has an image slot, a preprocessor button, a model, scale, a start/end range slider, and an optional mask.
    - Parameters, with the advanced ones collapsed.
    - Batch count and seed mode.
@@ -485,7 +492,7 @@ The app has a bottom tab bar with Create and Results, and Library from Phase 3. 
    - A resize row showing the output size, with target, preset and custom options.
    - A live readout of the final pixel size, with an upscale warning.
    - Reset (return to the original) and Apply (send the operations to the server; the derived image goes into the slot).
-4. **Mask editor** (full screen):
+4. **Mask editor** (full screen; see ux.md Phase 6 for what shipped):
    - Brush and eraser, a size slider, invert, clear, and undo/redo.
    - SAM mode: tap to add a positive point, and long-press or toggle to add a negative one. The returned mask is composited onto the current mask as add, subtract or replace.
    - Feather preview.
@@ -547,8 +554,8 @@ Phases are numbered from 0.
 3. **Save, library and remix.** ✅ Built. Keep saves a result with its replayable config (§6.4, including the runtime GPU and library versions reported by `/health`) to `library_items`, and the item holds its own blob refs. Saved prompts. An hourly retention sweeper deletes expired results, finished jobs left with no results, and unreferenced blobs (with a 1 h grace for blobs just written). Remix loads a kept image's or a result's config into Create and flags a model or LoRA that's no longer in the Drive index. Library search matches prompt text, title and tags.
 4. **Wan 2.2.** ✅ Built, not yet tested on a live GPU. Wan 2.2 descriptor (TI2V 5B for t2v and i2v; T2V and I2V A14B with high/low LoRA pairs; models are diffusers folders under `models/wan22/<variant>/`, which picks the variant) and runner (`WanImageToVideoPipeline.from_pipe` for 5B i2v, each A14B LoRA half loaded into its expert, MP4 via ffmpeg in `degas_worker/video.py`). Uploads, URL/`data:` imports, video frames, non-destructive transforms and auto-fit at submit (`degas/inputs.py`, `degas/media.py`); video posters, durations and extension stitching in the dispatcher; the image picker, crop editor, video playback, Extend and Use as source in the UI. The 5B variant (t2v and i2v), then the A14B variants with paired LoRAs. Video playback, video extension and stitching. Build the full image picker here (recent results, library, camera-roll upload, URL import, frame selection from videos), together with the crop and resize editor, image transforms, and auto-fit here, since i2v is the first mode that takes a source image.
 5. **Queue UX and push.** ✅ Built, not yet tested on an installed iPhone. Batch generation and seed modes, cancel, reorder, the PWA manifest and service worker, and Web Push. A batch picks *Random seeds* or *Count up* from the seed field. `PATCH /jobs/{id}` `{position}` reorders the queued jobs among their existing positions (new jobs still go last) and re-targets prefetch; `POST /jobs/{id}/restore` undoes cancelling a job that never started. The service worker is hand-written (`web/public/sw.js`) rather than `vite-plugin-pwa`: it caches the hashed build assets, falls back to the cached shell offline, never caches `/api`, and shows pushes. `degas/push.py` generates the VAPID key pair on first use (`push.key_file`, default `<data_dir>/vapid_private.pem`) and sends with `pywebpush` off the event loop, dropping subscriptions the push service reports gone (404/410). Notifications go out when a job finishes or fails (not when it's cancelled) and once per idle deadline when an idle session is 2 minutes from stopping; tapping one opens `/?tab=results` or `/?sheet=session`.
-6. **i2i, inpaint and outpaint.** The mask editor with brush tools, and outpaint canvas extension.
-7. **Control.** Preprocessors (depth, pose, canny), SDXL ControlNet units, SAM-assisted masking, and regional ControlNet.
+6. **i2i, inpaint and outpaint.** ✅ Built, not yet tested on a live GPU. SDXL gains `i2i`, `inpaint` and `outpaint` on regular checkpoints, and an `inpaint` variant for inpainting checkpoints in `models/sdxl/inpaint/` (§4.3). Masks are stored by `POST /blobs/{sha}/mask`, follow their source through re-crops (`POST /blobs/{mask}/remap`) and are fitted with it at submit (§6.5). Outpaint places the source on the Size canvas (`inputs.place`). SAM 3 selection moved up from Phase 7: `POST /api/preprocess` stages the image and asks the worker's new `/preprocess` route, which loads `Sam3TrackerModel` for taps or `Sam3Model` for a description (one at a time) from `preprocessors/sam3/`. Drive indexes a preprocessor folder with a `config.json` as one asset. The mask editor (brush, erase, select, undo, invert, blur preview) and the outpaint placement are in the UI. Untested live: the `from_pipe` pipelines, the SAM 3 transformers API (embedding reuse falls back to a full forward pass if `get_image_embeddings` isn't there), and SAM 3's memory next to SDXL on a T4.
+7. **Control.** Preprocessors (depth, pose, canny), SDXL ControlNet units, and regional ControlNet.
 
 ## 11. Risks and open questions
 

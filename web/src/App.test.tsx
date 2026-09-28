@@ -378,6 +378,7 @@ describe('App', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals()
+    vi.restoreAllMocks()
   })
 
   it('renders the generation form from the family schema', async () => {
@@ -753,6 +754,56 @@ describe('App', () => {
       model: { path: 'models/wan22/ti2v-5b' },
       inputs: { source: 'sha256:d1', fit: 'crop' },
     })
+  })
+
+  it('outpaints around a placed image, and needs a mask to inpaint', async () => {
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null)
+    const submitted: { spec: { mode: string; inputs?: unknown } }[] = []
+    const modes = ['t2i', 'i2i', 'inpaint', 'outpaint']
+    const variant = FAMILIES[0]?.variants[0]
+    mockApi({
+      'GET /api/families': () => [{ ...FAMILIES[0], variants: [{ ...variant, modes }] }],
+      'POST /api/jobs': (init) => {
+        submitted.push(JSON.parse(init?.body as string) as (typeof submitted)[number])
+        return { id: 'j2' }
+      },
+    })
+    localStorage.setItem(
+      'degas.create.draft',
+      JSON.stringify({
+        family: 'sdxl',
+        families: {
+          sdxl: {
+            model: 'models/sdxl/juggernaut.safetensors',
+            mode: 'outpaint',
+            loras: [],
+            params: { prompt: 'a lighthouse', width: 1344, height: 768 },
+            source: { sha: 'abc', width: 1024, height: 1024 },
+          },
+        },
+      }),
+    )
+    const user = userEvent.setup()
+    renderApp()
+    expect(await screen.findByText('+288 px left, +288 px right')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Fit')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Left' }))
+    expect(screen.getByText('+576 px right')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Generate' }))
+    expect(await screen.findByText('Queued 1 image.')).toBeInTheDocument()
+    expect(submitted[0]?.spec).toMatchObject({
+      mode: 'outpaint',
+      inputs: { source: 'sha256:abc', place: { x: 0, y: 0, w: 768, h: 768 } },
+    })
+
+    await user.click(screen.getByRole('button', { name: 'Inpaint' }))
+    expect(screen.getByRole('button', { name: 'Generate' })).toBeDisabled()
+    await user.click(screen.getByRole('button', { name: /Mask Paint the area to redraw/ }))
+    const editor = await screen.findByRole('dialog', { name: 'Mask' })
+    await user.click(within(editor).getByRole('button', { name: 'Select' }))
+    expect(within(editor).getByText(/Put SAM 3 in Drive/)).toBeInTheDocument()
+    await user.click(within(editor).getByRole('button', { name: 'Cancel' }))
+    expect(screen.queryByRole('dialog', { name: 'Mask' })).not.toBeInTheDocument()
   })
 
   it('plays a clip and extends it from its last frame', async () => {

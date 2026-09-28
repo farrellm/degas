@@ -296,8 +296,12 @@ class DriveIndexer:
         self, folder_id: str, parts: list[str], kind: str, out: list[dict[str, Any]]
     ) -> None:
         children = await self._children(folder_id)
-        # A diffusers-format directory is a single asset.
-        if len(parts) >= 3 and any(c["name"] == "model_index.json" for c in children):
+        # A diffusers-format directory is a single asset, and so is a transformers-format
+        # preprocessor (SAM 3: `preprocessors/sam3/config.json` and its weights).
+        names = {c["name"] for c in children}
+        if (len(parts) >= 3 and "model_index.json" in names) or (
+            kind == "preprocessor" and len(parts) >= 2 and "config.json" in names
+        ):
             size = await self._tree_size(children)
             out.append(self._asset(parts, kind, folder_id, size, None, None))
             return

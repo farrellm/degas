@@ -82,7 +82,7 @@ def test_sdxl_validate_fills_defaults_and_clamps() -> None:
         ({"params": {"prompt": "x", "scheduler": "nope"}}, "one of"),
         ({"params": {"prompt": "x", "steps": "many"}}, "number"),
         ({"params": {"prompt": "x", "width": 2048, "height": 2048}}, "pixel"),
-        ({"mode": "inpaint"}, "can.t do"),
+        ({"mode": "t2v"}, "can.t do"),
         ({"model": None}, "model"),
     ],
 )

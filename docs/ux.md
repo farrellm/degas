@@ -25,7 +25,7 @@ Defined in `web/src/index.css`. Dark is the default look on the phone; light fol
 | `--accent` | `#efa3b5` | `#a83f60` | Rose chalk: the primary action, focus, the hatching, and later the mask overlay |
 | `--ok` / `--warn` / `--danger` | viridian / ochre / vermilion chalks | darker equivalents | Session state, errors |
 
-**Rules for the accent.** Rose means "your action" or "what will change". It's used for the one primary button per screen, focus rings, sliders, the in-progress hatching and, from Phase 6, the painted mask. It's never used for decoration.
+**Rules for the accent.** Rose means "your action" or "what will change". It's used for the one primary button per screen, focus rings, sliders, the in-progress hatching and, from Phase 6, the painted mask and outpaint margins, both drawn as hatching. It's never used for decoration.
 
 **Type.** Two families, self-hosted through `@fontsource-variable` so the installed PWA works offline:
 
@@ -73,6 +73,11 @@ One name per action, used in buttons, confirmations and empty states:
 | GPU | Start L4 session / Stop session / Keep running | Starting L4 / Ready on NVIDIA L4 / Generating on … |
 | Worker | Restart worker | — |
 | Drive | Rescan Drive | Models indexed 3 h ago. |
+| Open the mask editor | Paint the area to redraw / Edit mask | — |
+| Close the mask editor | Done | — |
+| Use a SAM selection | Add / Subtract / Replace | Shown as an outline. |
+| Re-crop a masked image | — | The mask moved with the crop. / The crop left out the whole mask. |
+| Letterboxed source | Outpaint the bars | — |
 
 "Keep" and "Save to Photos" are deliberately different words. Keeping is about retention inside Degas; Save to Photos exports to the phone.
 
@@ -168,6 +173,18 @@ Built. Notes on what shipped: the drag handle is three strokes of hatching, sinc
 
 ### Phase 6: Image-to-image, inpaint and outpaint
 
+Built. Notes on what shipped, including where it changed from the plan below:
+
+- **The mask is hatching, not a wash.** The plan said rose at 50%. A translucent red wash is every inpaint tool's default and muddies the picture; the masked area is literally what isn't drawn yet, so it's drawn in the same rose hatching as a sketch tile, and you see the image between the strokes. The brush paints with a hatch pattern anchored to the canvas, so strokes join without seams. The hatching is sized for the fitted zoom and scales with pinch-zoom like paper.
+- **Mask editor.** *Brush*, *Erase* and *Select* in a three-way switch; a *Size* slider with a ring under the pointer; undo and redo, *Invert*, *Clear*, and *Blur*, which previews the form's mask blur. An *Image* slider fades the photo, not the mask. It paints at up to 2048 px a side; the server scales the mask to the image. One finger paints, two pinch and pan; a stroke started just before a pinch is dropped.
+- **Select (SAM 3, pulled forward from Phase 7).** Tap to include (a rose dot), long-press or *Exclude* to leave out (a hollow ring), or type what to select and *Find*. The answer is an outline, not hatching, until *Add*, *Subtract* or *Replace*, so the mask's meaning stays "will be redrawn". *Smaller* and *Bigger* move between SAM's candidates; *Grow* (default 8 px) gives the selection a margin to blend into. Without a ready session, or without SAM 3 in Drive, the Select panel says which.
+- **Mask row.** Under Source in Inpaint: the source thumbnail with the mask laid over in rose, *Edit mask*, and *Clear*. Generate stays disabled until there's a mask. Cropping the source again carries the mask with it.
+- **Outpaint** is placement on the canvas rather than a stepper per side: the Size row is the canvas, and the source sits on it with hatched margins. Drag it, scale it with *Image size*, or push it *Left*, *Right*, *Top*, *Bottom* or back to the *Centre* (buttons that wouldn't move it are dimmed). The readout says *+288 px left, +288 px right*. The default fits the source inside the canvas, centred; if that fills it, the source starts at 75%. Choosing *Letterbox* in the Fit row offers *Outpaint the bars*.
+- The mode chips scroll sideways instead of wrapping when four don't fit. Choosing an inpainting checkpoint limits them to *Inpaint* and *Outpaint*, and its variant name shows under the Model row.
+- *Use as source* sends an image to the family Create has open: an image goes to *From image* (or stays in *Inpaint* or *Outpaint*), and only a video draft sends it on to image-to-video.
+
+The plan as written before building:
+
 **Mask editor** (full screen). The mask is painted in rose at 50% over the image, so "affected area" uses the same colour as every other "what will change" cue.
 
 ```
@@ -187,7 +204,7 @@ A *Denoise strength* slider row appears for i2i and inpaint, from the schema.
 ### Phase 7: Control
 
 - **ControlNet section** in Create, under LoRAs. Each unit is a row showing a thumbnail of its control image, the model name and the scale. Tapping a unit opens the **control editor sheet**: an image slot (using the picker), preprocessor chips (*Depth*, *Pose*, *Edges*) with a *Run* button and a preview, the model, strength, a two-thumb start–end range, and *Limit to an area*, which opens the mask editor for regional control.
-- **SAM in the mask editor.** A *Select* tool: a tap adds a positive point, shown as a rose dot. A long press, or the *Exclude* toggle, adds a negative point, shown as a hollow ring. The result combines with the current mask using *Add*, *Subtract* or *Replace*.
+- SAM in the mask editor shipped in Phase 6.
 
 ## 5. Component inventory
 
@@ -205,7 +222,8 @@ A *Denoise strength* slider row appears for i2i and inpaint, from the schema.
 | `LibraryScreen` | Phase 3 | Images / Prompts, search, day-grouped grid |
 | `ImagePicker` | Phase 4 | Recent, Library, Photos, Link; frame choice for videos |
 | `CropEditor` | Phase 4 | Full screen; geometry in `crop.ts` |
-| Mask editor | Phase 6 | Full screen, canvas; SAM in Phase 7 |
+| `MaskEditor`, `MaskThumb` | Phase 6 | Full screen, canvas; helpers in `mask.ts`; SAM 3 Select |
+| `PlaceEditor` | Phase 6 | Outpaint placement; geometry in `place.ts` |
 | Control unit row + editor | Phase 7 | |
 
 ## 6. Quality floor

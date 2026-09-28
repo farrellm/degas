@@ -20,6 +20,7 @@ TREE: dict[str, list[dict[str, Any]]] = {
     "degas": [
         {"id": "models", "name": "models", "mimeType": FOLDER},
         {"id": "loras", "name": "loras", "mimeType": FOLDER},
+        {"id": "pre", "name": "preprocessors", "mimeType": FOLDER},
         {"id": "junk", "name": "notes.txt", "mimeType": "text/plain"},
     ],
     "models": [
@@ -41,6 +42,11 @@ TREE: dict[str, list[dict[str, Any]]] = {
     "d-5b": [
         {"id": "mi", "name": "model_index.json", "mimeType": "application/json", "size": "5"},
         {"id": "sub", "name": "transformer", "mimeType": FOLDER},
+    ],
+    "pre": [{"id": "sam3", "name": "sam3", "mimeType": FOLDER}],
+    "sam3": [
+        {"id": "sc", "name": "config.json", "mimeType": "application/json", "size": "7"},
+        {"id": "sw", "name": "model.safetensors", "mimeType": "x", "size": "3000"},
     ],
     "sub": [{"id": "w", "name": "weights.safetensors", "mimeType": "x", "size": "1000"}],
     "loras": [{"id": "l-sdxl", "name": "sdxl", "mimeType": FOLDER}],
@@ -119,7 +125,10 @@ async def test_scan(auth: DriveAuth) -> None:
         "models/wan22/ti2v-5b",
         "loras/sdxl/film.safetensors",
         "loras/sdxl/detail.safetensors",
+        "preprocessors/sam3",
     }
+    sam = assets["preprocessors/sam3"]
+    assert (sam["kind"], sam["family"], sam["size"]) == ("preprocessor", None, 3007)
     model = assets["models/sdxl/juggernaut.safetensors"]
     assert (model["family"], model["kind"], model["size"]) == ("sdxl", "model", 6938040682)
     assert model["md5"] == "abc"

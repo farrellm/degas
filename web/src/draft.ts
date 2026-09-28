@@ -11,6 +11,7 @@ import {
   type SeedMode,
   type Spec,
 } from './api'
+import type { Place } from './place'
 
 // The Create form's draft, kept across visits and reloads.
 const DRAFT_KEY = 'degas.create.draft'
@@ -20,6 +21,12 @@ export interface Source {
   sha: string
   width: number
   height: number
+}
+
+/** An inpaint mask, and the source image it was painted over. */
+export interface MaskRef {
+  sha: string
+  source: string
 }
 
 /** What Create remembers for one family, so switching Image ⇄ Video loses nothing. */
@@ -32,6 +39,9 @@ export interface FamilyDraft {
   fit?: Fit
   /** `sha256:…` of the clip this draft continues. */
   extends?: string | null
+  mask?: MaskRef | null
+  /** Outpaint: where the source sits on the canvas. */
+  place?: Place | null
 }
 
 export interface Draft {
@@ -103,10 +113,11 @@ export function switchFamily(family: string, prompt: string) {
 function specSource(spec: Spec): Source | null {
   const source = spec.inputs?.source
   if (!source) return null
+  const place = spec.inputs?.place
   return {
     sha: unref(source),
-    width: Number(spec.params.width),
-    height: Number(spec.params.height),
+    width: place ? place.w : Number(spec.params.width),
+    height: place ? place.h : Number(spec.params.height),
   }
 }
 
@@ -138,6 +149,11 @@ export function draftFromSpec(spec: Spec, seed: number | null, source?: BlobInfo
           ? { sha: source.sha256, width: source.width ?? 0, height: source.height ?? 0 }
           : specSource(spec),
         extends: spec.inputs?.extends ?? null,
+        mask:
+          spec.inputs?.mask && spec.inputs.source && !source
+            ? { sha: unref(spec.inputs.mask), source: unref(spec.inputs.source) }
+            : null,
+        place: spec.inputs?.place ?? null,
       },
     },
     batchCount: 1,
@@ -154,19 +170,31 @@ export function draftWithPrompt(p: SavedPrompt) {
   }))
 }
 
-/** Start a clip from an image: `family`'s draft switches to its image mode with this source. */
+/** Start from an image: `family`'s draft switches to `mode` with this source. */
 export function draftWithSource(family: string, mode: string, source: Source) {
-  update(family, (fd) => ({ ...fd, mode, source, extends: null }))
+  update(family, (fd) => ({ ...fd, mode, source, extends: null, mask: null, place: null }))
 }
 
-/** The first family and mode that start from a source image (Wan 2.2 i2v in Phase 4). */
+/**
+ * Where "Use as source" sends an image: the family Create has open (image-to-image for
+ * pictures, image-to-video for clips), staying in its current image mode if it has one.
+ * Families that can't start from an image are skipped.
+ */
 export function useSourceTarget(): { family: string; mode: string } | null {
   const families = useQuery({ queryKey: ['families'], queryFn: api.families })
-  for (const f of families.data ?? []) {
-    for (const v of f.variants) {
-      const mode = v.modes.find((m) => SOURCE_MODES.has(m))
-      if (mode) return { family: f.id, mode }
-    }
+  const draft = loadDraft()
+  const list = families.data ?? []
+  const ordered = [
+    ...list.filter((f) => f.id === draft.family),
+    ...list.filter((f) => f.id !== draft.family),
+  ]
+  for (const f of ordered) {
+    const modes = [...new Set(f.variants.flatMap((v) => v.modes))].filter((m) =>
+      SOURCE_MODES.has(m),
+    )
+    const current = draft.families[f.id]?.mode
+    const mode = current && modes.includes(current) ? current : modes[0]
+    if (mode) return { family: f.id, mode }
   }
   return null
 }
