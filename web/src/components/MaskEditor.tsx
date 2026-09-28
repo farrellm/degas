@@ -800,13 +800,9 @@ function SelectControls(p: SelectProps) {
   const count = p.selection?.candidates.length ?? 0
   return (
     <>
-      <form
-        className="mask-row describe"
-        onSubmit={(e) => {
-          e.preventDefault()
-          if (p.text.trim()) p.onFind()
-        }}
-      >
+      {/* Not a <form>: the editor renders inside the Create form, and a nested submit would
+          bubble up and queue a generation. */}
+      <div className="mask-row describe">
         <label htmlFor="select-text" className="visually-hidden">
           Describe what to select
         </label>
@@ -815,14 +811,25 @@ function SelectControls(p: SelectProps) {
           type="text"
           placeholder="Describe it, or tap the image"
           value={p.text}
+          enterKeyHint="search"
           onChange={(e) => {
             p.onText(e.target.value)
           }}
+          onKeyDown={(e) => {
+            if (e.key !== 'Enter') return
+            e.preventDefault()
+            if (p.text.trim() && !p.pending) p.onFind()
+          }}
         />
-        <button type="submit" className="btn quiet small" disabled={!p.text.trim() || p.pending}>
+        <button
+          type="button"
+          className="btn quiet small"
+          disabled={!p.text.trim() || p.pending}
+          onClick={p.onFind}
+        >
           Find
         </button>
-      </form>
+      </div>
       <div className="mask-row">
         <div className="seed-modes" role="group" aria-label="Taps">
           <button
