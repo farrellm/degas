@@ -21,7 +21,7 @@ from degas_worker.families.base import Output, RunContext
 from degas_worker.families.lora import plan_loras
 from degas_worker.video import encode_mp4
 
-# Offload to the CPU when the weights take more than this share of the GPU's memory.
+# Offload to the CPU when the loaded weights take more than this share of the GPU's memory.
 _OFFLOAD_ABOVE = 0.7
 
 # (LoRA asset path, local file, weight, component it goes into)
@@ -117,8 +117,8 @@ class Wan22Runner:
             str(path), subfolder="vae", torch_dtype=torch.float32
         )
         pipe = DiffusionPipeline.from_pretrained(str(path), vae=vae, torch_dtype=torch.bfloat16)
-        weights = sum(f.stat().st_size for f in path.rglob("*.safetensors"))
         _free, total = torch.cuda.mem_get_info()
+        weights = _loaded_bytes(pipe)
         if weights > total * _OFFLOAD_ABOVE:
             pipe.enable_model_cpu_offload()
         else:
@@ -181,3 +181,12 @@ class Wan22Runner:
         self.adapters = {}
         gc.collect()
         torch.cuda.empty_cache()
+
+
+def _loaded_bytes(pipe: Any) -> int:
+    """Size of the pipeline's weights as loaded (Wan's repos store fp32; they load as bf16)."""
+    total = 0
+    for component in pipe.components.values():
+        if isinstance(component, torch.nn.Module):
+            total += sum(p.numel() * p.element_size() for p in component.parameters())
+    return total
