@@ -52,6 +52,9 @@ SCHEDULERS: dict[str, tuple[Any, dict[str, Any]]] = {
     "unipc": (UniPCMultistepScheduler, {}),
 }
 
+# Highest denoise strength given to the inpainting checkpoint (see `_inputs`).
+INPAINT_MAX_STRENGTH = 0.99
+
 # Below this much total VRAM, SDXL fp16 is run with model CPU offload.
 _OFFLOAD_BELOW_BYTES = 12 * 1024**3
 
@@ -167,6 +170,10 @@ class SdxlRunner:
                 source, inputs["place"], size, int(params.get("blend") or 0)
             )
             strength = 1.0
+        if spec.get("variant") == "inpaint":
+            # The SDXL inpainting UNet misbehaves at a full-strength schedule; 0.99 is its
+            # usual workaround.
+            strength = min(strength, INPAINT_MAX_STRENGTH)
         soft = masks.blur(mask, blur)
         kwargs: dict[str, Any] = {
             "image": image,
