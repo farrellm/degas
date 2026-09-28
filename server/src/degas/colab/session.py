@@ -346,6 +346,14 @@ class SessionManager:
             " || python3 -m pip install -q fastapi uvicorn",
             timeout=300,
         )
+        # The image's torchao (0.10) is older than peft accepts, and peft then refuses to load
+        # any LoRA ("incompatible version of torchao"). Nothing here uses torchao: remove it.
+        await t.run(
+            "python3 -c 'import importlib.metadata as m, sys;"
+            ' sys.exit(tuple(map(int, m.version("torchao").split(".")[:2])) < (0, 16))\''
+            " 2>/dev/null || python3 -m pip uninstall -y -q torchao 2>/dev/null; true",
+            timeout=120,
+        )
 
     async def _start_worker(self) -> None:
         code = BOOTSTRAP.replace("{port}", str(self.config.colab.worker_port)).replace(
