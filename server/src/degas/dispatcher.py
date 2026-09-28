@@ -5,6 +5,9 @@ as soon as it is reported, stored as a blob, and then acknowledged on the worker
 
 Once the running job is past copying its own assets, the next queued job's
 models and LoRAs are prefetched into the VM's cache (design §5).
+
+A finished video extension also gets a stitched result: the clip it extends
+followed by the continuation (design §6.4).
 """
 
 import asyncio
@@ -12,13 +15,15 @@ import logging
 from datetime import UTC, datetime
 from typing import Any
 
+from degas import media
 from degas.blobs import BlobStore
 from degas.colab.session import SessionManager
 from degas.colab.worker_client import WorkerBusyError, WorkerClient, WorkerError
 from degas.db import Database, now
 from degas.events import EventBus
 from degas.families.base import spec_assets
-from degas.library import input_blobs
+from degas.inputs import Inputs, unref
+from degas.library import input_blobs, saved_config
 
 log = logging.getLogger(__name__)
 
@@ -28,10 +33,16 @@ MAX_REATTACH = 5
 
 class Dispatcher:
     def __init__(
-        self, db: Database, blobs: BlobStore, bus: EventBus, sessions: SessionManager
+        self,
+        db: Database,
+        blobs: BlobStore,
+        bus: EventBus,
+        sessions: SessionManager,
+        inputs: Inputs,
     ) -> None:
         self.db = db
         self.blobs = blobs
+        self.inputs = inputs
         self.bus = bus
         self.sessions = sessions
         self.progress: dict[str, dict[str, Any]] = {}  # job id → last progress event
@@ -144,6 +155,12 @@ class Dispatcher:
             self._running = None
             self._cancel_requested.discard(job_id)
         self._record_runtime(job_id)
+        if status == "done" and (job["spec"].get("inputs") or {}).get("extends"):
+            try:
+                await self._stitch(job_id)
+            except media.MediaError as e:
+                log.warning("stitching %s failed: %s", job_id, e)
+                error = f"The clip was made, but joining it to the one it extends failed: {e}"
         self._finish(job_id, status, error)
         self.sessions.set_busy(False)
         await self.sessions.refresh_health()  # the model cache may have changed
@@ -286,21 +303,83 @@ class Dispatcher:
                 return
             media_type = str(event.get("media_type") or content_type)
             sha = self.blobs.put(data, media_type)
-            size = self.blobs.image_size(sha) if media_type.startswith("image/") else None
+            w, h, duration = await self._measure(sha, media_type)
             result = self.db.insert_result(
-                job_id,
-                item,
-                sha,
-                media_type,
-                event.get("seed"),
-                size[0] if size else None,
-                size[1] if size else None,
+                job_id, item, sha, media_type, event.get("seed"), w, h, duration
             )
             self.bus.publish({"type": "result", "result": result})
         try:
             await worker.ack_output(job_id, item)
         except WorkerError as e:
             log.warning("could not acknowledge output %s/%s: %s", job_id, item, e)
+
+    async def _measure(
+        self, sha: str, media_type: str
+    ) -> tuple[int | None, int | None, float | None]:
+        """Width, height and (for a video) duration of a stored output; makes a video's poster."""
+        if media_type.startswith("image/"):
+            size = self.blobs.image_size(sha)
+            return (size[0], size[1], None) if size else (None, None, None)
+        path = self.blobs.path(sha)
+        info = await media.probe(path) if path else None
+        if info is None:
+            return None, None, None
+        try:
+            await self.inputs.poster(sha)
+        except media.MediaError as e:
+            log.warning("no poster for %s: %s", sha, e)
+        return info["width"], info["height"], info["duration"]
+
+    # -- video extension -------------------------------------------------------------------
+
+    async def _stitch(self, job_id: str) -> None:
+        """For each new clip, store the chain: the extended clip, then this one."""
+        job = self.db.get_job(job_id)
+        if job is None:
+            return
+        spec = job["spec"]
+        parent_sha = unref(spec["inputs"]["extends"])
+        parent = self.blobs.path(parent_sha)
+        if parent is None:
+            raise media.MediaError("the extended clip is no longer stored")
+        before = self._segments(parent_sha)
+        n = len(job["seeds"])
+        for clip in self.db.list_results(job_id=job_id, limit=200):
+            if clip["item_index"] >= n or self.db.has_result(job_id, n + clip["item_index"]):
+                continue
+            path = self.blobs.path(clip["blob_sha"])
+            if path is None:
+                continue
+            data = await media.stitch(parent, path, float(spec["params"].get("fps") or 0))
+            sha = self.blobs.put(data, "video/mp4")
+            w, h, duration = await self._measure(sha, "video/mp4")
+            result = self.db.insert_result(
+                job_id,
+                n + clip["item_index"],
+                sha,
+                "video/mp4",
+                clip["seed"],
+                w,
+                h,
+                duration,
+                segments=[*before, saved_config(job, clip)],
+            )
+            self.bus.publish({"type": "result", "result": result})
+
+    def _segments(self, sha: str) -> list[dict[str, Any]]:
+        """The configs of the clips making up a stored video, oldest first."""
+        result = self.db.result_for_blob(sha)
+        if result is not None:
+            if result.get("segments"):
+                return list(result["segments"])
+            job = self.db.get_job(result["job_id"])
+            if job is not None:
+                return [saved_config(job, result)]
+        item = self.db.library_item_for_blob(sha)
+        if item is not None:
+            config = item["config"]
+            return list(config.get("segments") or [config])
+        return []
 
 
 def _input_blobs(spec: dict[str, Any]) -> list[str]:

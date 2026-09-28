@@ -1,10 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState, type CSSProperties } from 'react'
-import { api, thumbUrl, type Asset, type Job, type Result, type Spec } from '../api'
+import { api, isVideo, thumbUrl, type Asset, type Job, type Result, type Spec } from '../api'
 import { assetLabel, useAssets } from '../assets'
 import { SaveToPhotos, Viewer } from '../components/Viewer'
-import { draftFromSpec } from '../draft'
-import { copyText, itemFraction, phaseText, size } from '../format'
+import { draftFromSpec, draftWithSource, useSourceTarget } from '../draft'
+import { clock, copyText, duration, itemFraction, phaseText, size } from '../format'
 import { hoursLeft, shortTime, timeLeft, useNow } from '../time'
 
 /** One job's worth of results: the contact-sheet row under a prompt caption. */
@@ -14,6 +14,8 @@ interface Group {
   job: Job | undefined
   results: Result[]
   at: string
+  /** A group of stitched video extensions, apart from the clips that made them. */
+  chain: boolean
 }
 
 const PENDING = new Set(['queued', 'running'])
@@ -32,19 +34,29 @@ function buildGroups(jobs: Job[], results: Result[]): Group[] {
   const byId = new Map<string, Group>()
   for (const job of jobs) {
     if (job.status === 'done' || job.status === 'cancelled') continue
-    byId.set(job.id, { id: job.id, spec: job.spec, job, results: [], at: job.created_at })
+    byId.set(job.id, {
+      id: job.id,
+      spec: job.spec,
+      job,
+      results: [],
+      at: job.created_at,
+      chain: false,
+    })
   }
   for (const r of results) {
-    let g = byId.get(r.job_id)
+    const chain = !!r.segments
+    const id = chain ? `${r.job_id}:chain` : r.job_id
+    let g = byId.get(id)
     if (!g) {
       const job = jobs.find((j) => j.id === r.job_id)
-      g = { id: r.job_id, spec: r.spec ?? job?.spec ?? null, job, results: [], at: r.created_at }
-      byId.set(r.job_id, g)
+      g = { id, spec: r.spec ?? job?.spec ?? null, job, results: [], at: r.created_at, chain }
+      byId.set(id, g)
     }
     g.results.push(r)
     if (r.created_at > g.at) g.at = r.created_at
   }
-  const rank = (g: Group) => (g.job?.status === 'running' ? 0 : g.job?.status === 'queued' ? 1 : 2)
+  const rank = (g: Group) =>
+    g.chain ? 2 : g.job?.status === 'running' ? 0 : g.job?.status === 'queued' ? 1 : 2
   return [...byId.values()]
     .map((g) => ({ ...g, results: g.results.toSorted((a, b) => a.item_index - b.item_index) }))
     .toSorted((a, b) => rank(a) - rank(b) || (a.at < b.at ? 1 : a.at > b.at ? -1 : 0))
@@ -67,6 +79,14 @@ export function ResultsScreen({
     onSettled: () => qc.invalidateQueries({ queryKey: ['jobs'] }),
   })
   const [open, setOpen] = useState<string | null>(null)
+  const sourceTarget = useSourceTarget()
+  const extend = useMutation({
+    mutationFn: (r: Result) => api.extendResult(r.id),
+    onSuccess: (ext) => {
+      draftFromSpec(ext.spec, null, ext.source)
+      onRemix()
+    },
+  })
   const keep = useMutation({
     mutationFn: async (r: Result) => {
       await (r.library_id ? api.deleteLibraryItem(r.library_id) : api.keep(r.id))
@@ -93,8 +113,8 @@ export function ResultsScreen({
         <div className="tile sketch" aria-hidden />
         <p className="lede">Nothing here yet.</p>
         <p>
-          Images appear here as they finish. Images you don’t keep are deleted 24 hours after the
-          GPU session ends.
+          Images and clips appear here as they finish. Anything you don’t keep is deleted 24 hours
+          after the GPU session ends.
         </p>
         <button type="button" className="btn" onClick={onCreate}>
           Write a prompt
@@ -155,9 +175,38 @@ export function ResultsScreen({
               >
                 Remix
               </button>
-              {keep.error && (
+              {isVideo(r.media_type) ? (
+                <button
+                  type="button"
+                  className="btn quiet"
+                  disabled={extend.isPending || r.spec?.family !== 'wan22'}
+                  onClick={() => {
+                    extend.mutate(r)
+                  }}
+                >
+                  {extend.isPending ? 'Extending…' : 'Extend'}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="btn quiet"
+                  disabled={!sourceTarget || r.width === null || r.height === null}
+                  onClick={() => {
+                    if (!sourceTarget || r.width === null || r.height === null) return
+                    draftWithSource(sourceTarget.family, sourceTarget.mode, {
+                      sha: r.blob_sha,
+                      width: r.width,
+                      height: r.height,
+                    })
+                    onRemix()
+                  }}
+                >
+                  Use as source
+                </button>
+              )}
+              {(keep.error ?? extend.error) && (
                 <p className="viewer-note" role="alert">
-                  {keep.error.message}
+                  {(keep.error ?? extend.error)?.message}
                 </p>
               )}
             </>
@@ -181,7 +230,7 @@ function GroupView({
   onOpen: (id: string) => void
   onCancel: (jobId: string) => void
 }) {
-  const { spec, job, results } = group
+  const { spec, job, results, chain } = group
   const params = spec?.params ?? {}
   const prompt = String(params.prompt ?? '').trim()
   const w = Number(params.width ?? results[0]?.width ?? 1)
@@ -190,19 +239,43 @@ function GroupView({
     '--ratio': `${String(w)} / ${String(h)}`,
     '--cols': w > h ? 2 : 3,
   } as CSSProperties
-  const pending = job && PENDING.has(job.status)
+  const pending = !chain && job && PENDING.has(job.status)
   const expiresAt = results[0]?.expires_at ?? null
   const allKept = results.length > 0 && results.every((r) => r.library_id)
   const expiry = allKept ? 'Kept' : timeLeft(expiresAt, now)
   const soon = !allKept && expiresAt !== null && hoursLeft(expiresAt, now) < SOON_HOURS
-  const total = job?.seeds.length ?? results.length
+  const total = chain ? 0 : (job?.seeds.length ?? results.length)
   const done = new Set(results.map((r) => r.item_index))
+  const video = results[0] ? isVideo(results[0].media_type) : false
+  const clips = results[0]?.segments?.length ?? 0
+  const length = results[0]?.duration
+  const meta = chain
+    ? `Extended, ${String(clips)} clips${length ? `, ${duration(length)}` : ''}`
+    : [spec ? modelLine(spec, assets) : null, size(w, h), video && length ? duration(length) : null]
+        .filter(Boolean)
+        .join(', ')
+  const tile = (r: Result, i: number) => (
+    <button
+      key={r.id}
+      type="button"
+      className={r.library_id ? 'tile kept' : 'tile'}
+      onClick={() => {
+        onOpen(r.id)
+      }}
+      aria-label={`Open ${isVideo(r.media_type) ? 'clip' : 'image'} ${String(i + 1)}, seed ${String(r.seed)}${r.library_id ? ', kept' : ''}`}
+    >
+      <img src={thumbUrl(r.blob_sha)} alt="" loading="lazy" />
+      {isVideo(r.media_type) && r.duration !== null && (
+        <span className="tile-duration">{clock(r.duration)}</span>
+      )}
+    </button>
+  )
 
   return (
     <section aria-label={prompt || 'Untitled'}>
       <header className="group-caption">
         <p className={prompt ? 'title' : 'title untitled'}>{prompt || 'No prompt'}</p>
-        <p className="meta">{spec ? `${modelLine(spec, assets)}, ${size(w, h)}` : size(w, h)}</p>
+        <p className="meta">{meta}</p>
         <div className="aside">
           {pending ? (
             <button
@@ -221,23 +294,10 @@ function GroupView({
       </header>
       {job?.status === 'error' && job.error && <p className="group-error">{job.error}</p>}
       <div className="contact" style={style}>
-        {Array.from({ length: Math.max(total, results.length) }, (_, i) => {
+        {chain && results.map(tile)}
+        {Array.from({ length: Math.max(total, chain ? 0 : results.length) }, (_, i) => {
           const r = results.find((x) => x.item_index === i)
-          if (r) {
-            return (
-              <button
-                key={r.id}
-                type="button"
-                className={r.library_id ? 'tile kept' : 'tile'}
-                onClick={() => {
-                  onOpen(r.id)
-                }}
-                aria-label={`Open image ${String(i + 1)}, seed ${String(r.seed)}${r.library_id ? ', kept' : ''}`}
-              >
-                <img src={thumbUrl(r.blob_sha)} alt="" loading="lazy" />
-              </button>
-            )
-          }
+          if (r) return tile(r, i)
           if (!pending) return null
           return <SketchTile key={`s${String(i)}`} job={job} item={i} done={done} />
         })}

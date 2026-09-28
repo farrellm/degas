@@ -194,6 +194,136 @@ const PROMPT = {
   created_at: '2026-09-27T12:00:00Z',
 }
 
+const WAN = {
+  id: 'wan22',
+  label: 'Wan 2.2',
+  media: 'video',
+  lora_format: 'paired_hi_lo',
+  variants: [
+    {
+      id: 'ti2v-5b',
+      label: 'Wan 2.2 TI2V 5B',
+      min_gpu: 'L4',
+      modes: ['t2v', 'i2v'],
+      model_dir: 'models/wan22/ti2v-5b',
+      lora_format: 'single',
+      size_constraints: {
+        multiple_of: 32,
+        min_pixels: 399360,
+        max_pixels: 942080,
+        presets: [
+          [1280, 704],
+          [704, 1280],
+        ],
+      },
+    },
+    {
+      id: 't2v-a14b',
+      label: 'Wan 2.2 T2V A14B',
+      min_gpu: 'A100',
+      modes: ['t2v'],
+      model_dir: 'models/wan22/t2v-a14b',
+      lora_format: 'paired_hi_lo',
+      size_constraints: {
+        multiple_of: 16,
+        min_pixels: 230400,
+        max_pixels: 921600,
+        presets: [
+          [1280, 720],
+          [832, 480],
+        ],
+      },
+    },
+  ],
+}
+
+const WAN_SCHEMA = {
+  type: 'object',
+  required: ['prompt'],
+  properties: {
+    prompt: { type: 'string', title: 'Prompt', 'x-widget': 'prompt' },
+    width: { type: 'integer', title: 'Width', default: 1280, 'x-widget': 'aspect' },
+    height: { type: 'integer', title: 'Height', default: 704, 'x-widget': 'aspect' },
+    num_frames: {
+      type: 'integer',
+      title: 'Frames',
+      default: 121,
+      minimum: 17,
+      maximum: 121,
+      'x-step': 4,
+      'x-widget': 'slider',
+    },
+    fps: { type: 'integer', title: 'Frame rate', default: 24, 'x-widget': 'slider' },
+    steps: { type: 'integer', title: 'Steps', default: 50, 'x-widget': 'slider' },
+    cfg: { type: 'number', title: 'CFG', default: 5, 'x-widget': 'slider' },
+    seed: { type: 'integer', title: 'Seed', default: -1, 'x-widget': 'seed' },
+  },
+}
+
+const WAN_ASSETS = [
+  {
+    path: 'models/wan22/ti2v-5b',
+    family: 'wan22',
+    kind: 'model',
+    size: 32e9,
+    sidecar: { label: 'TI2V 5B' },
+    preview_thumb: null,
+  },
+  {
+    path: 'models/wan22/t2v-a14b/Wan2.2-T2V-A14B',
+    family: 'wan22',
+    kind: 'model',
+    size: 120e9,
+    sidecar: null,
+    preview_thumb: null,
+  },
+  ...['motion_high_noise', 'motion_low_noise', 'grain'].map((name) => ({
+    path: `loras/wan22/${name}.safetensors`,
+    family: 'wan22',
+    kind: 'lora',
+    size: 300e6,
+    sidecar: null,
+    preview_thumb: null,
+  })),
+]
+
+const WAN_SPEC = {
+  family: 'wan22',
+  variant: 'ti2v-5b',
+  mode: 't2v',
+  model: { path: 'models/wan22/ti2v-5b' },
+  params: {
+    prompt: 'waves on the harbour wall',
+    width: 1280,
+    height: 704,
+    num_frames: 121,
+    fps: 24,
+    steps: 50,
+    cfg: 5,
+    seed: 5,
+  },
+}
+
+const VIDEO_RESULT = {
+  ...RESULT,
+  id: 'v1',
+  job_id: 'j9',
+  blob_sha: 'vid',
+  media_type: 'video/mp4',
+  seed: 5,
+  width: 1280,
+  height: 704,
+  duration: 5.04,
+  segments: null,
+  spec: WAN_SPEC,
+}
+
+const VIDEO_ROUTES: Record<string, Handler> = {
+  'GET /api/families': () => [...FAMILIES, WAN],
+  'GET /api/families/wan22/schema': () => WAN_SCHEMA,
+  'GET /api/assets': () => [...ASSETS, ...WAN_ASSETS],
+}
+
 class FakeEventSource {
   onmessage: ((e: MessageEvent<string>) => void) | null = null
   close() {
@@ -562,6 +692,157 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: /T4/ }))
     await user.click(screen.getByRole('button', { name: 'Start T4 session' }))
     expect(started).toEqual([{ gpu: 'T4', high_mem: false }])
+  })
+
+  it('makes a clip from a cropped image', async () => {
+    const transforms: unknown[] = []
+    const submitted: { spec: Record<string, unknown> }[] = []
+    mockApi({
+      ...VIDEO_ROUTES,
+      'GET /api/results': () => ({ results: [RESULT], cursor: null }),
+      'GET /api/blobs/abc/transform': () => ({ original: 'abc', ops: [] }),
+      'POST /api/blobs/abc/transform': (init) => {
+        transforms.push(JSON.parse(init?.body as string))
+        return { sha256: 'd1', media_type: 'image/png', width: 1280, height: 704 }
+      },
+      'POST /api/jobs': (init) => {
+        submitted.push(JSON.parse(init?.body as string) as (typeof submitted)[number])
+        return { id: 'j2' }
+      },
+    })
+    const user = userEvent.setup()
+    renderApp()
+    await user.click(await screen.findByRole('button', { name: 'Video' }))
+    expect(await screen.findByRole('button', { name: 'Model TI2V 5B' })).toBeInTheDocument()
+    await user.type(screen.getByLabelText('Prompt'), 'the lighthouse beam sweeps')
+    expect(screen.getByRole('button', { name: 'Generate' })).toBeEnabled()
+
+    await user.click(screen.getByRole('button', { name: 'From image' }))
+    expect(screen.getByRole('button', { name: 'Generate' })).toBeDisabled() // needs a source
+    await user.click(screen.getByRole('button', { name: /Source Choose an image/ }))
+    const picker = screen.getByRole('dialog', { name: 'Choose image' })
+    await user.click(await within(picker).findByRole('button', { name: 'Image: a lighthouse' }))
+    expect(within(picker).getByText('832 × 1216')).toBeInTheDocument()
+    await user.click(within(picker).getByRole('button', { name: 'Crop' }))
+
+    const editor = await screen.findByRole('dialog', { name: 'Crop' })
+    const img = editor.querySelector('img')
+    if (!img) throw new Error('no image in the editor')
+    Object.defineProperty(img, 'naturalWidth', { value: 832 })
+    Object.defineProperty(img, 'naturalHeight', { value: 1216 })
+    fireEvent.load(img)
+    expect(within(editor).getByRole('button', { name: 'Match 1280 × 704' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    expect(await within(editor).findByText(/1280 × 704 from 832 × 1216/)).toBeInTheDocument()
+    expect(within(editor).getByText(/Scaled up 1\.5×|Scaled up 1\.6×/)).toBeInTheDocument()
+    await user.click(within(editor).getByRole('button', { name: 'Apply' }))
+
+    expect(await screen.findByRole('button', { name: 'Source 1280 × 704' })).toBeInTheDocument()
+    const [{ ops }] = transforms as [{ ops: { op: string }[] }]
+    expect(ops.map((o) => o.op)).toEqual(['crop', 'resize'])
+    expect(ops[1]).toEqual({ op: 'resize', w: 1280, h: 704 })
+
+    await user.click(screen.getByRole('button', { name: 'Generate' }))
+    expect(await screen.findByText('Queued 1 clip.')).toBeInTheDocument()
+    expect(submitted[0]?.spec).toMatchObject({
+      family: 'wan22',
+      variant: 'ti2v-5b',
+      mode: 'i2v',
+      model: { path: 'models/wan22/ti2v-5b' },
+      inputs: { source: 'sha256:d1', fit: 'crop' },
+    })
+  })
+
+  it('plays a clip and extends it from its last frame', async () => {
+    const submitted: { spec: { inputs?: unknown } }[] = []
+    mockApi({
+      ...VIDEO_ROUTES,
+      'GET /api/results': () => ({ results: [VIDEO_RESULT], cursor: null }),
+      'POST /api/results/v1/extend': () => ({
+        spec: {
+          ...WAN_SPEC,
+          mode: 'i2v',
+          params: { ...WAN_SPEC.params, seed: -1 },
+          inputs: { source: 'sha256:f1', extends: 'sha256:vid' },
+        },
+        source: { sha256: 'f1', media_type: 'image/png', width: 1280, height: 704 },
+      }),
+      'POST /api/jobs': (init) => {
+        submitted.push(JSON.parse(init?.body as string) as (typeof submitted)[number])
+        return { id: 'j3' }
+      },
+    })
+    const user = userEvent.setup()
+    renderApp()
+    await user.click(await screen.findByRole('button', { name: /Results/ }))
+    const tile = await screen.findByRole('button', { name: /Open clip 1, seed 5/ })
+    expect(within(tile).getByText('0:05')).toBeInTheDocument()
+    await user.click(tile)
+    const viewer = screen.getByRole('dialog', { name: 'Video' })
+    expect(viewer.querySelector('video')).toHaveAttribute('src', '/api/blobs/vid')
+    expect(within(viewer).getByText('121 frames at 24 fps, 5.0 s')).toBeInTheDocument()
+    await user.click(within(viewer).getByRole('button', { name: 'Extend' }))
+
+    expect(await screen.findByText('Continues a clip from its last frame.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Video' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'From image' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    await user.click(screen.getByRole('button', { name: 'Generate' }))
+    await screen.findByText('Queued 1 clip.')
+    expect(submitted[0]?.spec.inputs).toEqual({
+      source: 'sha256:f1',
+      fit: 'crop',
+      extends: 'sha256:vid',
+    })
+  })
+
+  it('pairs A14B LoRAs with a weight per expert, and warns about a small GPU', async () => {
+    localStorage.setItem(
+      'degas.create.draft',
+      JSON.stringify({
+        family: 'wan22',
+        families: { wan22: { model: 'models/wan22/t2v-a14b/Wan2.2-T2V-A14B', params: {} } },
+      }),
+    )
+    const submitted: { spec: { loras: unknown } }[] = []
+    mockApi({
+      ...VIDEO_ROUTES,
+      'GET /api/session': () => RUNNING,
+      'POST /api/jobs': (init) => {
+        submitted.push(JSON.parse(init?.body as string) as (typeof submitted)[number])
+        return { id: 'j4' }
+      },
+    })
+    const user = userEvent.setup()
+    renderApp()
+    expect(
+      await screen.findByText('Needs an A100; this L4 session may run it slowly.'),
+    ).toBeInTheDocument()
+    expect(screen.getByText('Wan 2.2 T2V A14B')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'From image' })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Add LoRA' }))
+    const sheet = screen.getByRole('dialog', { name: 'Add LoRA' })
+    expect(within(sheet).queryByRole('button', { name: /grain/ })).not.toBeInTheDocument()
+    await user.click(within(sheet).getByRole('button', { name: /motion/ }))
+    fireEvent.change(screen.getByRole('slider', { name: 'motion low-noise weight' }), {
+      target: { value: '0.5' },
+    })
+    expect(screen.getByRole('slider', { name: 'motion high-noise weight' })).toHaveValue('1')
+
+    await user.type(screen.getByLabelText('Prompt'), 'surf')
+    await user.click(screen.getByRole('button', { name: 'Generate' }))
+    await screen.findByText('Queued 1 clip.')
+    expect(submitted[0]?.spec.loras).toEqual([
+      {
+        high: { path: 'loras/wan22/motion_high_noise.safetensors', weight: 1 },
+        low: { path: 'loras/wan22/motion_low_noise.safetensors', weight: 0.5 },
+      },
+    ])
   })
 
   it('reports an unreachable server', async () => {

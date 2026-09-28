@@ -1,5 +1,6 @@
 """Family descriptors: what a model family offers and how its job specs are validated."""
 
+import re
 from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol
 
@@ -18,6 +19,11 @@ class Variant:
     min_gpu: str
     modes: tuple[str, ...]
     default_params: dict[str, Any] = field(default_factory=dict)
+    # Drive folder holding this variant's models (families with one variant use the whole
+    # `models/<family>/` folder).
+    model_dir: str | None = None
+    # Overrides the family's LoRA format (Wan 2.2: the 5B takes single files, A14B pairs).
+    lora_format: Literal["single", "paired_hi_lo"] | None = None
 
 
 @dataclass(frozen=True)
@@ -62,6 +68,8 @@ def describe(family: FamilyDescriptor) -> dict[str, Any]:
                 "label": v.label,
                 "min_gpu": v.min_gpu,
                 "modes": list(v.modes),
+                "model_dir": v.model_dir,
+                "lora_format": v.lora_format or family.lora_format,
                 "size_constraints": family.size_constraints(v.id).__dict__,
             }
             for v in family.variants
@@ -70,6 +78,61 @@ def describe(family: FamilyDescriptor) -> dict[str, Any]:
 
 
 LORA_WEIGHT: JsonSchema = {"type": "number", "minimum": -2, "maximum": 2}
+SHA_REF = re.compile(r"^sha256:[0-9a-f]{64}$")
+FIT_MODES = ("crop", "pad", "stretch")
+# Modes that start from a source image.
+SOURCE_MODES = frozenset({"i2i", "i2v", "inpaint", "outpaint"})
+
+
+def find_variant(family: FamilyDescriptor, variant: str, mode: str) -> Variant:
+    v = next((v for v in family.variants if v.id == variant), None)
+    if v is None:
+        raise SpecError(f"Unknown {family.label} variant {variant!r}")
+    if mode not in v.modes:
+        raise SpecError(f"{v.label} can't do {mode!r}")
+    return v
+
+
+def validate_model(model: Any, variant: Variant) -> dict[str, Any]:
+    if not isinstance(model, dict) or not isinstance(model.get("path"), str) or not model["path"]:
+        raise SpecError("A model is required")
+    path: str = model["path"]
+    if variant.model_dir and not (
+        path == variant.model_dir or path.startswith(variant.model_dir + "/")
+    ):
+        raise SpecError(f"{path} isn't a {variant.label} model")
+    return {"path": path, "size": model.get("size")}
+
+
+def validate_inputs(inputs: Any, mode: str) -> dict[str, Any]:
+    """Source-image inputs: `{source, fit, extends?}`. Transforms are recorded by the server."""
+    if mode not in SOURCE_MODES:
+        return {}
+    inputs = inputs if isinstance(inputs, dict) else {}
+    source = inputs.get("source")
+    if not isinstance(source, str) or not SHA_REF.match(source):
+        raise SpecError("Choose a source image")
+    fit = inputs.get("fit") or "crop"
+    if fit not in FIT_MODES:
+        raise SpecError(f"fit: must be one of {', '.join(FIT_MODES)}")
+    out: dict[str, Any] = {"source": source, "fit": fit}
+    extends = inputs.get("extends")
+    if extends is not None:
+        if not isinstance(extends, str) or not SHA_REF.match(extends):
+            raise SpecError("extends: expected a sha256 reference")
+        out["extends"] = extends
+    return out
+
+
+def snap_size(params: dict[str, Any], c: SizeConstraints, label: str) -> None:
+    """Round width and height down to `multiple_of` and check the pixel count."""
+    for dim in ("width", "height"):
+        params[dim] = max(c.multiple_of, params[dim] // c.multiple_of * c.multiple_of)
+    pixels = params["width"] * params["height"]
+    if not c.min_pixels <= pixels <= c.max_pixels:
+        raise SpecError(
+            f"{params['width']}x{params['height']} is outside {label}'s supported pixel count"
+        )
 
 
 def spec_assets(spec: dict[str, Any]) -> list[dict[str, Any]]:
@@ -104,6 +167,38 @@ def validate_single_loras(loras: Any, limit: int) -> list[dict[str, Any]]:
             raise SpecError(f"LoRA {lora['path']} is listed twice")
         weight = _coerce("LoRA weight", LORA_WEIGHT, lora.get("weight", 1.0))
         out.append({"path": lora["path"], "weight": weight, "size": lora.get("size")})
+    return out
+
+
+def validate_paired_loras(loras: Any, limit: int) -> list[dict[str, Any]]:
+    """Validate Wan A14B LoRAs: `[{high: {path, weight}, low: {path, weight}}]`.
+
+    Either half may be left out, for a LoRA trained for one expert only.
+    """
+    if loras is None:
+        return []
+    if not isinstance(loras, list):
+        raise SpecError("loras: expected a list")
+    if len(loras) > limit:
+        raise SpecError(f"At most {limit} LoRAs can be applied at once")
+    out: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for lora in loras:
+        if not isinstance(lora, dict) or not (lora.get("high") or lora.get("low")):
+            raise SpecError("Each LoRA needs a high-noise or low-noise file")
+        entry: dict[str, Any] = {}
+        for half in ("high", "low"):
+            part = lora.get(half)
+            if not part:
+                continue
+            if not isinstance(part, dict) or not isinstance(part.get("path"), str):
+                raise SpecError(f"LoRA {half}-noise half needs a path")
+            if part["path"] in seen:
+                raise SpecError(f"LoRA {part['path']} is listed twice")
+            seen.add(part["path"])
+            weight = _coerce("LoRA weight", LORA_WEIGHT, part.get("weight", 1.0))
+            entry[half] = {"path": part["path"], "weight": weight, "size": part.get("size")}
+        out.append(entry)
     return out
 
 

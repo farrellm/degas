@@ -42,6 +42,7 @@ TREE: dict[str, list[dict[str, Any]]] = {
         {"id": "mi", "name": "model_index.json", "mimeType": "application/json", "size": "5"},
         {"id": "sub", "name": "transformer", "mimeType": FOLDER},
     ],
+    "sub": [{"id": "w", "name": "weights.safetensors", "mimeType": "x", "size": "1000"}],
     "loras": [{"id": "l-sdxl", "name": "sdxl", "mimeType": FOLDER}],
     "l-sdxl": [
         {"id": "l1", "name": "film.safetensors", "mimeType": "application/octet-stream"},
@@ -123,6 +124,7 @@ async def test_scan(auth: DriveAuth) -> None:
     assert (model["family"], model["kind"], model["size"]) == ("sdxl", "model", 6938040682)
     assert model["md5"] == "abc"
     assert assets["models/wan22/ti2v-5b"]["family"] == "wan22"
+    assert assets["models/wan22/ti2v-5b"]["size"] == 1005  # includes transformer/
     assert assets["loras/sdxl/film.safetensors"]["kind"] == "lora"
 
 

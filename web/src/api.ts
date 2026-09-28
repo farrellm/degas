@@ -5,6 +5,9 @@ export interface Variant {
   label: string
   min_gpu: string
   modes: string[]
+  /** Drive folder of this variant's models, when the family has several variants. */
+  model_dir: string | null
+  lora_format: 'single' | 'paired_hi_lo'
   size_constraints: {
     multiple_of: number
     min_pixels: number
@@ -33,6 +36,8 @@ export interface ParamProp {
   'x-enum-labels'?: string[]
   'x-widget'?: 'prompt' | 'slider' | 'number' | 'select' | 'seed' | 'aspect'
   'x-advanced'?: boolean
+  /** Slider step when it isn't `multipleOf` (Wan frame counts go 17, 21, 25…). */
+  'x-step'?: number
 }
 
 export interface ParamSchema {
@@ -47,6 +52,10 @@ export interface Sidecar {
   trigger_words?: string[]
   default_weight?: number
   notes?: string
+  /** Wan 2.2: the variants a LoRA is for. */
+  variants?: string[]
+  /** Wan 2.2 A14B: the high- and low-noise files of a pair, in the same folder. */
+  pair?: { high: string; low: string }
 }
 
 export interface Asset {
@@ -114,13 +123,53 @@ export interface LoraRef {
   size?: number | null
 }
 
+/** A Wan 2.2 A14B LoRA: one file per expert (either may be missing). */
+export interface LoraPair {
+  high?: LoraRef
+  low?: LoraRef
+}
+
+export type LoraEntry = LoraRef | LoraPair
+
+export const isPair = (l: LoraEntry): l is LoraPair => !('path' in l)
+
+export type Fit = 'crop' | 'pad' | 'stretch'
+
+export interface Inputs {
+  /** `sha256:…` of the source image (i2v). */
+  source?: string
+  fit?: Fit
+  /** `sha256:…` of the clip a video extension continues. */
+  extends?: string
+  transforms?: Record<string, { original: string; ops: Op[] }>
+}
+
 export interface Spec {
   family: string
   variant: string
   mode: string
   model: { path: string; size?: number | null }
-  loras?: LoraRef[]
+  loras?: LoraEntry[]
   params: Params
+  inputs?: Inputs
+}
+
+/** A transform operation (design §6.5). Rotation is clockwise. */
+export type Op =
+  | { op: 'rotate'; deg: 90 | 180 | 270 }
+  | { op: 'flip_h' }
+  | { op: 'flip_v' }
+  | { op: 'crop'; x: number; y: number; w: number; h: number }
+  | { op: 'resize'; w: number; h: number; filter?: string }
+  | { op: 'pad'; w: number; h: number }
+
+/** A stored image or video, as returned by uploads, imports, frames and transforms. */
+export interface BlobInfo {
+  sha256: string
+  media_type: string
+  width: number | null
+  height: number | null
+  duration?: number | null
 }
 
 export interface Progress {
@@ -150,6 +199,8 @@ export interface Job {
 /** The replayable config a kept image carries (design §6.4): a spec plus its runtime. */
 export interface SavedConfig extends Spec {
   degas_version: number
+  /** A stitched video: the configs of its clips, oldest first. */
+  segments?: SavedConfig[]
   runtime?: { gpu: string | null; duration_s?: number; diffusers?: string; torch?: string }
 }
 
@@ -160,6 +211,7 @@ export interface LibraryItem {
   media_type: string
   width: number | null
   height: number | null
+  duration: number | null
   config: SavedConfig
   title: string | null
   tags: string[]
@@ -186,6 +238,9 @@ export interface Result {
   seed: number | null
   width: number | null
   height: number | null
+  duration: number | null
+  /** A stitched video extension: the configs of the clips it chains. */
+  segments: SavedConfig[] | null
   created_at: string
   expires_at: string | null
   /** The library item keeping this result, if it was kept. */
@@ -202,10 +257,14 @@ export class ApiError extends Error {
 }
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const raw = body instanceof Blob
   const res = await fetch(`/api${path}`, {
     method,
-    headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
-    body: body === undefined ? undefined : JSON.stringify(body),
+    headers:
+      body === undefined
+        ? undefined
+        : { 'Content-Type': raw ? body.type || 'application/octet-stream' : 'application/json' },
+    body: body === undefined ? undefined : raw ? body : JSON.stringify(body),
   })
   if (!res.ok) {
     let message = `HTTP ${String(res.status)}`
@@ -260,6 +319,22 @@ export const api = {
   editPrompt: (id: string, edit: { name?: string; tags?: string[] }) =>
     request<SavedPrompt>('PATCH', `/prompts/${id}`, edit),
   deletePrompt: (id: string) => request<{ deleted: boolean }>('DELETE', `/prompts/${id}`),
+  upload: (file: Blob) => request<BlobInfo>('POST', '/blobs', file),
+  fromUrl: (url: string) => request<BlobInfo>('POST', '/blobs/from-url', { url }),
+  frame: (sha: string, at: 'first' | 'last' | number) =>
+    request<BlobInfo>('POST', `/blobs/${sha}/frame`, { at }),
+  transform: (sha: string, ops: Op[]) =>
+    request<BlobInfo>('POST', `/blobs/${sha}/transform`, { ops }),
+  getTransform: (sha: string) =>
+    request<{ original: string; ops: Op[] }>('GET', `/blobs/${sha}/transform`),
+  extendResult: (id: string) => request<Extension>('POST', `/results/${id}/extend`),
+  extendLibraryItem: (id: string) => request<Extension>('POST', `/library/${id}/extend`),
+}
+
+/** A spec continuing a clip from its last frame, and that frame. */
+export interface Extension {
+  spec: Spec
+  source: BlobInfo
 }
 
 /** "?q=cat&cursor=…", leaving out empty values. */
@@ -277,3 +352,5 @@ export function isActive(snapshot: SessionSnapshot | undefined): boolean {
 
 export const blobUrl = (sha: string) => `/api/blobs/${sha}`
 export const thumbUrl = (sha: string) => `/api/thumbs/${sha}`
+export const isVideo = (mediaType: string) => mediaType.startsWith('video/')
+export const unref = (value: string) => value.replace(/^sha256:/, '')

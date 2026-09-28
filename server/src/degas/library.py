@@ -30,6 +30,8 @@ def saved_config(job: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
     }
     if job.get("runtime"):
         config["runtime"] = job["runtime"]
+    if result.get("segments"):
+        config["segments"] = result["segments"]
     return config
 
 
@@ -44,7 +46,7 @@ def input_blobs(spec: dict[str, Any]) -> list[str]:
                 shas.append(sha)
 
     inputs = spec.get("inputs") or {}
-    for key in ("source", "mask"):
+    for key in ("source", "mask", "extends"):
         add(inputs.get(key))
     for derived, transform in (inputs.get("transforms") or {}).items():
         add(derived)
@@ -60,11 +62,12 @@ def sweep(db: Database, blobs: BlobStore, grace_s: float = BLOB_GRACE_S) -> dict
     """Delete expired results and jobs, then every blob nothing references any more."""
     counts = db.expire()
     referenced = db.referenced_blobs()
-    removed = 0
+    removed: list[str] = []
     for sha in list(blobs.stored(older_than_s=grace_s)):
         if sha not in referenced and blobs.delete(sha):
-            removed += 1
-    counts["blobs"] = removed
+            removed.append(sha)
+    db.forget_transforms(removed)
+    counts["blobs"] = len(removed)
     if any(counts.values()):
         log.info("retention sweep: %s", counts)
     return counts
@@ -72,6 +75,7 @@ def sweep(db: Database, blobs: BlobStore, grace_s: float = BLOB_GRACE_S) -> dict
 
 def release(db: Database, blobs: BlobStore, shas: list[str]) -> None:
     """Delete blobs that just lost a reference, if nothing else holds them."""
-    for sha in shas:
-        if not db.is_referenced(sha):
-            blobs.delete(sha)
+    gone = [sha for sha in shas if not db.is_referenced(sha)]
+    for sha in gone:
+        blobs.delete(sha)
+    db.forget_transforms(gone)

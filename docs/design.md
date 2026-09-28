@@ -436,12 +436,13 @@ All endpoints are under `/api`. JSON unless noted.
 | DELETE | `/jobs/{id}` | Cancel |
 | GET | `/results?cursor=` | Recent ephemeral results |
 | POST | `/results/{id}/save` | Save to library (image/video + config) |
-| POST | `/results/{id}/extend` | Create an i2v job spec seeded from the video's last frame (returns spec for editing) |
+| POST | `/results/{id}/extend`, `/library/{id}/extend` | Create an i2v job spec seeded from the video's last frame (returns spec for editing, and the frame) |
 | GET/PATCH/DELETE | `/library?q=&cursor=`, `/library/{id}` | Browse and search / edit title and tags / delete saved items |
 | GET/POST/PATCH/DELETE | `/prompts?q=`, `/prompts/{id}` | Saved prompts (rename via PATCH) |
-| POST | `/blobs` | Upload (multipart) → `{sha256}` |
+| POST | `/blobs` | Upload an image or video as the raw request body (with its `Content-Type`) → `{sha256, media_type, width, height, duration?}` |
 | POST | `/blobs/{sha}/transform` | `{ops}` → derived blob `{sha256, width, height}` (applies to original if `sha` is itself derived) |
-| GET | `/blobs/{sha}/transform` | Original sha + ops for a derived blob (to reopen editor) |
+| GET | `/blobs/{sha}/transform` | Original sha + ops for a derived blob (to reopen editor); any other image is its own original with no ops |
+| POST | `/blobs/{sha}/frame` | `{at: "first"\|"last"\|seconds}` → one frame of a video blob as an image blob |
 | POST | `/blobs/from-url` | `{url}` → server fetches and stores → `{sha256, media_type, width, height}` |
 | GET | `/blobs/{sha}` / `/thumbs/{sha}` | Media (Range support for video) |
 | POST | `/preprocess` | `{id: depth\|pose\|canny\|sam, image, params}` → `{blob}` |
@@ -542,7 +543,7 @@ Phases are numbered from 0.
 1. **Core loop.** ✅ Done. Live test on a T4 (2026-09-27, SDXL base 1.0 from Drive, 1024², 30 steps): session `ready` in 30 s; first job 174 s (Drive copy 90 s at ~77 MB/s, model load 30 s, denoise 28 s); next images ~34 s each with the model resident; same seed reproduced a byte-identical PNG. Build the session manager (colab CLI and SSH tunnel), Drive OAuth and indexing, the worker HTTP app, the dispatcher, and the SDXL family in `t2i` mode. Add the blob store, SSE, and a minimal Create/Queue/Results UI. Exit criterion: generate an image from the phone.
 2. **Assets and LoRA.** ✅ Built, not yet tested on a live GPU. Sidecars, the rclone-backed model cache with prefetch and eviction, and LoRA application (with diffing) for SDXL. Model and LoRA pickers in the UI. The server prefetches the next queued job's assets once the running job is past its own copy phase. The VM cache budget is `colab.cache_budget_gb` (150 by default), and `/health` reports the cached files so the pickers can say what is already on the GPU.
 3. **Save, library and remix.** ✅ Built. Keep saves a result with its replayable config (§6.4, including the runtime GPU and library versions reported by `/health`) to `library_items`, and the item holds its own blob refs. Saved prompts. An hourly retention sweeper deletes expired results, finished jobs left with no results, and unreferenced blobs (with a 1 h grace for blobs just written). Remix loads a kept image's or a result's config into Create and flags a model or LoRA that's no longer in the Drive index. Library search matches prompt text, title and tags.
-4. **Wan 2.2.** The 5B variant (t2v and i2v), then the A14B variants with paired LoRAs. Video playback, video extension and stitching. Build the full image picker here (recent results, library, camera-roll upload, URL import, frame selection from videos), together with the crop and resize editor, image transforms, and auto-fit here, since i2v is the first mode that takes a source image.
+4. **Wan 2.2.** ✅ Built, not yet tested on a live GPU. Wan 2.2 descriptor (TI2V 5B for t2v and i2v; T2V and I2V A14B with high/low LoRA pairs; models are diffusers folders under `models/wan22/<variant>/`, which picks the variant) and runner (`WanImageToVideoPipeline.from_pipe` for 5B i2v, each A14B LoRA half loaded into its expert, MP4 via ffmpeg in `degas_worker/video.py`). Uploads, URL/`data:` imports, video frames, non-destructive transforms and auto-fit at submit (`degas/inputs.py`, `degas/media.py`); video posters, durations and extension stitching in the dispatcher; the image picker, crop editor, video playback, Extend and Use as source in the UI. The 5B variant (t2v and i2v), then the A14B variants with paired LoRAs. Video playback, video extension and stitching. Build the full image picker here (recent results, library, camera-roll upload, URL import, frame selection from videos), together with the crop and resize editor, image transforms, and auto-fit here, since i2v is the first mode that takes a source image.
 5. **Queue UX and push.** Batch generation and seed modes, cancel, reorder, the PWA manifest and service worker, and Web Push.
 6. **i2i, inpaint and outpaint.** The mask editor with brush tools, and outpaint canvas extension.
 7. **Control.** Preprocessors (depth, pose, canny), SDXL ControlNet units, SAM-assisted masking, and regional ControlNet.

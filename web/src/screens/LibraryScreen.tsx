@@ -1,10 +1,11 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useDeferredValue, useState, type CSSProperties } from 'react'
-import { api, thumbUrl, type LibraryItem, type SavedPrompt } from '../api'
+import { api, isVideo, thumbUrl, type LibraryItem, type SavedPrompt } from '../api'
 import { useAssets } from '../assets'
 import { PromptText } from '../components/PromptSheet'
 import { SaveToPhotos, Viewer, type ViewerItem } from '../components/Viewer'
-import { draftFromSpec, draftWithPrompt } from '../draft'
+import { draftFromSpec, draftWithPrompt, draftWithSource, useSourceTarget } from '../draft'
+import { clock } from '../format'
 import { useNow } from '../time'
 
 type View = 'Images' | 'Prompts'
@@ -14,7 +15,12 @@ type Kept = LibraryItem & ViewerItem
 
 function asViewerItem(item: LibraryItem): Kept {
   const seed = item.config.params.seed
-  return { ...item, seed: typeof seed === 'number' ? seed : null, spec: item.config }
+  return {
+    ...item,
+    seed: typeof seed === 'number' ? seed : null,
+    spec: item.config,
+    segments: item.config.segments ?? null,
+  }
 }
 
 /** "Today", "Yesterday", "Sep 25", or "Sep 25, 2025" in another year. */
@@ -74,6 +80,14 @@ function Images({ q, onRemix }: { q: string; onRemix: () => void }) {
   const now = useNow(60_000)
   const assets = useAssets()
   const [open, setOpen] = useState<string | null>(null)
+  const sourceTarget = useSourceTarget()
+  const extend = useMutation({
+    mutationFn: api.extendLibraryItem,
+    onSuccess: (ext) => {
+      draftFromSpec(ext.spec, null, ext.source)
+      onRemix()
+    },
+  })
   const library = useInfiniteQuery({
     queryKey: ['library', q],
     queryFn: ({ pageParam }) => api.library(q, pageParam),
@@ -101,7 +115,9 @@ function Images({ q, onRemix }: { q: string; onRemix: () => void }) {
     ) : (
       <div className="feed-empty">
         <p className="lede">Nothing kept yet.</p>
-        <p>Open an image in Results and choose Keep. Kept images stay until you delete them.</p>
+        <p>
+          Open an image or clip in Results and choose Keep. Kept items stay until you delete them.
+        </p>
       </div>
     )
   }
@@ -136,6 +152,9 @@ function Images({ q, onRemix }: { q: string; onRemix: () => void }) {
                 }}
               >
                 <img src={thumbUrl(item.blob_sha)} alt="" loading="lazy" />
+                {isVideo(item.media_type) && item.duration !== null && (
+                  <span className="tile-duration">{clock(item.duration)}</span>
+                )}
               </button>
             ))}
           </div>
@@ -169,11 +188,30 @@ function Images({ q, onRemix }: { q: string; onRemix: () => void }) {
             <LibraryActions
               item={item}
               deleting={remove.isPending}
-              error={remove.error?.message}
+              error={(remove.error ?? extend.error)?.message}
               onRemix={() => {
                 draftFromSpec(item.config, item.seed)
                 onRemix()
               }}
+              onExtend={
+                item.kind === 'video' && item.config.family === 'wan22'
+                  ? () => {
+                      extend.mutate(item.id)
+                    }
+                  : undefined
+              }
+              onUseAsSource={
+                item.kind === 'image' && sourceTarget && item.width && item.height
+                  ? () => {
+                      draftWithSource(sourceTarget.family, sourceTarget.mode, {
+                        sha: item.blob_sha,
+                        width: item.width ?? 0,
+                        height: item.height ?? 0,
+                      })
+                      onRemix()
+                    }
+                  : undefined
+              }
               onDelete={() => {
                 const next = items[openIndex + 1] ?? items[openIndex - 1]
                 remove.mutate(item.id, {
@@ -195,12 +233,16 @@ function LibraryActions({
   deleting,
   error,
   onRemix,
+  onExtend,
+  onUseAsSource,
   onDelete,
 }: {
   item: Kept
   deleting: boolean
   error: string | undefined
   onRemix: () => void
+  onExtend: (() => void) | undefined
+  onUseAsSource: (() => void) | undefined
   onDelete: () => void
 }) {
   const [confirming, setConfirming] = useState(false)
@@ -208,7 +250,7 @@ function LibraryActions({
     return (
       <div className="confirm wide" role="group" aria-label="Confirm delete">
         <p>
-          Delete this image from the library?
+          Delete this {item.kind === 'video' ? 'clip' : 'image'} from the library?
           {item.source_result_id ? '' : ' This can’t be undone.'}
         </p>
         <button type="button" className="btn danger" disabled={deleting} onClick={onDelete}>
@@ -232,6 +274,16 @@ function LibraryActions({
         Remix
       </button>
       <SaveToPhotos item={item} />
+      {onExtend && (
+        <button type="button" className="btn quiet" onClick={onExtend}>
+          Extend
+        </button>
+      )}
+      {onUseAsSource && (
+        <button type="button" className="btn quiet" onClick={onUseAsSource}>
+          Use as source
+        </button>
+      )}
       <button
         type="button"
         className="btn quiet"
