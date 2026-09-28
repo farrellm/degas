@@ -48,10 +48,22 @@ SCHEDULERS: dict[str, tuple[Any, dict[str, Any]]] = {
     "euler": (EulerDiscreteScheduler, {}),
     "euler_a": (EulerAncestralDiscreteScheduler, {}),
     "dpmpp_2m": (DPMSolverMultistepScheduler, {}),
-    "dpmpp_2m_karras": (DPMSolverMultistepScheduler, {"use_karras_sigmas": True}),
+    "dpmpp_2m_sde": (DPMSolverMultistepScheduler, {"algorithm_type": "sde-dpmsolver++"}),
+    "dpmpp_3m_sde": (
+        DPMSolverMultistepScheduler,
+        {"algorithm_type": "sde-dpmsolver++", "solver_order": 3},
+    ),
     "ddim": (DDIMScheduler, {}),
     "unipc": (UniPCMultistepScheduler, {}),
 }
+
+# Noise schedules, for the scheduler classes that take them.
+SCHEDULES: dict[str, dict[str, Any]] = {
+    "default": {},
+    "karras": {"use_karras_sigmas": True},
+    "exponential": {"use_exponential_sigmas": True},
+}
+_SCHEDULED = (EulerDiscreteScheduler, DPMSolverMultistepScheduler, UniPCMultistepScheduler)
 
 # Highest denoise strength given to the inpainting checkpoint (see `_inputs`).
 INPAINT_MAX_STRENGTH = 0.99
@@ -99,7 +111,9 @@ class SdxlRunner:
         ctx.progress(0, "load", 1, 1)
 
         params = spec["params"]
-        self._set_scheduler(pipe, params.get("scheduler", "dpmpp_2m_karras"))
+        self._set_scheduler(
+            pipe, params.get("scheduler", "dpmpp_2m"), params.get("schedule", "karras")
+        )
         steps = int(params["steps"])
         size = (int(params["width"]), int(params["height"]))
         kwargs, original, keep = self._inputs(mode, spec, size, ctx)
@@ -312,11 +326,14 @@ class SdxlRunner:
         if plan.names:
             self.pipe.set_adapters(plan.names, adapter_weights=plan.weights)
 
-    def _set_scheduler(self, pipe: Any, name: str) -> None:
+    def _set_scheduler(self, pipe: Any, name: str, schedule: str) -> None:
         try:
             cls, kwargs = SCHEDULERS[name]
-        except KeyError:
-            raise ValueError(f"Unknown scheduler {name!r}") from None
+            sigmas = SCHEDULES[schedule]
+        except KeyError as e:
+            raise ValueError(f"Unknown scheduler or schedule {e.args[0]!r}") from None
+        if issubclass(cls, _SCHEDULED):
+            kwargs = {**kwargs, **sigmas}
         pipe.scheduler = cls.from_config(self._scheduler_config, **kwargs)
 
     def unload(self) -> None:

@@ -219,7 +219,7 @@ class FamilyRunner:
 
   The ControlNet variants of the pipelines (`StableDiffusionXLControlNet{,Img2Img,Inpaint}Pipeline`) are made from the loaded pipeline with `from_pipe`, and a list of ControlNets becomes a `MultiControlNetModel`. A job has at most 3 units, and a ControlNet model guides one unit. The runner keeps the requested ControlNets resident and drops the rest. A ControlNet is a single `.safetensors` file (`from_single_file`) or a diffusers folder with `config.json` (`from_pretrained`). Union ControlNets (`ControlNetUnionModel`) are refused with a clear error for now.
 - **Regional ControlNet:** each unit's down-block and mid-block residuals are multiplied by its area mask, downsampled to each residual's size (`area` interpolation). The runner replaces `forward` on the ControlNet instance while the pipeline runs (`limit_to_areas` in the SDXL runner), rather than wrapping it in another module, so the pipelines' `isinstance` checks and accelerate's offload hook keep working. With *Around the mask*, area masks get the same crop as the image.
-- **Parameters:** prompt, negative prompt, width and height (with SDXL aspect-ratio presets), steps, CFG, sampler/scheduler, seed, clip skip, denoise strength (i2i and inpaint), mask blur and padding (inpaint), and an optional refiner.
+- **Parameters:** prompt, negative prompt, width and height (with SDXL aspect-ratio presets), steps, CFG, sampler and noise schedule (Default/Karras/Exponential), seed, clip skip, denoise strength (i2i and inpaint), mask blur and padding (inpaint), and an optional refiner.
 
 **Wan 2.2 (`wan22`)**
 
@@ -352,7 +352,7 @@ Saving an image or video stores a config that is self-contained and can be repla
   "params": {
     "prompt": "…", "negative_prompt": "…",
     "width": 1024, "height": 1024, "steps": 30, "cfg": 5.5,
-    "scheduler": "dpmpp_2m_karras", "seed": 1234, "strength": 0.75,
+    "scheduler": "dpmpp_2m", "schedule": "karras", "seed": 1234, "strength": 0.75,
     "mask_blur": 8
   },
   "inputs": {

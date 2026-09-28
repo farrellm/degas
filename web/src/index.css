@@ -432,6 +432,13 @@ input::placeholder {
   font-size: var(--step--1);
 }
 
+.setting > .setting-note {
+  grid-column: 1 / -1;
+  margin-top: -6px;
+  color: var(--ink-muted);
+  font-size: var(--step--1);
+}
+
 .setting.stacked {
   grid-template-columns: 1fr auto;
   row-gap: 8px;

@@ -29,7 +29,7 @@ export interface Family {
 export interface ParamProp {
   type: 'string' | 'integer' | 'number' | 'boolean'
   title?: string
-  /** A line under a checkbox's title. */
+  /** A line under a checkbox's title, or under a select. */
   description?: string
   default?: string | number | boolean
   minimum?: number

@@ -19,13 +19,18 @@ from degas.families.base import (
 
 # Keep in sync with the worker runner (degas_worker/families/sdxl.py).
 SCHEDULERS = {
-    "dpmpp_2m_karras": "DPM++ 2M Karras",
     "dpmpp_2m": "DPM++ 2M",
+    "dpmpp_2m_sde": "DPM++ 2M SDE",
+    "dpmpp_3m_sde": "DPM++ 3M SDE",
     "euler_a": "Euler a",
     "euler": "Euler",
     "ddim": "DDIM",
     "unipc": "UniPC",
 }
+
+# Noise schedules (sigma spacing), for the samplers in SCHEDULED; the rest take "default".
+SCHEDULES = {"default": "Default", "karras": "Karras", "exponential": "Exponential"}
+SCHEDULED = frozenset({"dpmpp_2m", "dpmpp_2m_sde", "dpmpp_3m_sde", "euler", "unipc"})
 
 MAX_LORAS = 8
 MAX_CONTROL = 3
@@ -145,9 +150,19 @@ class Sdxl:
             "scheduler": {
                 "type": "string",
                 "title": "Sampler",
-                "default": "dpmpp_2m_karras",
+                "default": "dpmpp_2m",
                 "enum": list(SCHEDULERS),
                 "x-enum-labels": list(SCHEDULERS.values()),
+                "x-widget": "select",
+                "x-advanced": True,
+            },
+            "schedule": {
+                "type": "string",
+                "title": "Schedule",
+                "description": "Not used by Euler a or DDIM.",
+                "default": "karras",
+                "enum": list(SCHEDULES),
+                "x-enum-labels": list(SCHEDULES.values()),
                 "x-widget": "select",
                 "x-advanced": True,
             },
@@ -178,7 +193,10 @@ class Sdxl:
         model = validate_model(spec.get("model"), v)
         if variant != "inpaint" and model["path"].startswith(INPAINT_DIR + "/"):
             raise SpecError("An inpainting model can only inpaint or outpaint")
-        params = validate_params(self.param_schema(variant, mode), spec.get("params") or {})
+        params = upgrade_params(spec.get("params") or {})
+        params = validate_params(self.param_schema(variant, mode), params)
+        if params["scheduler"] not in SCHEDULED:
+            params["schedule"] = "default"
         snap_size(params, self.size_constraints(variant), "SDXL")
         loras = validate_single_loras(spec.get("loras"), MAX_LORAS)
         inputs = validate_inputs(spec.get("inputs"), mode)
@@ -201,6 +219,15 @@ class Sdxl:
 
     def _check(self, variant: str, mode: str) -> None:
         find_variant(self, variant, mode)
+
+
+def upgrade_params(params: dict[str, Any]) -> dict[str, Any]:
+    """Params from before the schedule was its own control (the sampler had it in its name)."""
+    if "scheduler" not in params or "schedule" in params:
+        return params
+    if params["scheduler"] == "dpmpp_2m_karras":
+        return {**params, "scheduler": "dpmpp_2m", "schedule": "karras"}
+    return {**params, "schedule": "default"}
 
 
 def _mode_params(variant: str, mode: str) -> dict[str, JsonSchema]:
