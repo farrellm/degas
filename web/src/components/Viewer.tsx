@@ -105,7 +105,12 @@ export function Viewer<T extends ViewerItem>({
     params.cfg_low == null
       ? String(params.cfg)
       : `${String(params.cfg)} / ${String(params.cfg_low)}`
-  const sampling = [`${String(params.steps)} steps`, `CFG ${cfg}`, samplerLabel].filter(Boolean)
+  const sampling = [
+    `${String(params.steps)} steps`,
+    `CFG ${cfg}`,
+    samplerLabel,
+    params.vae_fp32 === true ? 'float32 VAE' : null,
+  ].filter(Boolean)
   const frames = Number(params.num_frames)
   const fps = Number(params.fps)
   const length = r.duration ?? (frames && fps ? frames / fps : null)

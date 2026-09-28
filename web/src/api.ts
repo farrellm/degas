@@ -27,9 +27,11 @@ export interface Family {
 }
 
 export interface ParamProp {
-  type: 'string' | 'integer' | 'number'
+  type: 'string' | 'integer' | 'number' | 'boolean'
   title?: string
-  default?: string | number
+  /** A line under a checkbox's title. */
+  description?: string
+  default?: string | number | boolean
   minimum?: number
   maximum?: number
   multipleOf?: number
@@ -119,7 +121,7 @@ export interface DriveStatus {
   indexed_at: string | null
 }
 
-export type Params = Record<string, string | number | null>
+export type Params = Record<string, string | number | boolean | null>
 
 export interface LoraRef {
   path: string

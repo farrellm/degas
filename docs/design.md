@@ -208,7 +208,8 @@ class FamilyRunner:
   - `outpaint`: an inpaint on a larger canvas. The canvas is the form's width and height, and `inputs.place` (`{x, y, w, h}` in canvas pixels) says where the source goes; the server fits the source to `w × h`. The worker fills the margins with a blurred stretch of the source, and masks the margins plus a *blend* band (32 px by default) inside the source's edges that face a margin. Outpaint always runs at strength 1.
   - Regular checkpoints do all four modes: the text-to-image pipeline is loaded, and the image-to-image and inpaint pipelines are made from it with `from_pipe`, sharing its weights and LoRAs. Inpainting checkpoints (9-channel UNets) are the `inpaint` variant, found under `models/sdxl/inpaint/`, and only inpaint and outpaint.
   - After inpaint and outpaint, the worker pastes the original back outside the blurred mask, so the untouched area skips the VAE round trip. *Redraw: around the mask* uses diffusers' `padding_mask_crop` (the masked area plus *Space around the mask*, redrawn at full resolution).
-- **Checkpoints:** any SDXL-architecture `.safetensors` file on Drive, including Pony and Illustrious derivatives. Loaded with `from_single_file`.
+- **Checkpoints:** any SDXL-architecture `.safetensors` file on Drive, including Pony and Illustrious derivatives. Loaded with `from_single_file`, given the diffusers configs and tokenizers from Drive (`configs/sdxl/stable-diffusion-xl-base-1.0/`, or `…/stable-diffusion-xl-1.0-inpainting-0.1/` for the `inpaint` variant: the repos' `*.json`, `*.txt` and `*.model` files), so loading doesn't reach Hugging Face. Single-file ControlNets still fetch their config from Hugging Face; diffusers-folder ones don't.
+- **VAE:** the stock SDXL VAE overflows in float16, so diffusers moves a checkpoint's own VAE to float32 for every encode and decode (`force_upcast`). Instead, jobs use Ollin's fp16-fix VAE (`madebyollin/sdxl-vae-fp16-fix`, its `config.json` and `diffusion_pytorch_model.safetensors` in `vae/sdxl/sdxl-vae-fp16-fix/`), which stays in float16. Its outputs differ very slightly. *Built-in VAE in float32* (More settings, `vae_fp32`) uses the checkpoint's own VAE, for checkpoints that ship a custom one. Changing between them reloads the pipeline.
 - **ControlNet:** one or more ControlNet units. Each unit has:
   - a ControlNet model,
   - a control image,
@@ -259,7 +260,10 @@ MyDrive/degas/
     sdxl/          *.safetensors or diffusers dirs
   preprocessors/   one folder per preprocessor: sam3/ and depth-anything-v2/ (transformers folders), dwpose/ (two ONNX files)
   vae/
-    sdxl/
+    sdxl/          sdxl-vae-fp16-fix/ (the fp16-fix VAE, diffusers folder)
+  configs/
+    sdxl/          stable-diffusion-xl-base-1.0/, stable-diffusion-xl-1.0-inpainting-0.1/
+                   (the repos' configs and tokenizers, no weights)
 ```
 
 **Sidecar YAML** (optional; every field is optional):
@@ -318,7 +322,7 @@ Direct links to video files (MP4/WebM) are accepted as a video source. The frame
 - **`prompts`**: id, name, prompt, negative_prompt, family (nullable), tags, created_at.
 - **`blob_refs`**: blob_sha, ref_type (`result|library|job|draft|derived`), ref_id, expires_at (nullable). Used for reference counting and retention.
 - **`blob_transforms`**: derived_sha, original_sha, ops (JSON). A derived blob holds a reference to its original (see §6.5).
-- **`assets`**: family, kind (`model|lora|controlnet|vae|preprocessor`), path, drive_file_id, size, mtime, md5, sidecar (JSON), preview_thumb, indexed_at.
+- **`assets`**: family, kind (`model|lora|controlnet|vae|config|preprocessor`), path, drive_file_id, size, mtime, md5, sidecar (JSON), preview_thumb, indexed_at.
 - **`push_subscriptions`**: endpoint, keys, created_at.
 - **`settings`**: key, value. Holds idle timeout, default GPU, retention, and similar settings.
 

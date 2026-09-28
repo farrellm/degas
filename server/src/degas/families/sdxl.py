@@ -34,6 +34,18 @@ MAX_CONTROL = 3
 # where a text-to-image model is expected.
 INPAINT_DIR = "models/sdxl/inpaint"
 
+# Ollin's fp16-fix VAE (madebyollin/sdxl-vae-fp16-fix, a diffusers folder), which decodes in
+# float16. The stock SDXL VAE overflows in float16, so diffusers runs a checkpoint's own VAE in
+# float32.
+FP16_VAE = "vae/sdxl/sdxl-vae-fp16-fix"
+
+# The diffusers configs and tokenizers a single-file checkpoint is loaded with (its repo's
+# files without the weights), so loading needs nothing from Hugging Face.
+CONFIGS = {
+    "base": "configs/sdxl/stable-diffusion-xl-base-1.0",
+    "inpaint": "configs/sdxl/stable-diffusion-xl-1.0-inpainting-0.1",
+}
+
 # Denoise strength defaults: an inpainting checkpoint is made to redraw the mask from scratch.
 STRENGTH = {("base", "i2i"): 0.6, ("base", "inpaint"): 0.85, ("inpaint", "inpaint"): 1.0}
 
@@ -148,6 +160,13 @@ class Sdxl:
                 "x-widget": "number",
                 "x-advanced": True,
             },
+            "vae_fp32": {
+                "type": "boolean",
+                "title": "Built-in VAE in float32",
+                "description": "The checkpoint's own VAE instead of the fp16 fix. Slower.",
+                "default": False,
+                "x-advanced": True,
+            },
         }
         props.update(_mode_params(variant, mode))
         return {"type": "object", "required": ["prompt"], "properties": props}
@@ -165,16 +184,20 @@ class Sdxl:
         inputs = validate_inputs(spec.get("inputs"), mode)
         if mode == "outpaint":
             inputs["place"] = validate_place(inputs.get("place"), params)
-        return {
+        out = {
             "family": self.id,
             "variant": variant,
             "mode": mode,
             "model": model,
+            "config": {"path": CONFIGS[variant], "size": None},
             "loras": loras,
             "params": params,
             "inputs": inputs,
             "control": validate_control(spec.get("control"), self.id, MAX_CONTROL),
         }
+        if not params["vae_fp32"]:
+            out["vae"] = {"path": FP16_VAE, "size": None}
+        return out
 
     def _check(self, variant: str, mode: str) -> None:
         find_variant(self, variant, mode)

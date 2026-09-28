@@ -245,6 +245,8 @@ def test_outpaint_fits_the_source_to_its_place(client: TestClient, harness: Harn
     done = run(client, spec)
     assert harness.runner.inputs[-1] == {"source": (1024, 1024)}
     assert done["spec"]["inputs"]["place"] == {"x": 256, "y": 0, "w": 1024, "h": 1024}
+    # The 9-channel UNet loads with the inpainting repo's configs.
+    assert done["spec"]["config"]["path"] == "configs/sdxl/stable-diffusion-xl-1.0-inpainting-0.1"
 
 
 # -- SAM -----------------------------------------------------------------------------------

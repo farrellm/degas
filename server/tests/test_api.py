@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from degas import __version__
 from degas.colab.worker_client import WorkerClient
 
-from .conftest import LORA, MODEL
+from .conftest import CONFIGS, LORA, MODEL, VAE
 
 
 def wait_for(fn: Callable[[], Any], timeout: float = 5) -> Any:
@@ -164,6 +164,32 @@ def test_loras_are_checked_against_the_index(client: TestClient) -> None:
     assert body["spec"]["loras"] == [{"path": LORA["path"], "weight": 2.0, "size": 10}]
 
 
+def test_sdxl_uses_the_fp16_fix_vae_unless_asked(client: TestClient) -> None:
+    body = client.post("/api/jobs", json={"spec": SPEC}).json()
+    assert body["spec"]["vae"] == {"path": VAE["path"], "size": 10}
+    assert body["spec"]["config"] == {"path": CONFIGS[0]["path"], "size": 10}
+    assert body["spec"]["params"]["vae_fp32"] is False
+
+    fp32 = {**SPEC, "params": {**SPEC["params"], "vae_fp32": True}}
+    body = client.post("/api/jobs", json={"spec": fp32}).json()
+    assert "vae" not in body["spec"]
+    bad = {**SPEC, "params": {**SPEC["params"], "vae_fp32": 1}}
+    assert client.post("/api/jobs", json={"spec": bad}).status_code == 400
+
+    client.app.state.services.db.replace_assets([MODEL, *CONFIGS])  # type: ignore[attr-defined]
+    resp = client.post("/api/jobs", json={"spec": SPEC})
+    assert resp.status_code == 400
+    assert "fp16-fix VAE isn't in Drive" in resp.json()["detail"]
+    assert client.post("/api/jobs", json={"spec": fp32}).status_code == 201
+
+    client.app.state.services.db.replace_assets([MODEL, VAE])  # type: ignore[attr-defined]
+    resp = client.post("/api/jobs", json={"spec": SPEC})
+    assert resp.status_code == 400
+    assert (
+        f"configs aren't in Drive. Put them in degas/{CONFIGS[0]['path']}/" in resp.json()["detail"]
+    )
+
+
 def test_next_jobs_assets_are_prefetched(
     client: TestClient, harness: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -177,7 +203,7 @@ def test_next_jobs_assets_are_prefetched(
     monkeypatch.setattr(WorkerClient, "fetch_assets", spy)
     svc = client.app.state.services  # type: ignore[attr-defined]
     other = {**MODEL, "path": "models/sdxl/other.safetensors", "drive_file_id": "f2", "size": 10}
-    svc.db.replace_assets([{**MODEL, "size": 10}, other, LORA])
+    svc.db.replace_assets([{**MODEL, "size": 10}, other, LORA, VAE, *CONFIGS])
     harness.worker_app.state.cache.set_token("tok", "2026-09-27T12:00:00Z", "degas")
     harness.runner.fetch = True
 
@@ -192,9 +218,11 @@ def test_next_jobs_assets_are_prefetched(
     wait_for(lambda: job(client, second["id"])["status"] == "done")
 
     # Once the first job was loading, the second job's model and LoRA were requested.
-    assert fetched[0] == [
+    # (The VAE and configs are shared with the first job, so may already be on the VM.)
+    shared = {VAE["path"], CONFIGS[0]["path"]}
+    assert [a for a in fetched[0] if a["path"] not in shared] == [
         {"path": other["path"], "size": 10},
         {"path": LORA["path"], "size": 10},
     ]
     cache = wait_for(lambda: client.get("/api/session").json()["worker"]["cache"]["files"])
-    assert {f["path"] for f in cache} == {MODEL["path"], other["path"], LORA["path"]}
+    assert {f["path"] for f in cache} == {MODEL["path"], other["path"], LORA["path"], *shared}

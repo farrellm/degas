@@ -22,6 +22,8 @@ TREE: dict[str, list[dict[str, Any]]] = {
         {"id": "loras", "name": "loras", "mimeType": FOLDER},
         {"id": "pre", "name": "preprocessors", "mimeType": FOLDER},
         {"id": "cn", "name": "controlnets", "mimeType": FOLDER},
+        {"id": "vae", "name": "vae", "mimeType": FOLDER},
+        {"id": "cfg", "name": "configs", "mimeType": FOLDER},
         {"id": "junk", "name": "notes.txt", "mimeType": "text/plain"},
     ],
     "models": [
@@ -62,6 +64,19 @@ TREE: dict[str, list[dict[str, Any]]] = {
         {"id": "cnc", "name": "config.json", "mimeType": "application/json", "size": "4"},
         {"id": "cnw", "name": "diffusion_pytorch_model.safetensors", "mimeType": "x", "size": "5"},
     ],
+    "vae": [{"id": "vae-sdxl", "name": "sdxl", "mimeType": FOLDER}],
+    "vae-sdxl": [{"id": "fix", "name": "sdxl-vae-fp16-fix", "mimeType": FOLDER}],
+    "fix": [
+        {"id": "fc", "name": "config.json", "mimeType": "application/json", "size": "6"},
+        {"id": "fw", "name": "diffusion_pytorch_model.safetensors", "mimeType": "x", "size": "50"},
+    ],
+    "cfg": [{"id": "cfg-sdxl", "name": "sdxl", "mimeType": FOLDER}],
+    "cfg-sdxl": [{"id": "base", "name": "stable-diffusion-xl-base-1.0", "mimeType": FOLDER}],
+    "base": [
+        {"id": "bi", "name": "model_index.json", "mimeType": "application/json", "size": "2"},
+        {"id": "bt", "name": "tokenizer", "mimeType": FOLDER},
+    ],
+    "bt": [{"id": "bv", "name": "vocab.json", "mimeType": "application/json", "size": "8"}],
     "sam3": [
         {"id": "sc", "name": "config.json", "mimeType": "application/json", "size": "7"},
         {"id": "sw", "name": "model.safetensors", "mimeType": "x", "size": "3000"},
@@ -148,8 +163,14 @@ async def test_scan(auth: DriveAuth) -> None:
         "preprocessors/dwpose",
         "controlnets/sdxl/depth-xl",
         "controlnets/sdxl/canny.safetensors",
+        "vae/sdxl/sdxl-vae-fp16-fix",
+        "configs/sdxl/stable-diffusion-xl-base-1.0",
     }
     assert assets["preprocessors/dwpose"]["size"] == 300
+    vae = assets["vae/sdxl/sdxl-vae-fp16-fix"]
+    assert (vae["kind"], vae["family"], vae["size"]) == ("vae", "sdxl", 56)
+    config = assets["configs/sdxl/stable-diffusion-xl-base-1.0"]
+    assert (config["kind"], config["family"], config["size"]) == ("config", "sdxl", 10)
     depth = assets["controlnets/sdxl/depth-xl"]
     assert (depth["kind"], depth["family"], depth["size"]) == ("controlnet", "sdxl", 9)
     sam = assets["preprocessors/sam3"]

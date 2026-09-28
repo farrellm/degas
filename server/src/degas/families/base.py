@@ -168,6 +168,9 @@ def snap_size(params: dict[str, Any], c: SizeConstraints, label: str) -> None:
 def spec_assets(spec: dict[str, Any]) -> list[dict[str, Any]]:
     """The Drive assets a validated spec needs on the GPU: `[{path, size, kind}]`."""
     assets = [{**spec["model"], "kind": "model"}]
+    for kind in ("config", "vae"):
+        if spec.get(kind):
+            assets.append({**spec[kind], "kind": kind})
     for lora in spec.get("loras") or []:
         for part in lora_files(lora):
             assets.append({"path": part["path"], "size": part.get("size"), "kind": "lora"})
@@ -350,4 +353,8 @@ def _coerce(name: str, prop: JsonSchema, value: Any) -> Any:
         if "maximum" in prop:
             num = min(num, prop["maximum"])
         return num
+    if kind == "boolean":
+        if not isinstance(value, bool):
+            raise SpecError(f"{name}: expected true or false")
+        return value
     return value
