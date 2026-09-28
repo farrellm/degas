@@ -4,6 +4,7 @@ import { api, isActive, type SessionSnapshot } from '../api'
 import { assetLabel, bytes, useAssets } from '../assets'
 import { loadDraft } from '../draft'
 import { GiB, GPU_VRAM } from '../format'
+import { disablePush, enablePush, isInstalled, pushState, type PushState } from '../push'
 import { ago, countdown, useNow } from '../time'
 import { Sheet } from './Sheet'
 
@@ -30,6 +31,7 @@ export function SessionSheet({ onClose }: { onClose: () => void }) {
     <Sheet title="GPU session" onClose={onClose}>
       {session.error && <p role="alert">{session.error.message}</p>}
       {session.data && <SessionBody snap={session.data} />}
+      <NotificationsSection />
       <DriveSection authorizedHint={session.data?.drive} />
     </Sheet>
   )
@@ -133,7 +135,11 @@ function SessionBody({ snap }: { snap: SessionSnapshot }) {
             </p>
           </div>
         )}
-        {idle && s?.state === 'ready' && <p>Stops in {idle} if no job runs.</p>}
+        {idle && s?.state === 'ready' && (
+          <p>
+            {s.gpu} stops in {idle} if no job runs.
+          </p>
+        )}
         <div className="sheet-actions">
           <button
             type="button"
@@ -218,6 +224,51 @@ function CacheSection({ cache }: { cache: Cache }) {
           </ul>
         </>
       )}
+    </section>
+  )
+}
+
+/** Web Push for this device: finished jobs and the idle warning. */
+function NotificationsSection() {
+  const qc = useQueryClient()
+  const state = useQuery({ queryKey: ['push'], queryFn: pushState })
+  const toggle = useMutation({
+    mutationFn: (on: boolean): Promise<PushState> => (on ? enablePush() : disablePush()),
+    onSuccess: (next) => {
+      qc.setQueryData(['push'], next)
+    },
+  })
+  const s = state.data
+  if (!s) return null
+
+  return (
+    <section className="sheet-section" aria-labelledby="notify-heading">
+      <h3 id="notify-heading">Notifications</h3>
+      {s === 'unsupported' ? (
+        <p>
+          {isInstalled()
+            ? 'This device can’t show notifications from Degas.'
+            : 'To get notifications, add Degas to the Home Screen: tap Share, then Add to Home Screen.'}
+        </p>
+      ) : s === 'blocked' ? (
+        <p>Notifications for Degas are turned off in Settings.</p>
+      ) : (
+        <label className="switch">
+          <span>
+            When images finish
+            <small>And 2 minutes before an idle session stops.</small>
+          </span>
+          <input
+            type="checkbox"
+            checked={s === 'on'}
+            disabled={toggle.isPending}
+            onChange={(e) => {
+              toggle.mutate(e.target.checked)
+            }}
+          />
+        </label>
+      )}
+      {toggle.error && <p role="alert">{toggle.error.message}</p>}
     </section>
   )
 }

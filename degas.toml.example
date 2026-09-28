@@ -22,3 +22,8 @@ root = "degas"             # folder under My Drive (see docs/design.md §5)
 # OAuth client JSON for a Google Cloud "Desktop app" client with the Drive API enabled.
 client_file = "drive_client.json"
 # token_file = "data/drive_token.json"  # written by `degas auth drive`
+
+[push]
+# Contact for the push services (Apple, Google, Mozilla); use a mailto: you read.
+subject = "mailto:degas@localhost"
+# key_file = "data/vapid_private.pem"   # VAPID key pair, generated on first use

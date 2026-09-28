@@ -159,6 +159,8 @@ When the crop scales the image up more than 1.5×, the readout turns ochre and s
 
 ### Phase 5: Queue UX and push
 
+Built. Notes on what shipped: the drag handle is three strokes of hatching, since a queued job isn't drawn yet. A lifted group is raised paper that extends past its edges (a spread, not a shadow) and follows the finger; a rose line marks where it will land. The handle also moves a group with the arrow keys. With a mouse the group lifts at once. *Move to top* sits under *Cancel* in the group's corner. The *Cancelled / Undo* toast is an inverted pill above the tab bar, and only appears for queued jobs, since a running job can't be restored. A batch's Seed row offers *Random seeds* and *Count up*, with a *from* field under *Count up*. An empty field means counting up from a random seed. The notification question is a raised-paper strip under the header. The sheet's switch reads *When images finish*, and when Degas isn't installed it explains how to add it to the Home Screen instead. The icon keeps the upper half of the *D* in solid chalk and leaves the lower half in hatching (`web/public/icon.svg`, PNGs from `web/scripts/icons.sh`).
+
 - **Reorder and cancel.** Queued groups in Results get a drag handle (long-press to lift) and a *Move to top* action. Cancelling a queued job shows an *Undo* link in a toast for 5 s.
 - **Seeds for batches.** When the batch size is above 1, the Seed row becomes a two-way choice: *Random seeds* or *Count up from 1234*. A fixed seed with a batch is disallowed, as the design doc says.
 - **PWA.** The icon is an italic *D* in chalk on slate paper, with rose hatching across its lower half. `theme-color` is already set per scheme.

@@ -9,6 +9,7 @@ import {
   type Fit,
   type LoraEntry,
   type Params,
+  type SeedMode,
 } from '../api'
 import { assetLabel, loraChoices, useAssets, variantFor } from '../assets'
 import { AssetPicker } from '../components/AssetPicker'
@@ -61,7 +62,7 @@ function CreateForm({
 }: Props & { familyId: string; onFamily: (id: string) => void }) {
   const [draft] = useState(() => {
     const d = loadDraft()
-    return { ...d.families[familyId], batchCount: d.batchCount }
+    return { ...d.families[familyId], batchCount: d.batchCount, seedMode: d.seedMode }
   })
   const [chosenModel, setModel] = useState(draft.model ?? '')
   const [chosenMode, setMode] = useState(draft.mode)
@@ -71,6 +72,7 @@ function CreateForm({
   const [fit, setFit] = useState<Fit>(draft.fit ?? 'crop')
   const [extendsClip, setExtends] = useState(draft.extends ?? null)
   const [batchCount, setBatchCount] = useState(draft.batchCount)
+  const [seedMode, setSeedMode] = useState<SeedMode>(draft.seedMode)
   const [queued, setQueued] = useState<number | null>(null)
   const [picker, setPicker] = useState<'model' | 'lora' | 'prompts' | 'image' | null>(null)
   const [cropping, setCropping] = useState<string | null>(null)
@@ -111,8 +113,9 @@ function CreateForm({
       familyId,
       { model, mode, loras, params, source, fit, extends: extendsClip },
       batchCount,
+      seedMode,
     )
-  }, [familyId, model, mode, loras, params, source, fit, extendsClip, batchCount])
+  }, [familyId, model, mode, loras, params, source, fit, extendsClip, batchCount, seedMode])
 
   useEffect(() => {
     if (queued === null) return
@@ -127,6 +130,8 @@ function CreateForm({
   const submit = useMutation({
     mutationFn: () => {
       if (!family || !variant || !mode || !params) throw new Error('The form is still loading.')
+      // One image uses the seed as set; a batch either counts up from it or ignores it.
+      const randomSeeds = batchCount > 1 && seedMode === 'random' && 'seed' in params
       return api.submitJob(
         {
           family: family.id,
@@ -134,7 +139,7 @@ function CreateForm({
           mode,
           model: { path: model },
           loras,
-          params,
+          params: randomSeeds ? { ...params, seed: -1 } : params,
           ...(needsSource &&
             source && {
               inputs: {
@@ -145,7 +150,7 @@ function CreateForm({
             }),
         },
         batchCount,
-        'increment',
+        randomSeeds ? 'random' : 'increment',
       )
     },
     onSuccess: () => {
@@ -379,6 +384,7 @@ function CreateForm({
         afterPrompt={modeChips}
         promptPlaceholder={video ? 'Describe the clip' : 'Describe the picture'}
         promptRef={promptRef}
+        seeds={{ batch: batchCount > 1, mode: seedMode, onMode: setSeedMode }}
         onPromptFocus={() => {
           promptFocused.current = true
         }}

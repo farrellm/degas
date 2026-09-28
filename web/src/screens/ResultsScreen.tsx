@@ -1,5 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useState, type CSSProperties } from 'react'
+import {
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type KeyboardEvent,
+  type PointerEvent,
+} from 'react'
 import { api, isVideo, thumbUrl, type Asset, type Job, type Result, type Spec } from '../api'
 import { assetLabel, useAssets } from '../assets'
 import { SaveToPhotos, Viewer } from '../components/Viewer'
@@ -57,10 +64,39 @@ function buildGroups(jobs: Job[], results: Result[]): Group[] {
   }
   const rank = (g: Group) =>
     g.chain ? 2 : g.job?.status === 'running' ? 0 : g.job?.status === 'queued' ? 1 : 2
+  const queueOrder = (a: Group, b: Group) =>
+    rank(a) === 1 && rank(b) === 1 ? (a.job?.queue_position ?? 0) - (b.job?.queue_position ?? 0) : 0
   return [...byId.values()]
     .map((g) => ({ ...g, results: g.results.toSorted((a, b) => a.item_index - b.item_index) }))
-    .toSorted((a, b) => rank(a) - rank(b) || (a.at < b.at ? 1 : a.at > b.at ? -1 : 0))
+    .toSorted(
+      (a, b) => rank(a) - rank(b) || queueOrder(a, b) || (a.at < b.at ? 1 : a.at > b.at ? -1 : 0),
+    )
 }
+
+/** The jobs cache with `id` moved to `position` among the queued jobs. */
+function reorder(jobs: Job[], id: string, position: number): Job[] {
+  const queued = jobs
+    .filter((j) => j.status === 'queued')
+    .toSorted((a, b) => a.queue_position - b.queue_position)
+  const slots = queued.map((j) => j.queue_position)
+  const ids = queued.map((j) => j.id).filter((x) => x !== id)
+  ids.splice(position, 0, id)
+  const at = new Map(ids.map((x, i) => [x, slots[i] ?? 0]))
+  return jobs.map((j) => (at.has(j.id) ? { ...j, queue_position: at.get(j.id) ?? 0 } : j))
+}
+
+/** A queued group being dragged: where it started, and where it would land. */
+interface Drag {
+  id: string
+  from: number
+  to: number
+  startY: number
+  dy: number
+  /** Vertical middles of the other queued groups, in queue order, at lift time. */
+  mids: number[]
+}
+
+const UNDO_MS = 5000
 
 export function ResultsScreen({
   onRemix,
@@ -74,9 +110,50 @@ export function ResultsScreen({
   const assets = useAssets()
   const jobs = useQuery({ queryKey: ['jobs'], queryFn: api.jobs })
   const results = useQuery({ queryKey: ['results'], queryFn: () => api.results() })
+  const [undo, setUndo] = useState<string | null>(null)
   const cancel = useMutation({
-    mutationFn: api.cancelJob,
+    mutationFn: (job: Job) => api.cancelJob(job.id),
+    onSuccess: (_, job) => {
+      // A job that hasn't started can come back; a running one is already stopping.
+      setUndo(job.status === 'queued' ? job.id : null)
+    },
     onSettled: () => qc.invalidateQueries({ queryKey: ['jobs'] }),
+  })
+  const restore = useMutation({
+    mutationFn: api.restoreJob,
+    onSuccess: () => {
+      setUndo(null)
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: ['jobs'] }),
+  })
+  const move = useMutation({
+    mutationFn: ({ id, position }: { id: string; position: number }) => api.moveJob(id, position),
+    onMutate: ({ id, position }) => {
+      qc.setQueryData<Job[]>(['jobs'], (js) => js && reorder(js, id, position))
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: ['jobs'] }),
+  })
+  const [drag, setDrag] = useState<Drag | null>(null)
+  const [announce, setAnnounce] = useState('')
+  const sections = useRef(new Map<string, HTMLElement>())
+  const refocus = useRef<string | null>(null)
+
+  useEffect(() => {
+    if (undo === null) return
+    const id = setTimeout(() => {
+      setUndo(null)
+    }, UNDO_MS)
+    return () => {
+      clearTimeout(id)
+    }
+  }, [undo])
+
+  // Keep focus on a handle moved with the arrow keys as its group changes place.
+  useEffect(() => {
+    const id = refocus.current
+    if (!id) return
+    refocus.current = null
+    sections.current.get(id)?.querySelector<HTMLElement>('.drag-handle')?.focus()
   })
   const [open, setOpen] = useState<string | null>(null)
   const sourceTarget = useSourceTarget()
@@ -106,6 +183,54 @@ export function ResultsScreen({
   const groups = buildGroups(jobs.data, results.data.results)
   const flat = groups.flatMap((g) => g.results)
   const openIndex = flat.findIndex((r) => r.id === open)
+  const queue = groups.filter((g) => !g.chain && g.job?.status === 'queued').map((g) => g.id)
+
+  const moveTo = (id: string, position: number) => {
+    const n = queue.length
+    setAnnounce(`Moved to ${String(position + 1)} of ${String(n)} in the queue.`)
+    move.mutate({ id, position })
+  }
+
+  const lift = (id: string, y: number) => {
+    const others = queue.filter((q) => q !== id)
+    const mids = others.map((q) => {
+      const r = sections.current.get(q)?.getBoundingClientRect()
+      return r ? r.top + r.height / 2 : 0
+    })
+    const from = queue.indexOf(id)
+    setDrag({ id, from, to: from, startY: y, dy: 0, mids })
+  }
+
+  const dragTo = (y: number) => {
+    setDrag((d) => d && { ...d, dy: y - d.startY, to: d.mids.filter((m) => m < y).length })
+  }
+
+  const drop = () => {
+    if (drag && drag.to !== drag.from) moveTo(drag.id, drag.to)
+    setDrag(null)
+  }
+
+  // Where the drop mark goes: before the group now at `to`, or after the last one.
+  const others = drag ? queue.filter((q) => q !== drag.id) : []
+  const markBefore = drag && drag.to !== drag.from ? others[drag.to] : undefined
+  const markAfter =
+    drag && drag.to !== drag.from && drag.to === others.length ? others.at(-1) : undefined
+
+  const undoToast = undo && (
+    <p className="undo-toast" role="status">
+      <span>Cancelled</span>
+      <button
+        type="button"
+        className="link"
+        disabled={restore.isPending}
+        onClick={() => {
+          restore.mutate(undo)
+        }}
+      >
+        Undo
+      </button>
+    </p>
+  )
 
   if (groups.length === 0) {
     return (
@@ -119,6 +244,7 @@ export function ResultsScreen({
         <button type="button" className="btn" onClick={onCreate}>
           Write a prompt
         </button>
+        {undoToast}
       </div>
     )
   }
@@ -126,19 +252,62 @@ export function ResultsScreen({
   return (
     <>
       <div className="feed">
-        {groups.map((g) => (
-          <GroupView
-            key={g.id}
-            group={g}
-            now={now}
-            assets={assets.data}
-            onOpen={setOpen}
-            onCancel={(id) => {
-              cancel.mutate(id)
-            }}
-          />
-        ))}
+        {groups.map((g) => {
+          const index = queue.indexOf(g.id)
+          const queued: Queued | undefined =
+            index < 0
+              ? undefined
+              : {
+                  index,
+                  length: queue.length,
+                  lifted: drag?.id === g.id ? drag.dy : null,
+                  mark: markBefore === g.id ? 'before' : markAfter === g.id ? 'after' : null,
+                  onTop: () => {
+                    moveTo(g.id, 0)
+                  },
+                  onStep: (delta) => {
+                    const to = index + delta
+                    if (to < 0 || to >= queue.length) return
+                    refocus.current = g.id
+                    moveTo(g.id, to)
+                  },
+                  onLift: (y) => {
+                    lift(g.id, y)
+                  },
+                  onDrag: dragTo,
+                  onDrop: drop,
+                }
+          return (
+            <GroupView
+              key={g.id}
+              group={g}
+              now={now}
+              assets={assets.data}
+              queued={queued}
+              sectionRef={(el) => {
+                if (el) sections.current.set(g.id, el)
+                else sections.current.delete(g.id)
+              }}
+              onOpen={setOpen}
+              onCancel={(job) => {
+                cancel.mutate(job)
+              }}
+            />
+          )
+        })}
       </div>
+      <p className="visually-hidden" id="drag-hint">
+        Hold and drag to change the order, or use the up and down arrow keys.
+      </p>
+      <p className="visually-hidden" aria-live="polite">
+        {announce}
+      </p>
+      {(move.error ?? cancel.error ?? restore.error) && (
+        <p className="feed-error" role="alert">
+          {(move.error ?? cancel.error ?? restore.error)?.message}
+        </p>
+      )}
+      {undoToast}
       {openIndex >= 0 && (
         <Viewer
           items={flat}
@@ -217,18 +386,37 @@ export function ResultsScreen({
   )
 }
 
+/** A queued group's place in the queue, and the ways to change it. */
+interface Queued {
+  index: number
+  length: number
+  /** How far the group has been dragged, while it's lifted. */
+  lifted: number | null
+  /** Show where a dragged group would land: before or after this one. */
+  mark: 'before' | 'after' | null
+  onTop: () => void
+  onStep: (delta: -1 | 1) => void
+  onLift: (clientY: number) => void
+  onDrag: (clientY: number) => void
+  onDrop: () => void
+}
+
 function GroupView({
   group,
   now,
   assets,
+  queued,
+  sectionRef,
   onOpen,
   onCancel,
 }: {
   group: Group
   now: number
   assets: Asset[] | undefined
+  queued?: Queued
+  sectionRef: (el: HTMLElement | null) => void
   onOpen: (id: string) => void
-  onCancel: (jobId: string) => void
+  onCancel: (job: Job) => void
 }) {
   const { spec, job, results, chain } = group
   const params = spec?.params ?? {}
@@ -271,22 +459,43 @@ function GroupView({
     </button>
   )
 
+  const lifted = queued?.lifted ?? null
+  const classes = [
+    'group',
+    lifted !== null && 'lifted',
+    queued?.mark === 'before' && 'drop-before',
+    queued?.mark === 'after' && 'drop-after',
+  ]
+
   return (
-    <section aria-label={prompt || 'Untitled'}>
-      <header className="group-caption">
+    <section
+      ref={sectionRef}
+      aria-label={prompt || 'Untitled'}
+      className={classes.filter(Boolean).join(' ')}
+      style={lifted !== null ? { transform: `translateY(${String(lifted)}px)` } : undefined}
+    >
+      <header className={queued ? 'group-caption queued' : 'group-caption'}>
+        {queued && <DragHandle queued={queued} />}
         <p className={prompt ? 'title' : 'title untitled'}>{prompt || 'No prompt'}</p>
         <p className="meta">{meta}</p>
         <div className="aside">
           {pending ? (
-            <button
-              type="button"
-              className="btn quiet small"
-              onClick={() => {
-                onCancel(group.id)
-              }}
-            >
-              Cancel
-            </button>
+            <>
+              <button
+                type="button"
+                className="btn quiet small"
+                onClick={() => {
+                  onCancel(job)
+                }}
+              >
+                Cancel
+              </button>
+              {queued && queued.index > 0 && (
+                <button type="button" className="btn quiet small" onClick={queued.onTop}>
+                  Move to top
+                </button>
+              )}
+            </>
           ) : (
             <span className={soon ? 'soon' : undefined}>{expiry ?? shortTime(group.at, now)}</span>
           )}
@@ -303,6 +512,71 @@ function GroupView({
         })}
       </div>
     </section>
+  )
+}
+
+// Hold this long on the handle to lift a group; moving first means scrolling.
+const LONG_PRESS_MS = 250
+const SLOP_PX = 10
+
+/** Long-press and drag to move a queued group, or focus it and use the arrow keys. */
+function DragHandle({ queued }: { queued: Queued }) {
+  const press = useRef<{ timer: number; y: number; lifted: boolean } | null>(null)
+
+  const end = () => {
+    if (!press.current) return
+    clearTimeout(press.current.timer)
+    if (press.current.lifted) queued.onDrop()
+    press.current = null
+  }
+
+  const onPointerDown = (e: PointerEvent<HTMLButtonElement>) => {
+    if (e.button !== 0) return
+    const el = e.currentTarget
+    const { pointerId, clientY } = e
+    const liftNow = () => {
+      if (!press.current) return
+      press.current.lifted = true
+      el.setPointerCapture(pointerId)
+      queued.onLift(press.current.y)
+    }
+    press.current = { timer: 0, y: clientY, lifted: false }
+    if (e.pointerType === 'mouse') liftNow()
+    else press.current.timer = window.setTimeout(liftNow, LONG_PRESS_MS)
+  }
+
+  const onPointerMove = (e: PointerEvent<HTMLButtonElement>) => {
+    const p = press.current
+    if (!p) return
+    if (p.lifted) queued.onDrag(e.clientY)
+    else if (Math.abs(e.clientY - p.y) > SLOP_PX) end()
+  }
+
+  const onKeyDown = (e: KeyboardEvent<HTMLButtonElement>) => {
+    if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return
+    e.preventDefault()
+    queued.onStep(e.key === 'ArrowUp' ? -1 : 1)
+  }
+
+  return (
+    <button
+      type="button"
+      className="drag-handle"
+      aria-label={`Queue position ${String(queued.index + 1)} of ${String(queued.length)}`}
+      aria-describedby="drag-hint"
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={end}
+      onPointerCancel={end}
+      onKeyDown={onKeyDown}
+      onContextMenu={(e) => {
+        e.preventDefault() // a long press shouldn't open the callout
+      }}
+    >
+      <svg viewBox="0 0 20 20" aria-hidden>
+        <path d="M4 11 9 3M8 15l7-11M12 17l5-8" />
+      </svg>
+    </button>
   )
 }
 

@@ -15,6 +15,13 @@ const queryClient = new QueryClient({
   defaultOptions: { queries: { refetchOnWindowFocus: false, retry: 1 } },
 })
 
+// The service worker keeps the app shell offline and shows push notifications.
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js').catch((e: unknown) => {
+    console.warn('service worker registration failed', e)
+  })
+}
+
 createRoot(root).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>

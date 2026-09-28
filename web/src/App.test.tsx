@@ -845,6 +845,128 @@ describe('App', () => {
     ])
   })
 
+  it('chooses how a batch gets its seeds', async () => {
+    const submitted: { spec: { params: { seed: number } }; seed_mode: string }[] = []
+    mockApi({
+      'POST /api/jobs': (init) => {
+        submitted.push(JSON.parse(init?.body as string) as (typeof submitted)[number])
+        return { id: 'j1' }
+      },
+    })
+    const user = userEvent.setup()
+    renderApp()
+    await user.type(await screen.findByLabelText('Prompt'), 'a lighthouse')
+    await user.type(screen.getByLabelText('Seed'), '1234')
+    await user.click(screen.getByRole('button', { name: 'More images' }))
+
+    // A batch can't repeat one seed: random seeds, or counting up from the seed.
+    const random = screen.getByRole('button', { name: 'Random seeds' })
+    expect(random).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.queryByLabelText('from')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Generate 2 images' }))
+    await screen.findByText('Queued 2 images.')
+    expect(submitted[0]?.seed_mode).toBe('random')
+    expect(submitted[0]?.spec.params.seed).toBe(-1)
+
+    await user.click(screen.getByRole('button', { name: 'Count up' }))
+    expect(screen.getByLabelText('from')).toHaveValue(1234)
+    await user.click(screen.getByRole('button', { name: 'Generate 2 images' }))
+    await vi.waitFor(() => {
+      expect(submitted).toHaveLength(2)
+    })
+    expect(submitted[1]?.seed_mode).toBe('increment')
+    expect(submitted[1]?.spec.params.seed).toBe(1234)
+  })
+
+  it('reorders the queue', async () => {
+    const prompts: Record<string, string> = { a: 'first', b: 'second', c: 'third' }
+    const order = ['a', 'b', 'c']
+    const moves: { id: string; body: unknown }[] = []
+    const patch = (id: string) => (init?: RequestInit) => {
+      const body = JSON.parse(init?.body as string) as { position: number }
+      moves.push({ id, body })
+      order.splice(order.indexOf(id), 1)
+      order.splice(body.position, 0, id)
+      return {}
+    }
+    mockApi({
+      'GET /api/jobs': () =>
+        order.map((id, i) => ({
+          ...JOB_DONE,
+          id,
+          status: 'queued',
+          queue_position: i + 1,
+          spec: { ...SPEC, params: { ...SPEC.params, prompt: prompts[id] } },
+        })),
+      'PATCH /api/jobs/b': patch('b'),
+      'PATCH /api/jobs/c': patch('c'),
+    })
+    const user = userEvent.setup()
+    renderApp()
+    await user.click(screen.getByRole('button', { name: /Results/ }))
+    const third = await screen.findByRole('region', { name: 'third' })
+    const first = screen.getByRole('region', { name: 'first' })
+    expect(within(first).queryByRole('button', { name: 'Move to top' })).not.toBeInTheDocument()
+
+    await user.click(within(third).getByRole('button', { name: 'Move to top' }))
+    expect(moves).toEqual([{ id: 'c', body: { position: 0 } }])
+    const regions = () => screen.getAllByRole('region').map((r) => r.getAttribute('aria-label'))
+    expect(regions()).toEqual(['third', 'first', 'second'])
+
+    const handle = within(screen.getByRole('region', { name: 'second' })).getByRole('button', {
+      name: 'Queue position 3 of 3',
+    })
+    handle.focus()
+    await user.keyboard('{ArrowUp}')
+    expect(moves[1]).toEqual({ id: 'b', body: { position: 1 } })
+    await vi.waitFor(() => {
+      expect(regions()).toEqual(['third', 'second', 'first'])
+    })
+    expect(document.activeElement).toHaveAccessibleName('Queue position 2 of 3')
+  })
+
+  it('undoes cancelling a queued job', async () => {
+    let status = 'queued'
+    mockApi({
+      'GET /api/jobs': () => [{ ...JOB_DONE, status, queue_position: 1 }],
+      'DELETE /api/jobs/j1': () => {
+        status = 'cancelled'
+        return { cancelled: true }
+      },
+      'POST /api/jobs/j1/restore': () => {
+        status = 'queued'
+        return {}
+      },
+    })
+    const user = userEvent.setup()
+    renderApp()
+    await user.click(screen.getByRole('button', { name: /Results/ }))
+    await user.click(await screen.findByRole('button', { name: 'Cancel' }))
+    const toast = await screen.findByRole('status')
+    expect(toast).toHaveTextContent('Cancelled')
+    expect(await screen.findByText('Nothing here yet.')).toBeInTheDocument()
+    await user.click(within(toast).getByRole('button', { name: 'Undo' }))
+    expect(await screen.findByRole('region', { name: 'a lighthouse' })).toBeInTheDocument()
+    expect(screen.queryByText('Cancelled')).not.toBeInTheDocument()
+  })
+
+  it('opens where a notification points', async () => {
+    history.replaceState(null, '', '/?sheet=session')
+    mockApi()
+    renderApp()
+    expect(await screen.findByRole('dialog', { name: 'GPU session' })).toBeInTheDocument()
+    expect(location.search).toBe('')
+  })
+
+  it('explains how to get notifications on a phone', async () => {
+    mockApi()
+    const user = userEvent.setup()
+    renderApp()
+    await user.click(await screen.findByRole('button', { name: /No GPU/ }))
+    const section = await screen.findByRole('region', { name: 'Notifications' })
+    expect(section).toHaveTextContent('add Degas to the Home Screen')
+  })
+
   it('reports an unreachable server', async () => {
     vi.stubGlobal(
       'fetch',

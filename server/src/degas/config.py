@@ -35,6 +35,12 @@ class DriveConfig(_Section):
     token_file: Path | None = None  # default: <data_dir>/drive_token.json
 
 
+class PushConfig(_Section):
+    # VAPID contact: push services (Apple's included) want a mailto: or https: URL.
+    subject: str = "mailto:degas@localhost"
+    key_file: Path | None = None  # default: <data_dir>/vapid_private.pem (generated)
+
+
 class Config(_Section):
     data_dir: Path = Path("data")
     host: str = "127.0.0.1"
@@ -43,6 +49,7 @@ class Config(_Section):
     web_dist: Path | None = None  # default: <repo>/web/dist
     colab: ColabConfig = ColabConfig()
     drive: DriveConfig = DriveConfig()
+    push: PushConfig = PushConfig()
 
     @property
     def ssh_key(self) -> Path:
@@ -51,6 +58,10 @@ class Config(_Section):
     @property
     def drive_token_file(self) -> Path:
         return self.drive.token_file or self.data_dir / "drive_token.json"
+
+    @property
+    def vapid_key_file(self) -> Path:
+        return self.push.key_file or self.data_dir / "vapid_private.pem"
 
     @property
     def web_dist_dir(self) -> Path:
@@ -90,5 +101,6 @@ def load_config(path: Path | None = None) -> Config:
                     "token_file": resolve(config.drive.token_file),
                 }
             ),
+            "push": config.push.model_copy(update={"key_file": resolve(config.push.key_file)}),
         }
     )

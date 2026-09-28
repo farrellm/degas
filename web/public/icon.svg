@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Degas: an italic D (Newsreader) in chalk on slate paper; the lower half is still hatching. -->
+  <defs>
+    <path id="d" transform="translate(120 395) scale(0.2028 -0.2028)" d="M529 57Q653 57 764 96Q876 136 970 212Q1063 288 1132 397Q1201 505 1239 643Q1278 782 1278 946Q1278 1079 1226 1175Q1175 1271 1075 1322Q975 1373 827 1373H599L611 1430H841Q1030 1430 1175 1369Q1320 1308 1402 1189Q1485 1069 1485 895Q1485 717 1420 556Q1355 395 1229 270Q1104 145 922 72Q740 0 506 0H173L190 57ZM503 1369 341 1410 347 1430H727L291 0H-79L-73 20L104 61Z"/>
+    <clipPath id="glyph"><use href="#d"/></clipPath>
+    <pattern id="hatch" width="20" height="20" patternUnits="userSpaceOnUse" patternTransform="rotate(-58)">
+      <rect width="7" height="20" fill="#efa3b5"/>
+    </pattern>
+  </defs>
+  <rect width="512" height="512" fill="#333b46"/>
+  <g clip-path="url(#glyph)">
+    <rect width="512" height="250" fill="#ece8e1"/>
+    <rect y="250" width="512" height="262" fill="url(#hatch)"/>
+  </g>
+</svg>

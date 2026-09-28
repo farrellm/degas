@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { api } from './api'
+import { NotificationAsk } from './components/NotificationAsk'
 import { SessionChip } from './components/SessionChip'
 import { SessionSheet } from './components/SessionSheet'
 import { useServerEvents } from './events'
@@ -11,10 +12,34 @@ import { ResultsScreen } from './screens/ResultsScreen'
 const TABS = ['Create', 'Results', 'Library'] as const
 type Tab = (typeof TABS)[number]
 
+/** Where a link into the app points: `/?tab=results`, `/?sheet=session` (notifications). */
+function linkTarget(url: string): { tab?: Tab; session: boolean } {
+  const params = new URL(url, location.origin).searchParams
+  const tab = TABS.find((t) => t.toLowerCase() === params.get('tab'))
+  return { tab, session: params.get('sheet') === 'session' }
+}
+
 function App() {
-  const [tab, setTab] = useState<Tab>('Create')
-  const [sessionOpen, setSessionOpen] = useState(false)
+  const [tab, setTab] = useState<Tab>(() => linkTarget(location.href).tab ?? 'Create')
+  const [sessionOpen, setSessionOpen] = useState(() => linkTarget(location.href).session)
   useServerEvents()
+
+  useEffect(() => {
+    if (location.search) history.replaceState(null, '', location.pathname)
+    // A tapped notification while the app is already open.
+    const sw = 'serviceWorker' in navigator ? navigator.serviceWorker : null
+    const onMessage = (e: MessageEvent<{ type?: string; url?: string }>) => {
+      if (e.data.type !== 'open' || !e.data.url) return
+      const target = linkTarget(e.data.url)
+      if (target.tab) setTab(target.tab)
+      if (target.session) setSessionOpen(true)
+    }
+    sw?.addEventListener('message', onMessage)
+    return () => {
+      sw?.removeEventListener('message', onMessage)
+    }
+  }, [])
+
   const session = useQuery({ queryKey: ['session'], queryFn: api.session })
   const jobs = useQuery({ queryKey: ['jobs'], queryFn: api.jobs })
   const pending = jobs.data?.filter((j) => j.status === 'queued' || j.status === 'running').length
@@ -35,6 +60,7 @@ function App() {
           this device is on the tailnet.
         </p>
       )}
+      <NotificationAsk jobs={jobs.data} />
       <main className={tab === 'Create' ? 'app-main' : 'app-main results-main'}>
         {tab === 'Create' && (
           <CreateScreen

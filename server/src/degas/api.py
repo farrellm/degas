@@ -42,6 +42,24 @@ class SubmitJob(BaseModel):
     seed_mode: Literal["increment", "random"] = "increment"
 
 
+class MoveJob(BaseModel):
+    position: Annotated[int, Field(ge=0)]  # index in the queue; 0 runs next
+
+
+class PushKeys(BaseModel):
+    p256dh: Annotated[str, Field(min_length=1, max_length=200)]
+    auth: Annotated[str, Field(min_length=1, max_length=100)]
+
+
+class PushSubscription(BaseModel):
+    endpoint: Annotated[str, Field(pattern=r"^https://", max_length=2000)]
+    keys: PushKeys
+
+
+class PushEndpoint(BaseModel):
+    endpoint: str
+
+
 Tags = Annotated[list[Annotated[str, Field(min_length=1, max_length=40)]], Field(max_length=20)]
 
 
@@ -232,6 +250,30 @@ async def cancel_job(svc: Svc, job_id: str) -> dict[str, Any]:
         raise HTTPException(404, "Unknown job")
     cancelled = await svc.dispatcher.cancel(job_id)
     return {"cancelled": cancelled}
+
+
+@router.patch("/jobs/{job_id}")
+async def move_job(svc: Svc, job_id: str, body: MoveJob) -> dict[str, Any]:
+    """Reorder the queue."""
+    if svc.db.get_job(job_id) is None:
+        raise HTTPException(404, "Unknown job")
+    if not svc.dispatcher.move(job_id, body.position):
+        raise HTTPException(409, "Only a queued job can be moved")
+    job = svc.db.get_job(job_id)
+    assert job is not None
+    return svc.dispatcher.describe(job)
+
+
+@router.post("/jobs/{job_id}/restore")
+async def restore_job(svc: Svc, job_id: str) -> dict[str, Any]:
+    """Undo cancelling a queued job."""
+    if svc.db.get_job(job_id) is None:
+        raise HTTPException(404, "Unknown job")
+    if not svc.dispatcher.restore(job_id):
+        raise HTTPException(409, "Only a job cancelled before it started can be restored")
+    job = svc.db.get_job(job_id)
+    assert job is not None
+    return svc.dispatcher.describe(job)
 
 
 # -- results -----------------------------------------------------------------------------
@@ -478,6 +520,25 @@ async def get_thumb(svc: Svc, sha: str) -> FileResponse:
         media_type="image/webp",
         headers={"Cache-Control": "public, max-age=31536000, immutable"},
     )
+
+
+# -- Web Push ------------------------------------------------------------------------------
+
+
+@router.get("/push")
+async def push_key(svc: Svc) -> dict[str, Any]:
+    return {"public_key": svc.push.public_key}
+
+
+@router.post("/push/subscribe", status_code=201)
+async def push_subscribe(svc: Svc, body: PushSubscription) -> dict[str, Any]:
+    svc.push.subscribe(body.endpoint, body.keys.model_dump())
+    return {"subscribed": True}
+
+
+@router.post("/push/unsubscribe")
+async def push_unsubscribe(svc: Svc, body: PushEndpoint) -> dict[str, Any]:
+    return {"unsubscribed": svc.push.unsubscribe(body.endpoint)}
 
 
 # -- events --------------------------------------------------------------------------------

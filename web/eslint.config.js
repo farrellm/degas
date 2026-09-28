@@ -31,6 +31,11 @@ export default defineConfig([
     },
   },
   {
+    files: ['public/sw.js'],
+    extends: [js.configs.recommended, prettier],
+    languageOptions: { globals: globals.serviceworker },
+  },
+  {
     files: ['eslint.config.js'],
     extends: [js.configs.recommended, prettier],
     languageOptions: { globals: globals.node },

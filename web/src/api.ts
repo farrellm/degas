@@ -184,9 +184,13 @@ export interface Progress {
 
 export type JobStatus = 'queued' | 'running' | 'done' | 'cancelled' | 'error'
 
+export type SeedMode = 'increment' | 'random'
+
 export interface Job {
   id: string
   status: JobStatus
+  /** Order in the queue: lower runs sooner. */
+  queue_position: number
   spec: Spec
   seeds: number[]
   created_at: string
@@ -296,9 +300,18 @@ export const api = {
   touchSession: () => request<SessionSnapshot>('POST', '/session/touch'),
   resetWorker: () => request<SessionSnapshot>('POST', '/session/reset-worker'),
   jobs: () => request<Job[]>('GET', '/jobs'),
-  submitJob: (spec: Spec, batchCount: number, seedMode: 'increment' | 'random') =>
+  submitJob: (spec: Spec, batchCount: number, seedMode: SeedMode) =>
     request<Job>('POST', '/jobs', { spec, batch_count: batchCount, seed_mode: seedMode }),
   cancelJob: (id: string) => request<{ cancelled: boolean }>('DELETE', `/jobs/${id}`),
+  /** Move a queued job to `position` in the queue (0 runs next). */
+  moveJob: (id: string, position: number) => request<Job>('PATCH', `/jobs/${id}`, { position }),
+  /** Undo cancelling a queued job. */
+  restoreJob: (id: string) => request<Job>('POST', `/jobs/${id}/restore`),
+  pushKey: () => request<{ public_key: string }>('GET', '/push'),
+  pushSubscribe: (sub: PushSubscriptionJSON) =>
+    request<{ subscribed: boolean }>('POST', '/push/subscribe', sub),
+  pushUnsubscribe: (endpoint: string) =>
+    request<{ unsubscribed: boolean }>('POST', '/push/unsubscribe', { endpoint }),
   results: (cursor?: string) =>
     request<{ results: Result[]; cursor: string | null }>(
       'GET',
