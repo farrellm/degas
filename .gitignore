@@ -19,6 +19,9 @@ coverage/
 # Degas runtime data and local config (may hold OAuth tokens, VAPID keys)
 data/
 degas.toml
+# Google OAuth client secrets (keep them in data/)
+client_secret*.json
+drive_client.json
 *.key
 .env
 .env.*
