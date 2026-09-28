@@ -138,7 +138,14 @@ class Wan22Runner:
         if mode != "i2v":
             return self.pipe
         if self.i2v is None:
-            self.i2v = WanImageToVideoPipeline.from_pipe(self.pipe)
+            # Not from_pipe: it casts the shared modules in place to one dtype (float32 by
+            # default), doubling the bf16 experts and losing the float32 VAE.
+            config = self.pipe.config
+            self.i2v = WanImageToVideoPipeline(
+                **self.pipe.components,
+                boundary_ratio=config.get("boundary_ratio"),
+                expand_timesteps=config.get("expand_timesteps", False),
+            )
             self.i2v.set_progress_bar_config(disable=True)
         return self.i2v
 
