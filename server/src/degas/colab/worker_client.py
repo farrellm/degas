@@ -91,6 +91,13 @@ class WorkerClient:
         except httpx2.HTTPError as e:
             raise WorkerError(f"fetch assets: {e!r}") from e
 
+    async def preprocess(self, body: dict[str, Any]) -> dict[str, Any]:
+        """Run a preprocessor; the first use copies and loads its model, so allow minutes."""
+        result: dict[str, Any] = await self._json(
+            "POST", "/preprocess", json=body, timeout=httpx2.Timeout(30, read=600)
+        )
+        return result
+
     async def cancel(self, job_id: str) -> bool:
         body = await self._json("POST", f"/jobs/{job_id}/cancel")
         return bool(body["cancelled"])

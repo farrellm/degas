@@ -18,6 +18,7 @@ from degas.colab.tunnel import Tunnel
 from degas.colab.worker_client import WorkerClient
 from degas.config import Config
 from degas.services import Services, build_services
+from degas_worker import masks
 from degas_worker.app import create_app as create_worker_app
 from degas_worker.families.base import FamilyRunner, Output, RunContext
 from degas_worker.paths import Paths
@@ -96,7 +97,18 @@ class FakeSdxl:
     fail: str | None = None
     fetch = False  # copy the spec's model and LoRAs into the VM cache, like the real runner
 
+    def __init__(self) -> None:
+        self.inputs: list[dict[str, tuple[int, int]]] = []  # sizes of the staged inputs
+
     def run(self, spec: dict[str, Any], seeds: list[int], ctx: RunContext) -> Iterator[Output]:
+        staged = {}
+        for key in ("source", "mask"):
+            ref = (spec.get("inputs") or {}).get(key)
+            if ref:
+                with Image.open(ctx.blob(ref)) as im:
+                    staged[key] = im.size
+        if staged:
+            self.inputs.append(staged)
         if self.fetch:
             for asset in [spec["model"], *spec.get("loras", [])]:
                 ctx.fetch_asset(asset["path"], asset.get("size"))
@@ -138,6 +150,35 @@ class FakeWan:
         pass
 
 
+class FakeSam:
+    """Selects a rectangle around each included point; a description selects the left half."""
+
+    def __init__(self) -> None:
+        self.calls: list[dict[str, Any]] = []
+
+    def run(self, model: Path, image: Path, params: dict[str, Any]) -> dict[str, Any]:
+        self.calls.append({"model": model, **params})
+        with Image.open(image) as im:
+            w, h = im.size
+        found: list[Image.Image] = []
+        if params.get("text"):
+            mask = Image.new("L", (w, h), 0)
+            mask.paste(255, (0, 0, w // 2, h))
+            found.append(mask)
+        else:
+            for r in (2, 6, 12):
+                mask = Image.new("L", (w, h), 0)
+                for p in params["points"]:
+                    if p["include"]:
+                        x, y = int(p["x"]), int(p["y"])
+                        mask.paste(255, (max(0, x - r), max(0, y - r), x + r, y + r))
+                found.append(mask)
+        return masks.candidates(found, [0.5, 0.9, 0.7][: len(found)])
+
+    def unload(self) -> None:
+        pass
+
+
 class FastIntervals(Intervals):
     tick = 0.02
     health = 0.05
@@ -154,6 +195,7 @@ class Harness:
         self.tunnels: list[FakeTunnel] = []
         self.runner = FakeSdxl()
         self.wan = FakeWan()
+        self.sam = FakeSam()
         self.worker_paths = Paths(home=tmp_path / "vm", models=tmp_path / "vm-models")
         self.worker_paths.ensure()
 
@@ -173,6 +215,7 @@ class Harness:
             {"sdxl": runner_factory, "wan22": lambda: self.wan},
             rclone=str(rclone),
             exit_process=exit_process,
+            preprocessors={"sam": lambda: self.sam},
         )
         self.config = Config(data_dir=tmp_path / "data", web_dist=tmp_path / "no-web")
         key = self.config.ssh_key
@@ -232,6 +275,22 @@ LORA = {
 }
 
 
+SAM = {
+    "path": "preprocessors/sam3",
+    "family": None,
+    "kind": "preprocessor",
+    "drive_file_id": "s3",
+    "size": 10,  # what the fake rclone writes
+}
+INPAINT_MODEL = {
+    "path": "models/sdxl/inpaint/sdxl-inpaint.safetensors",
+    "family": "sdxl",
+    "kind": "model",
+    "drive_file_id": "f9",
+    "size": 1234,
+}
+
+
 WAN_5B = {
     "path": "models/wan22/ti2v-5b",
     "family": "wan22",
@@ -253,6 +312,6 @@ def client(harness: Harness) -> Iterator[TestClient]:
     app = create_app(harness.config, harness.services_factory())
     with TestClient(app) as c:
         c.app.state.services.db.replace_assets(  # type: ignore[attr-defined]
-            [harness.model, LORA, WAN_5B, WAN_I2V]
+            [harness.model, LORA, WAN_5B, WAN_I2V, INPAINT_MODEL, SAM]
         )
         yield c

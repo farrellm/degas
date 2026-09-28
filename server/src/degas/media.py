@@ -107,6 +107,13 @@ def apply_ops(data: bytes, ops: list[Op]) -> tuple[bytes, int, int]:
             im = src.convert("RGBA" if "A" in src.getbands() else "RGB")
     except OSError as e:
         raise MediaError("The original image can't be read") from e
+    im = _apply(im, ops)
+    buf = io.BytesIO()
+    im.save(buf, format="PNG")
+    return buf.getvalue(), im.width, im.height
+
+
+def _apply(im: Image.Image, ops: list[Op]) -> Image.Image:
     for op in ops:
         match op["op"]:
             case "rotate":
@@ -128,9 +135,89 @@ def apply_ops(data: bytes, ops: list[Op]) -> tuple[bytes, int, int]:
                 canvas = Image.new(im.mode, (op["w"], op["h"]))
                 canvas.paste(im, ((op["w"] - im.width) // 2, (op["h"] - im.height) // 2))
                 im = canvas
+            case "paste":  # masks only: the inverse of a crop
+                canvas = Image.new(im.mode, (op["w"], op["h"]))
+                canvas.paste(im, (op["x"], op["y"]))
+                im = canvas
+    return im
+
+
+# -- masks ---------------------------------------------------------------------------------
+
+
+def normalize_mask(data: bytes, size: tuple[int, int]) -> bytes:
+    """A painted mask as single-channel PNG at `size`: white is redrawn, grey is soft.
+
+    A mask with transparency (a canvas export) is read from its alpha channel.
+    """
+    try:
+        with Image.open(io.BytesIO(data)) as src:
+            src.load()
+            im = src.getchannel("A") if "A" in src.getbands() else src.convert("L")
+    except (OSError, ValueError, Image.DecompressionBombError) as e:
+        raise MediaError("That mask isn't an image Degas can read") from e
+    if im.size != size:
+        if abs(im.width / im.height - size[0] / size[1]) > 0.02:
+            raise MediaError("The mask's shape doesn't match its image")
+        im = im.resize(size, Image.Resampling.BILINEAR)
+    return _png(im)
+
+
+def apply_mask_ops(data: bytes, ops: list[Op]) -> bytes:
+    """Apply transform operations to a mask; areas a pad or paste adds are not masked."""
+    try:
+        with Image.open(io.BytesIO(data)) as src:
+            im = src.convert("L")
+    except OSError as e:
+        raise MediaError("The mask can't be read") from e
+    return _png(_apply(im, ops))
+
+
+def mask_is_empty(data: bytes) -> bool:
+    with Image.open(io.BytesIO(data)) as im:
+        return im.convert("L").getbbox() is None
+
+
+def _png(im: Image.Image) -> bytes:
     buf = io.BytesIO()
     im.save(buf, format="PNG")
-    return buf.getvalue(), im.width, im.height
+    return buf.getvalue()
+
+
+def ops_size(ops: list[Op], w: int, h: int) -> tuple[int, int]:
+    """The size of a `w`x`h` image after `ops`."""
+    for op in ops:
+        match op["op"]:
+            case "rotate" if op["deg"] in (90, 270):
+                w, h = h, w
+            case "crop" | "resize" | "pad" | "paste":
+                w, h = op["w"], op["h"]
+    return w, h
+
+
+def invert_ops(ops: list[Op], w: int, h: int) -> list[Op]:
+    """Operations that take an image made by `ops` (from a `w`x`h` original) back onto the
+    original's frame. A crop comes back as a paste, so what was cropped away is empty."""
+    sizes = [(w, h)]
+    for op in ops:
+        sizes.append(ops_size([op], *sizes[-1]))
+    out: list[Op] = []
+    for op, (bw, bh) in zip(reversed(ops), reversed(sizes[:-1]), strict=True):
+        match op["op"]:
+            case "rotate":
+                out.append({"op": "rotate", "deg": 360 - op["deg"]} if op["deg"] != 180 else op)
+            case "flip_h" | "flip_v":
+                out.append(op)
+            case "crop":
+                out.append({"op": "paste", "x": op["x"], "y": op["y"], "w": bw, "h": bh})
+            case "resize":
+                out.append({"op": "resize", "w": bw, "h": bh, "filter": "lanczos"})
+            case "pad":
+                x, y = (op["w"] - bw) // 2, (op["h"] - bh) // 2
+                out.append({"op": "crop", "x": x, "y": y, "w": bw, "h": bh})
+            case "paste":
+                out.append({"op": "crop", "x": op["x"], "y": op["y"], "w": bw, "h": bh})
+    return out
 
 
 def fit_ops(w: int, h: int, tw: int, th: int, mode: str) -> list[Op]:

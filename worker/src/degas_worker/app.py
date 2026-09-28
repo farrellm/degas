@@ -6,6 +6,7 @@ import os
 import re
 import shutil
 import signal
+import threading
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from typing import Any
@@ -17,12 +18,14 @@ from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
 from degas_worker import __version__
-from degas_worker.cache import AssetCache
+from degas_worker.cache import AssetCache, CacheError
 from degas_worker.families import RUNNERS
 from degas_worker.families.base import FamilyRunner
 from degas_worker.gpu import gpu_info, versions
 from degas_worker.jobs import JobManager, WorkerBusy
 from degas_worker.paths import Paths
+from degas_worker.preprocess import PREPROCESSORS
+from degas_worker.preprocess.base import Preprocessor
 
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
@@ -43,22 +46,39 @@ class FetchAssets(BaseModel):
     assets: list[dict[str, Any]]  # [{path, size?}]
 
 
+class Preprocess(BaseModel):
+    id: str
+    image: str  # sha256:… of a staged blob
+    asset: dict[str, Any]  # {path, size?}: the preprocessor's model in Drive
+    params: dict[str, Any] = {}
+
+
 def create_app(  # noqa: PLR0915 - route definitions
     paths: Paths | None = None,
     runners: dict[str, Callable[[], FamilyRunner]] | None = None,
     rclone: str | None = None,
     exit_process: Callable[[], None] | None = None,
     cache_budget: int | None = None,
+    preprocessors: dict[str, Callable[[], Preprocessor]] | None = None,
 ) -> FastAPI:
     paths = paths or Paths.from_env()
     cache = AssetCache(paths, rclone, cache_budget)
     jobs = JobManager(paths, cache, RUNNERS if runners is None else runners)
+    pre_factories = PREPROCESSORS if preprocessors is None else preprocessors
+    pre_loaded: dict[str, Preprocessor] = {}
+    pre_lock = threading.Lock()  # one preprocessor call at a time
+
+    def unload_preprocessors() -> None:
+        for pre in pre_loaded.values():
+            pre.unload()
+        pre_loaded.clear()
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         paths.ensure()
         yield
         jobs.unload()
+        unload_preprocessors()
 
     app = FastAPI(title="Degas worker", version=__version__, lifespan=lifespan)
     app.state.jobs = jobs
@@ -146,6 +166,32 @@ def create_app(  # noqa: PLR0915 - route definitions
         except ValueError as e:
             raise HTTPException(400, str(e)) from None
 
+    # -- preprocessors ----------------------------------------------------------------------
+
+    @app.post("/preprocess")
+    def preprocess(body: Preprocess) -> dict[str, Any]:  # sync: GPU work in the threadpool
+        """Runs alongside a generation job; the two share the GPU."""
+        factory = pre_factories.get(body.id)
+        if factory is None:
+            raise HTTPException(400, f"Unknown preprocessor {body.id!r}")
+        image = blob_path(body.image.removeprefix("sha256:"))
+        if not image.exists():
+            raise HTTPException(400, f"Input {body.image} was not staged on the worker")
+        path = body.asset.get("path")
+        if not isinstance(path, str) or not path:
+            raise HTTPException(400, "asset: a path is required")
+        try:
+            with pre_lock, cache.pinned(path):
+                model = cache.ensure(path, body.asset.get("size"))
+                pre = pre_loaded.get(body.id)
+                if pre is None:
+                    pre = pre_loaded[body.id] = factory()
+                return pre.run(model, image, body.params)
+        except CacheError as e:
+            raise HTTPException(503, str(e)) from None
+        except ValueError as e:
+            raise HTTPException(400, str(e)) from None
+
     # -- Drive -----------------------------------------------------------------------------
 
     @app.post("/drive-token", status_code=204)
@@ -186,6 +232,7 @@ def create_app(  # noqa: PLR0915 - route definitions
     @app.post("/shutdown", status_code=202)
     def shutdown(background: BackgroundTasks) -> None:
         jobs.unload()
+        unload_preprocessors()
         background.add_task(exit_process or _terminate)
 
     return app

@@ -16,6 +16,8 @@ from degas.families.base import SpecError, describe, lora_files, spec_assets
 from degas.inputs import MAX_UPLOAD_BYTES
 from degas.library import input_blobs, release, saved_config
 from degas.media import MediaError
+from degas.preprocess import PreprocessError
+from degas.preprocess import run as run_preprocess
 from degas.services import Services
 
 router = APIRouter(prefix="/api")
@@ -69,6 +71,17 @@ class FromUrl(BaseModel):
 
 class Transform(BaseModel):
     ops: list[dict[str, Any]]
+
+
+class RemapMask(BaseModel):
+    source: str  # the image the mask was painted on
+    to: str  # another crop of the same original
+
+
+class Preprocess(BaseModel):
+    id: str
+    image: str
+    params: dict[str, Any] = {}
 
 
 class Frame(BaseModel):
@@ -487,6 +500,35 @@ async def get_transform(svc: Svc, sha: str) -> dict[str, Any]:
     if record is None or svc.blobs.path(record["original"]) is None:
         return {"original": sha, "ops": []}
     return record
+
+
+@router.post("/blobs/{sha}/mask", status_code=201)
+async def upload_mask(svc: Svc, sha: str, request: Request) -> dict[str, Any]:
+    """A mask painted over image `sha` (raw PNG body; white or opaque is redrawn)."""
+    data = await request.body()
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise HTTPException(413, "The mask is larger than 200 MB")
+    try:
+        return await svc.inputs.store_mask(sha, data)
+    except MediaError as e:
+        raise HTTPException(400, str(e)) from None
+
+
+@router.post("/blobs/{sha}/remap", status_code=201)
+async def remap_mask(svc: Svc, sha: str, body: RemapMask) -> dict[str, Any]:
+    """Carry mask `sha` from the image it was painted on to a new crop of that image."""
+    try:
+        return await svc.inputs.remap_mask(sha, body.source, body.to)
+    except MediaError as e:
+        raise HTTPException(400, str(e)) from None
+
+
+@router.post("/preprocess", status_code=201)
+async def preprocess(svc: Svc, body: Preprocess) -> dict[str, Any]:
+    try:
+        return await run_preprocess(svc, body.id, body.image, body.params)
+    except PreprocessError as e:
+        raise HTTPException(e.status, str(e)) from None
 
 
 @router.post("/blobs/{sha}/frame", status_code=201)

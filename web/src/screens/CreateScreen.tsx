@@ -16,10 +16,21 @@ import { AssetPicker } from '../components/AssetPicker'
 import { CropEditor } from '../components/CropEditor'
 import { ImagePicker } from '../components/ImagePicker'
 import { LoraList } from '../components/LoraList'
+import { MaskEditor } from '../components/MaskEditor'
+import { MaskThumb } from '../components/MaskThumb'
+import { PlaceEditor } from '../components/PlaceEditor'
 import { PromptSheet } from '../components/PromptSheet'
 import { SchemaForm } from '../components/SchemaForm'
-import { loadDraft, saveFamilyDraft, SOURCE_MODES, switchFamily, type Source } from '../draft'
+import {
+  loadDraft,
+  saveFamilyDraft,
+  SOURCE_MODES,
+  switchFamily,
+  type MaskRef,
+  type Source,
+} from '../draft'
 import { size } from '../format'
+import { defaultPlace, validPlace, type Place } from '../place'
 import { insertWord } from '../prompt'
 import { initialParams } from '../schema'
 
@@ -71,6 +82,10 @@ function CreateForm({
   const [source, setSource] = useState<Source | null>(draft.source ?? null)
   const [fit, setFit] = useState<Fit>(draft.fit ?? 'crop')
   const [extendsClip, setExtends] = useState(draft.extends ?? null)
+  const [mask, setMask] = useState<MaskRef | null>(draft.mask ?? null)
+  const [maskNote, setMaskNote] = useState<string | null>(null)
+  const [painting, setPainting] = useState(false)
+  const [chosenPlace, setPlace] = useState<Place | null>(draft.place ?? null)
   const [batchCount, setBatchCount] = useState(draft.batchCount)
   const [seedMode, setSeedMode] = useState<SeedMode>(draft.seedMode)
   const [queued, setQueued] = useState<number | null>(null)
@@ -111,11 +126,24 @@ function CreateForm({
     if (!params || !mode) return
     saveFamilyDraft(
       familyId,
-      { model, mode, loras, params, source, fit, extends: extendsClip },
+      { model, mode, loras, params, source, fit, extends: extendsClip, mask, place: chosenPlace },
       batchCount,
       seedMode,
     )
-  }, [familyId, model, mode, loras, params, source, fit, extendsClip, batchCount, seedMode])
+  }, [
+    familyId,
+    model,
+    mode,
+    loras,
+    params,
+    source,
+    fit,
+    extendsClip,
+    mask,
+    chosenPlace,
+    batchCount,
+    seedMode,
+  ])
 
   useEffect(() => {
     if (queued === null) return
@@ -126,6 +154,15 @@ function CreateForm({
       clearTimeout(id)
     }
   }, [queued])
+
+  const canvas = params ? { w: Number(params.width), h: Number(params.height) } : null
+  const place =
+    mode === 'outpaint' && source && canvas
+      ? validPlace(chosenPlace, { w: source.width, h: source.height }, canvas)
+        ? chosenPlace
+        : defaultPlace({ w: source.width, h: source.height }, canvas)
+      : null
+  const maskFits = !!mask && !!source && mask.source === source.sha
 
   const submit = useMutation({
     mutationFn: () => {
@@ -146,6 +183,8 @@ function CreateForm({
                 source: `sha256:${source.sha}`,
                 fit,
                 ...(extendsClip && { extends: extendsClip }),
+                ...(mode === 'inpaint' && mask && { mask: `sha256:${mask.sha}` }),
+                ...(mode === 'outpaint' && place && { place }),
               },
             }),
         },
@@ -189,12 +228,37 @@ function CreateForm({
   const takeSource = (image: BlobInfo, fromCrop: boolean) => {
     const w = image.width ?? target.w
     const h = image.height ?? target.h
+    const previous = source
     setSource({ sha: image.sha256, width: w, height: h })
     setSourceGone(false)
     setExtends(null)
-    // A crop to another shape sets the size: that's what the crop was for.
-    if (fromCrop && (w !== target.w || h !== target.h))
+    setPlace(null)
+    setMaskNote(null)
+    // A crop to another shape sets the size: that's what the crop was for. An outpaint's
+    // size is its canvas, which the source sits inside, so it stays.
+    if (fromCrop && mode !== 'outpaint' && (w !== target.w || h !== target.h))
       setParams({ ...params, width: w, height: h })
+    // A new crop of the same image carries the mask with it; another image drops it.
+    if (!mask || image.sha256 === mask.source) return
+    if (!fromCrop || previous?.sha !== mask.source) {
+      setMask(null)
+      return
+    }
+    api
+      .remapMask(mask.sha, mask.source, image.sha256)
+      .then((moved) => {
+        if (moved.empty) {
+          setMask(null)
+          setMaskNote('The crop left out the whole mask.')
+        } else {
+          setMask({ sha: moved.sha256, source: image.sha256 })
+          setMaskNote('The mask moved with the crop.')
+        }
+      })
+      .catch(() => {
+        setMask(null)
+        setMaskNote('The mask couldn’t follow the crop. Paint it again.')
+      })
   }
 
   const sourceRow = needsSource && (
@@ -260,25 +324,83 @@ function CreateForm({
   const leadingRows = (
     <>
       {sourceRow}
-      {needsSource && source && misfit && (
-        <div className="setting">
-          <label className="setting-label" htmlFor="fit">
-            Fit
-          </label>
-          <select
-            id="fit"
-            value={fit}
-            onChange={(e) => {
-              setFit(e.target.value as Fit)
+      {needsSource && source && misfit && mode !== 'outpaint' && (
+        <div className="fit-row">
+          <div className="setting">
+            <label className="setting-label" htmlFor="fit">
+              Fit
+            </label>
+            <select
+              id="fit"
+              value={fit}
+              onChange={(e) => {
+                setFit(e.target.value as Fit)
+              }}
+            >
+              {FITS.map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          {fit === 'pad' && variant?.modes.includes('outpaint') && (
+            <p className="row-note">
+              <button
+                type="button"
+                className="link"
+                onClick={() => {
+                  setMode('outpaint')
+                  setPlace(null)
+                }}
+              >
+                Outpaint the bars
+              </button>{' '}
+              to draw what’s beyond the image instead.
+            </p>
+          )}
+        </div>
+      )}
+      {mode === 'inpaint' && source && !sourceGone && (
+        <div className="source-row">
+          <button
+            type="button"
+            className="setting setting-button"
+            onClick={() => {
+              setPainting(true)
             }}
           >
-            {FITS.map((f) => (
-              <option key={f.id} value={f.id}>
-                {f.label}
-              </option>
-            ))}
-          </select>
+            <span className="setting-label">Mask</span>{' '}
+            <span className={maskFits ? 'setting-value' : 'setting-value none'}>
+              {maskFits ? (
+                <>
+                  <MaskThumb source={source.sha} mask={mask.sha} />
+                  Edit mask
+                </>
+              ) : (
+                'Paint the area to redraw'
+              )}
+            </span>
+          </button>
+          {maskNote && <p className="row-note">{maskNote}</p>}
+          {maskFits && (
+            <div className="row-buttons source-actions">
+              <button
+                type="button"
+                className="btn quiet small"
+                onClick={() => {
+                  setMask(null)
+                  setMaskNote(null)
+                }}
+              >
+                Clear
+              </button>
+            </div>
+          )}
         </div>
+      )}
+      {mode === 'outpaint' && source && !sourceGone && place && (
+        <PlaceEditor source={source} canvas={target} place={place} onChange={setPlace} />
       )}
       <div className={modelMissing ? 'model-row missing' : 'model-row'}>
         <button
@@ -299,9 +421,7 @@ function CreateForm({
             Not found in Drive. Pick another model.
           </p>
         )}
-        {family &&
-          family.variants.length > 1 &&
-          variant &&
+        {variant?.model_dir &&
           model &&
           !modelMissing &&
           assetLabel(model, models) !== variant.label && (
@@ -426,7 +546,10 @@ function CreateForm({
           selected={new Set([model])}
           describe={
             family.variants.length > 1
-              ? (a) => variantFor(a.path, family)?.label ?? null
+              ? (a) => {
+                  const v = variantFor(a.path, family)
+                  return v?.model_dir ? v.label : null
+                }
               : undefined
           }
           empty={
@@ -503,6 +626,21 @@ function CreateForm({
           }}
         />
       )}
+      {painting && source && (
+        <MaskEditor
+          source={source}
+          mask={maskFits ? mask.sha : null}
+          blur={Number(params.mask_blur ?? 0)}
+          onDone={(painted) => {
+            setMask(painted ? { sha: painted.sha256, source: source.sha } : null)
+            setMaskNote(null)
+            setPainting(false)
+          }}
+          onCancel={() => {
+            setPainting(false)
+          }}
+        />
+      )}
       {cropping && variant && (
         <CropEditor
           sha={cropping}
@@ -573,7 +711,8 @@ function CreateForm({
                 !model ||
                 modelMissing ||
                 !hasPrompt ||
-                (needsSource && (!source || sourceGone))
+                (needsSource && (!source || sourceGone)) ||
+                (mode === 'inpaint' && !maskFits)
               }
             >
               {submit.isPending

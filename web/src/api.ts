@@ -136,8 +136,12 @@ export const isPair = (l: LoraEntry): l is LoraPair => !('path' in l)
 export type Fit = 'crop' | 'pad' | 'stretch'
 
 export interface Inputs {
-  /** `sha256:…` of the source image (i2v). */
+  /** `sha256:…` of the source image (i2i, inpaint, outpaint, i2v). */
   source?: string
+  /** `sha256:…` of the inpaint mask, painted over the source (white is redrawn). */
+  mask?: string
+  /** Outpaint: where the source sits on the canvas, in canvas pixels. */
+  place?: { x: number; y: number; w: number; h: number }
   fit?: Fit
   /** `sha256:…` of the clip a video extension continues. */
   extends?: string
@@ -162,6 +166,7 @@ export type Op =
   | { op: 'crop'; x: number; y: number; w: number; h: number }
   | { op: 'resize'; w: number; h: number; filter?: string }
   | { op: 'pad'; w: number; h: number }
+  | { op: 'paste'; x: number; y: number; w: number; h: number }
 
 /** A stored image or video, as returned by uploads, imports, frames and transforms. */
 export interface BlobInfo {
@@ -340,8 +345,30 @@ export const api = {
     request<BlobInfo>('POST', `/blobs/${sha}/transform`, { ops }),
   getTransform: (sha: string) =>
     request<{ original: string; ops: Op[] }>('GET', `/blobs/${sha}/transform`),
+  /** Store a mask painted over image `source` (a PNG; alpha or white is redrawn). */
+  uploadMask: (source: string, png: Blob) =>
+    request<BlobInfo>('POST', `/blobs/${source}/mask`, png),
+  /** Carry a mask from the image it was painted on to a new crop of that image. */
+  remapMask: (mask: string, source: string, to: string) =>
+    request<BlobInfo & { empty: boolean }>('POST', `/blobs/${mask}/remap`, { source, to }),
+  /** SAM 3: candidate masks for taps (`include` false leaves out) and/or a description. */
+  select: (image: string, params: { points: SelectPoint[]; text?: string }) =>
+    request<Selection>('POST', '/preprocess', { id: 'sam', image, params }),
   extendResult: (id: string) => request<Extension>('POST', `/results/${id}/extend`),
   extendLibraryItem: (id: string) => request<Extension>('POST', `/library/${id}/extend`),
+}
+
+/** A tap for SAM, in the image's pixels. */
+export interface SelectPoint {
+  x: number
+  y: number
+  include: boolean
+}
+
+/** SAM's answer: masks from smallest to largest, and the one it rates best. */
+export interface Selection {
+  candidates: (BlobInfo & { score: number | null })[]
+  chosen: number | null
 }
 
 /** A spec continuing a clip from its last frame, and that frame. */

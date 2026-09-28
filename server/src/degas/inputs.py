@@ -1,4 +1,4 @@
-"""Source images for i2v (and later i2i, inpaint and control): design §6.1 and §6.5.
+"""Source images and masks for i2i, inpaint, outpaint and i2v: design §6.1 and §6.5.
 
 Uploads, URL imports, video frames and transformed images are ordinary blobs,
 held for 24 h by an `input` ref until a job or a kept item takes its own.
@@ -163,9 +163,11 @@ class Inputs:
         return await self.derive(original, ops)
 
     async def resolve(self, spec: dict[str, Any]) -> None:
-        """Fit the source to the output size and record every transform in the spec (§6.5).
+        """Fit the source (and its mask) to the output size and record every transform in the
+        spec (§6.5).
 
-        After this the spec has no `fit` and its source is exactly the output size.
+        After this the spec has no `fit`, its source is exactly the output size (for an
+        outpaint, the size it is placed at) and its mask exactly the source's size.
         """
         inputs = spec.get("inputs") or {}
         fit = inputs.pop("fit", "crop")
@@ -178,14 +180,21 @@ class Inputs:
         size = self.blobs.image_size(sha) if not self.blobs.is_video(sha) else None
         if size is None:
             raise MediaError("The source image is no longer stored. Choose it again.")
-        target = (int(spec["params"]["width"]), int(spec["params"]["height"]))
+        place = inputs.get("place")
+        if place:
+            target = (int(place["w"]), int(place["h"]))
+        else:
+            target = (int(spec["params"]["width"]), int(spec["params"]["height"]))
         record = self.db.get_transform(sha)
         if record and self.blobs.path(record["original"]) is None:
             record = None  # the original is gone: treat the derived image as the original
         transforms: dict[str, Any] = {}
+        fit_ops = media.fit_ops(*size, *target, fit)
+        if inputs.get("mask"):
+            await self._fit_mask(inputs, size, fit_ops, transforms)
         if size != target:
             original, previous = (record["original"], record["ops"]) if record else (sha, [])
-            ops = [*previous, *media.fit_ops(*size, *target, fit)]
+            ops = [*previous, *fit_ops]
             derived = await self.derive(original, ops)
             inputs["source"] = ref(derived["sha256"])
             transforms[inputs["source"]] = {"original": ref(original), "ops": ops}
@@ -198,6 +207,67 @@ class Inputs:
             inputs["transforms"] = transforms
         else:
             inputs.pop("transforms", None)
+
+    async def _fit_mask(
+        self,
+        inputs: dict[str, Any],
+        size: tuple[int, int],
+        fit_ops: list[media.Op],
+        transforms: dict[str, Any],
+    ) -> None:
+        """Give the mask the fit its source gets, so the two stay pixel for pixel."""
+        mask = unref(inputs["mask"])
+        path = self.blobs.path(mask)
+        if path is None:
+            raise MediaError("The mask is no longer stored. Paint it again.")
+        data = path.read_bytes()
+        if media.image_size(data) != size:
+            raise MediaError("The mask was painted on a different image. Paint it again.")
+        if fit_ops:
+            data = await run_in_threadpool(media.apply_mask_ops, data, fit_ops)
+            fitted = self.blobs.put(data, "image/png")
+            self.db.hold_input(fitted)
+            inputs["mask"] = ref(fitted)
+            transforms[inputs["mask"]] = {"original": ref(mask), "ops": fit_ops}
+        if await run_in_threadpool(media.mask_is_empty, data):
+            raise MediaError("The mask is empty. Paint the area to redraw.")
+
+    # -- masks -------------------------------------------------------------------------------
+
+    async def store_mask(self, source: str, data: bytes) -> dict[str, Any]:
+        """Store a mask painted over `source`, at the source's pixel size."""
+        size = self.blobs.image_size(source) if not self.blobs.is_video(source) else None
+        if size is None:
+            raise MediaError("The image the mask was painted on is no longer stored")
+        png = await run_in_threadpool(media.normalize_mask, data, size)
+        return self._put_mask(png)
+
+    async def remap_mask(self, mask: str, source: str, to: str) -> dict[str, Any]:
+        """Carry a mask painted over `source` onto `to`, another crop of the same original.
+
+        What the new crop leaves out of the mask is dropped (`empty` says if all of it was).
+        """
+        mask_path = self.blobs.path(mask)
+        if mask_path is None:
+            raise MediaError("The mask is no longer stored")
+        was = self.db.get_transform(source)
+        now = self.db.get_transform(to)
+        original = was["original"] if was else source
+        if (now["original"] if now else to) != original:
+            raise MediaError("The new image isn't a crop of the one the mask was painted on")
+        size = self.blobs.image_size(original)
+        data = mask_path.read_bytes()
+        if size is None or media.image_size(data) != self.blobs.image_size(source):
+            raise MediaError("The mask no longer matches its image")
+        ops = [*media.invert_ops(was["ops"] if was else [], *size), *(now["ops"] if now else [])]
+        png = await run_in_threadpool(media.apply_mask_ops, data, ops)
+        return {**self._put_mask(png), "empty": await run_in_threadpool(media.mask_is_empty, png)}
+
+    def _put_mask(self, png: bytes) -> dict[str, Any]:
+        sha = self.blobs.put(png, "image/png")
+        self.db.hold_input(sha)
+        w, h = media.image_size(png) or (None, None)
+        return {"sha256": sha, "media_type": "image/png", "width": w, "height": h}
 
     # -- video extension -------------------------------------------------------------------
 

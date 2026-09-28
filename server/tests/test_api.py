@@ -46,7 +46,7 @@ def test_health(client: TestClient) -> None:
 def test_families_and_schema(client: TestClient) -> None:
     families = client.get("/api/families").json()
     assert [f["id"] for f in families] == ["sdxl", "wan22"]
-    assert families[0]["variants"][0]["modes"] == ["t2i"]
+    assert families[0]["variants"][0]["modes"] == ["t2i", "i2i", "inpaint", "outpaint"]
     wan = {v["id"]: v for v in families[1]["variants"]}
     assert wan["ti2v-5b"]["modes"] == ["t2v", "i2v"]
     assert wan["ti2v-5b"]["lora_format"] == "single"
@@ -54,13 +54,16 @@ def test_families_and_schema(client: TestClient) -> None:
     assert wan["i2v-a14b"]["model_dir"] == "models/wan22/i2v-a14b"
     schema = client.get("/api/families/sdxl/schema?variant=base&mode=t2i").json()
     assert schema["properties"]["steps"]["default"] == 30
-    resp = client.get("/api/families/sdxl/schema?variant=base&mode=inpaint")
+    resp = client.get("/api/families/sdxl/schema?variant=inpaint&mode=t2i")
     assert resp.status_code == 400
 
 
 def test_assets(client: TestClient) -> None:
     assets = client.get("/api/assets?family=sdxl&kind=model").json()
-    assert [a["path"] for a in assets] == ["models/sdxl/studio.safetensors"]
+    assert sorted(a["path"] for a in assets) == [
+        "models/sdxl/inpaint/sdxl-inpaint.safetensors",
+        "models/sdxl/studio.safetensors",
+    ]
     (lora,) = client.get("/api/assets?kind=lora").json()
     assert lora["sidecar"]["trigger_words"] == ["filmgrain"]
 

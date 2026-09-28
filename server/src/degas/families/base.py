@@ -116,11 +116,41 @@ def validate_inputs(inputs: Any, mode: str) -> dict[str, Any]:
     if fit not in FIT_MODES:
         raise SpecError(f"fit: must be one of {', '.join(FIT_MODES)}")
     out: dict[str, Any] = {"source": source, "fit": fit}
+    if mode == "inpaint":
+        mask = inputs.get("mask")
+        if not isinstance(mask, str) or not SHA_REF.match(mask):
+            raise SpecError("Paint the area to redraw")
+        out["mask"] = mask
+    if mode == "outpaint":
+        out["place"] = inputs.get("place")
     extends = inputs.get("extends")
     if extends is not None:
         if not isinstance(extends, str) or not SHA_REF.match(extends):
             raise SpecError("extends: expected a sha256 reference")
         out["extends"] = extends
+    return out
+
+
+MIN_PLACE = 64
+
+
+def validate_place(place: Any, params: dict[str, Any]) -> dict[str, int]:
+    """Where an outpaint puts its source on the canvas: `{x, y, w, h}` in canvas pixels."""
+    if not isinstance(place, dict):
+        raise SpecError("Place the image on the canvas")
+    out: dict[str, int] = {}
+    for key in ("x", "y", "w", "h"):
+        value = place.get(key)
+        if isinstance(value, bool) or not isinstance(value, int | float):
+            raise SpecError(f"place: {key} must be a number")
+        out[key] = round(value)
+    width, height = params["width"], params["height"]
+    if out["w"] < MIN_PLACE or out["h"] < MIN_PLACE:
+        raise SpecError(f"The image must be at least {MIN_PLACE} px on each side")
+    if out["x"] < 0 or out["y"] < 0 or out["x"] + out["w"] > width or out["y"] + out["h"] > height:
+        raise SpecError(f"The image must sit inside the {width}x{height} canvas")
+    if out["w"] == width and out["h"] == height:
+        raise SpecError("The image fills the canvas: there's nothing to outpaint")
     return out
 
 
