@@ -348,6 +348,8 @@ export const api = {
       'GET',
       `/results${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`,
     ),
+  /** Delete finished jobs and their results now; kept images stay in the library. */
+  clearResults: () => request<{ results: number; jobs: number }>('DELETE', '/results'),
   keep: (resultId: string) => request<LibraryItem>('POST', `/results/${resultId}/save`),
   library: (q: string, cursor?: string) =>
     request<{ items: LibraryItem[]; cursor: string | null }>(

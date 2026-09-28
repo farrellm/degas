@@ -1045,6 +1045,19 @@ code {
   color: var(--paper);
 }
 
+.feed-clear {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 36px;
+  padding-top: 20px;
+  border-top: 1px solid var(--rule);
+}
+
+.feed-clear > .btn {
+  align-self: center;
+}
+
 .feed-error {
   margin-top: 16px;
   font-size: var(--step--1);

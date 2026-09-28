@@ -325,6 +325,15 @@ async def list_results(
     return {"results": results, "cursor": next_cursor}
 
 
+@router.delete("/results")
+async def clear_results(svc: Svc) -> dict[str, Any]:
+    """Delete finished jobs and their results now; queued and running jobs stay."""
+    cleared = svc.db.clear_results()
+    release(svc.db, svc.blobs, cleared["blobs"])
+    svc.bus.publish({"type": "swept", "results": cleared["results"], "jobs": cleared["jobs"]})
+    return {"results": cleared["results"], "jobs": cleared["jobs"]}
+
+
 @router.post("/results/{result_id}/save")
 async def save_result(svc: Svc, result_id: str) -> dict[str, Any]:
     """Keep a result in the library, with the config that reproduces it."""

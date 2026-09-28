@@ -80,6 +80,22 @@ def test_library_search_edit_and_delete(client: TestClient, harness: Any) -> Non
     assert client.get(f"/api/blobs/{lighthouse['blob_sha']}").status_code == 200
 
 
+def test_clear_results_keeps_kept_images_and_queued_jobs(client: TestClient) -> None:
+    first, second = generate(client)
+    item = client.post(f"/api/results/{second['id']}/save").json()
+    client.delete("/api/session")
+    queued = client.post("/api/jobs", json={"spec": SPEC}).json()
+
+    assert client.delete("/api/results").json() == {"results": 2, "jobs": 1}
+    assert client.get("/api/results").json()["results"] == []
+    assert [j["id"] for j in client.get("/api/jobs").json()] == [queued["id"]]
+    assert client.get(f"/api/blobs/{first['blob_sha']}").status_code == 404
+    # The kept image is still in the library, with its picture.
+    assert client.get(f"/api/library/{item['id']}").status_code == 200
+    assert client.get(f"/api/blobs/{second['blob_sha']}").status_code == 200
+    assert client.delete("/api/results").json() == {"results": 0, "jobs": 0}
+
+
 def test_saved_prompts(client: TestClient) -> None:
     long = "a lighthouse on a cliff at dusk, oil painting, thick impasto"
     saved = client.post("/api/prompts", json={"prompt": long, "negative_prompt": "blurry"})

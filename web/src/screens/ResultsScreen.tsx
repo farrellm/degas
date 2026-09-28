@@ -175,6 +175,18 @@ export function ResultsScreen({
       ]),
   })
 
+  const clear = useMutation({
+    mutationFn: api.clearResults,
+    onSuccess: () => {
+      setOpen(null)
+    },
+    onSettled: () =>
+      Promise.all([
+        qc.invalidateQueries({ queryKey: ['results'] }),
+        qc.invalidateQueries({ queryKey: ['jobs'] }),
+      ]),
+  })
+
   if (jobs.isPending || results.isPending) return <p className="loading">Loading…</p>
   if (jobs.error ?? results.error) {
     return <p role="alert">{(jobs.error ?? results.error)?.message}</p>
@@ -184,6 +196,7 @@ export function ResultsScreen({
   const flat = groups.flatMap((g) => g.results)
   const openIndex = flat.findIndex((r) => r.id === open)
   const queue = groups.filter((g) => !g.chain && g.job?.status === 'queued').map((g) => g.id)
+  const finished = groups.some((g) => !['queued', 'running'].includes(g.job?.status ?? ''))
 
   const moveTo = (id: string, position: number) => {
     const n = queue.length
@@ -296,6 +309,15 @@ export function ResultsScreen({
           )
         })}
       </div>
+      {finished && (
+        <ClearResults
+          pending={clear.isPending}
+          error={clear.error?.message}
+          onClear={() => {
+            clear.mutate()
+          }}
+        />
+      )}
       <p className="visually-hidden" id="drag-hint">
         Hold and drag to change the order, or use the up and down arrow keys.
       </p>
@@ -600,6 +622,60 @@ function SketchTile({ job, item, done }: { job: Job; item: number; done: Set<num
       aria-label={`Image ${String(item + 1)}: ${label}`}
     >
       {(current || item === 0) && <span className="sketch-label">{label}</span>}
+    </div>
+  )
+}
+
+/** Delete everything finished at once, after asking inline. */
+function ClearResults({
+  pending,
+  error,
+  onClear,
+}: {
+  pending: boolean
+  error: string | undefined
+  onClear: () => void
+}) {
+  const [confirming, setConfirming] = useState(false)
+  return (
+    <div className="feed-clear">
+      {confirming ? (
+        <div className="confirm" role="group" aria-label="Confirm clear">
+          <p>Delete every finished image and clip? Kept ones stay in the library.</p>
+          <button
+            type="button"
+            className="btn danger"
+            disabled={pending}
+            onClick={() => {
+              onClear()
+              setConfirming(false)
+            }}
+          >
+            Clear results
+          </button>
+          <button
+            type="button"
+            className="btn quiet"
+            onClick={() => {
+              setConfirming(false)
+            }}
+          >
+            Cancel
+          </button>
+        </div>
+      ) : (
+        <button
+          type="button"
+          className="btn quiet"
+          disabled={pending}
+          onClick={() => {
+            setConfirming(true)
+          }}
+        >
+          {pending ? 'Clearing…' : 'Clear results'}
+        </button>
+      )}
+      {error && <p role="alert">{error}</p>}
     </div>
   )
 }
