@@ -41,7 +41,7 @@ from PIL import Image
 from degas_worker import masks
 from degas_worker.families.base import Output, RunContext
 from degas_worker.families.control import control_kwargs, crop_areas
-from degas_worker.families.lora import plan_loras
+from degas_worker.families.lora import plan_loras, strip_text_model
 
 # Keep in sync with the server descriptor (degas/families/sdxl.py).
 SCHEDULERS: dict[str, tuple[Any, dict[str, Any]]] = {
@@ -317,7 +317,7 @@ class SdxlRunner:
         local = {path: file for path, file, _ in loras}
         for path, name in plan.add:
             try:
-                self.pipe.load_lora_weights(str(local[path]), adapter_name=name)
+                self._load_lora(local[path], name)
             except Exception as e:
                 with contextlib.suppress(Exception):
                     self.pipe.delete_adapters([name])
@@ -325,6 +325,30 @@ class SdxlRunner:
             self.adapters[path] = name
         if plan.names:
             self.pipe.set_adapters(plan.names, adapter_weights=plan.weights)
+
+    def _load_lora(self, file: Path, name: str) -> None:
+        """`load_lora_weights`, but with the text encoder keys matched to transformers 5's
+        flattened `CLIPTextModel` (see `strip_text_model`)."""
+        pipe = self.pipe
+        state, alphas, metadata = pipe.lora_state_dict(
+            str(file), unet_config=pipe.unet.config, return_lora_metadata=True
+        )
+        encoders = [("text_encoder", pipe.text_encoder), ("text_encoder_2", pipe.text_encoder_2)]
+        for prefix, encoder in encoders:
+            if not hasattr(encoder, "text_model"):
+                state = strip_text_model(state, prefix)
+                alphas = alphas and strip_text_model(alphas, prefix)
+        common = {"network_alphas": alphas, "adapter_name": name, "metadata": metadata}
+        pipe.load_lora_into_unet(state, unet=pipe.unet, _pipeline=pipe, **common)
+        for prefix, encoder in encoders:
+            pipe.load_lora_into_text_encoder(
+                state,
+                text_encoder=encoder,
+                prefix=prefix,
+                lora_scale=pipe.lora_scale,
+                _pipeline=pipe,
+                **common,
+            )
 
     def _set_scheduler(self, pipe: Any, name: str, schedule: str) -> None:
         try:
