@@ -1,39 +1,97 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
-import { api, isActive, type LoraRef, type Params } from '../api'
-import { assetLabel, useAssets } from '../assets'
+import {
+  api,
+  isActive,
+  isPair,
+  thumbUrl,
+  type BlobInfo,
+  type Fit,
+  type LoraEntry,
+  type Params,
+} from '../api'
+import { assetLabel, loraChoices, useAssets, variantFor } from '../assets'
 import { AssetPicker } from '../components/AssetPicker'
+import { CropEditor } from '../components/CropEditor'
+import { ImagePicker } from '../components/ImagePicker'
 import { LoraList } from '../components/LoraList'
 import { PromptSheet } from '../components/PromptSheet'
 import { SchemaForm } from '../components/SchemaForm'
-import { loadDraft, saveDraft } from '../draft'
+import { loadDraft, saveFamilyDraft, SOURCE_MODES, switchFamily, type Source } from '../draft'
+import { size } from '../format'
 import { insertWord } from '../prompt'
 import { initialParams } from '../schema'
 
 const MAX_BATCH = 8
+const GPUS = ['T4', 'L4', 'A100', 'H100']
+
+const MODE_LABELS: Record<string, string> = {
+  t2i: 'From text',
+  t2v: 'From text',
+  i2i: 'From image',
+  i2v: 'From image',
+  inpaint: 'Inpaint',
+  outpaint: 'Outpaint',
+}
+
+const MEDIA_LABELS = { image: 'Image', video: 'Video' } as const
+
+const FITS: { id: Fit; label: string }[] = [
+  { id: 'crop', label: 'Crop to fit' },
+  { id: 'pad', label: 'Letterbox' },
+  { id: 'stretch', label: 'Stretch' },
+]
 
 interface Props {
   onOpenSession: () => void
   onShowResults: () => void
 }
 
-export function CreateScreen({ onOpenSession, onShowResults }: Props) {
-  const [draft] = useState(loadDraft)
-  const [familyId, setFamilyId] = useState(draft.family ?? 'sdxl')
+/** Create: one form per family, each keeping its own draft. */
+export function CreateScreen(props: Props) {
+  const [familyId, setFamilyId] = useState(() => loadDraft().family)
+  return <CreateForm key={familyId} familyId={familyId} onFamily={setFamilyId} {...props} />
+}
+
+function CreateForm({
+  familyId,
+  onFamily,
+  onOpenSession,
+  onShowResults,
+}: Props & { familyId: string; onFamily: (id: string) => void }) {
+  const [draft] = useState(() => {
+    const d = loadDraft()
+    return { ...d.families[familyId], batchCount: d.batchCount }
+  })
   const [chosenModel, setModel] = useState(draft.model ?? '')
+  const [chosenMode, setMode] = useState(draft.mode)
   const [editedParams, setParams] = useState<Params | null>(null)
-  const [loras, setLoras] = useState<LoraRef[]>(draft.loras ?? [])
-  const [batchCount, setBatchCount] = useState(draft.batchCount ?? 1)
+  const [loras, setLoras] = useState<LoraEntry[]>(draft.loras ?? [])
+  const [source, setSource] = useState<Source | null>(draft.source ?? null)
+  const [fit, setFit] = useState<Fit>(draft.fit ?? 'crop')
+  const [extendsClip, setExtends] = useState(draft.extends ?? null)
+  const [batchCount, setBatchCount] = useState(draft.batchCount)
   const [queued, setQueued] = useState<number | null>(null)
-  const [picker, setPicker] = useState<'model' | 'lora' | 'prompts' | null>(null)
+  const [picker, setPicker] = useState<'model' | 'lora' | 'prompts' | 'image' | null>(null)
+  const [cropping, setCropping] = useState<string | null>(null)
+  const [sourceGone, setSourceGone] = useState(false)
   const promptRef = useRef<HTMLTextAreaElement>(null)
   const promptFocused = useRef(false)
 
   const families = useQuery({ queryKey: ['families'], queryFn: api.families })
   const session = useQuery({ queryKey: ['session'], queryFn: api.session })
   const family = families.data?.find((f) => f.id === familyId) ?? families.data?.[0]
-  const variant = family?.variants[0]
-  const mode = variant?.modes[0]
+  const assets = useAssets()
+  const models = assets.data?.filter(
+    (a) => !!family && a.family === family.id && a.kind === 'model' && !!variantFor(a.path, family),
+  )
+  // A model remixed from an older image may have left Drive: keep it, flagged, rather
+  // than silently swapping in another.
+  const model = chosenModel || (models?.[0]?.path ?? '')
+  const modelMissing = !!model && !!models && !models.some((m) => m.path === model)
+  const variant = (family && model ? variantFor(model, family) : undefined) ?? family?.variants[0]
+  const mode = chosenMode && variant?.modes.includes(chosenMode) ? chosenMode : variant?.modes[0]
+  const needsSource = !!mode && SOURCE_MODES.has(mode)
 
   const schema = useQuery({
     queryKey: ['schema', family?.id, variant?.id, mode],
@@ -41,22 +99,20 @@ export function CreateScreen({ onOpenSession, onShowResults }: Props) {
     enabled: !!family && !!variant && !!mode,
     staleTime: Infinity,
   })
-  const assets = useAssets()
-  const ofKind = (kind: string) =>
-    assets.data?.filter((a) => a.family === family?.id && a.kind === kind)
-  const models = ofKind('model')
-  const loraIndex = ofKind('lora')
+  const loraIndex = assets.data?.filter((a) => a.family === family?.id && a.kind === 'lora')
+  const choices = loraChoices(loraIndex, variant)
 
-  // Until edited, the form shows the saved draft (or the schema defaults).
-  const params = editedParams ?? (schema.data ? initialParams(schema.data, draft.params) : null)
-  // A model remixed from an older image may have left Drive: keep it, flagged, rather
-  // than silently swapping in another.
-  const model = chosenModel || (models?.[0]?.path ?? '')
-  const modelMissing = !!model && !!models && !models.some((m) => m.path === model)
+  // The form always fits the current variant's schema: defaults, then what was typed.
+  const params = schema.data ? initialParams(schema.data, editedParams ?? draft.params) : null
 
   useEffect(() => {
-    if (params) saveDraft({ family: familyId, model, loras, params, batchCount })
-  }, [familyId, model, loras, params, batchCount])
+    if (!params || !mode) return
+    saveFamilyDraft(
+      familyId,
+      { model, mode, loras, params, source, fit, extends: extendsClip },
+      batchCount,
+    )
+  }, [familyId, model, mode, loras, params, source, fit, extendsClip, batchCount])
 
   useEffect(() => {
     if (queued === null) return
@@ -77,8 +133,16 @@ export function CreateScreen({ onOpenSession, onShowResults }: Props) {
           variant: variant.id,
           mode,
           model: { path: model },
-          loras: loras.map(({ path, weight }) => ({ path, weight })),
+          loras,
           params,
+          ...(needsSource &&
+            source && {
+              inputs: {
+                source: `sha256:${source.sha}`,
+                fit,
+                ...(extendsClip && { extends: extendsClip }),
+              },
+            }),
         },
         batchCount,
         'increment',
@@ -96,9 +160,18 @@ export function CreateScreen({ onOpenSession, onShowResults }: Props) {
     return <p role="alert">{(families.error ?? schema.error)?.message}</p>
   }
 
+  const video = family?.media === 'video'
   const hasPrompt = String(params.prompt ?? '').trim() !== ''
   const noGpu = session.data !== undefined && !isActive(session.data)
-  const items = batchCount === 1 ? 'image' : 'images'
+  const noun = (n: number) => (video ? (n === 1 ? 'clip' : 'clips') : n === 1 ? 'image' : 'images')
+  const target = { w: Number(params.width), h: Number(params.height) }
+  const sessionGpu = isActive(session.data) ? session.data?.session?.gpu : undefined
+  const underpowered =
+    !!sessionGpu && !!variant && GPUS.indexOf(sessionGpu) < GPUS.indexOf(variant.min_gpu)
+  const sourceIgnored = !!source && !!variant && !variant.modes.some((m) => SOURCE_MODES.has(m))
+  const misfit =
+    !!source && Math.abs(source.width / source.height / (target.w / target.h) - 1) > 0.01
+  const media = [...new Set(families.data.map((f) => f.media))]
 
   const insertTrigger = (word: string) => {
     const text = String(params.prompt ?? '')
@@ -108,8 +181,100 @@ export function CreateScreen({ onOpenSession, onShowResults }: Props) {
     setParams({ ...params, prompt: insertWord(text, at, word) })
   }
 
+  const takeSource = (image: BlobInfo, fromCrop: boolean) => {
+    const w = image.width ?? target.w
+    const h = image.height ?? target.h
+    setSource({ sha: image.sha256, width: w, height: h })
+    setSourceGone(false)
+    setExtends(null)
+    // A crop to another shape sets the size: that's what the crop was for.
+    if (fromCrop && (w !== target.w || h !== target.h))
+      setParams({ ...params, width: w, height: h })
+  }
+
+  const sourceRow = needsSource && (
+    <div className={sourceGone ? 'source-row missing' : 'source-row'}>
+      <button
+        type="button"
+        className="setting setting-button"
+        onClick={() => {
+          setPicker('image')
+        }}
+      >
+        <span className="setting-label">Source</span>{' '}
+        <span className={source ? 'setting-value' : 'setting-value none'}>
+          {source ? (
+            <>
+              <img
+                className="source-thumb"
+                src={thumbUrl(source.sha)}
+                alt=""
+                onError={() => {
+                  setSourceGone(true)
+                }}
+              />
+              {size(source.width, source.height)}
+            </>
+          ) : (
+            'Choose an image'
+          )}
+        </span>
+      </button>
+      {sourceGone && <p className="row-warning">This image is no longer stored. Choose another.</p>}
+      {extendsClip && source && !sourceGone && (
+        <p className="row-note">Continues a clip from its last frame.</p>
+      )}
+      {source && (
+        <div className="row-buttons source-actions">
+          <button
+            type="button"
+            className="btn quiet small"
+            disabled={sourceGone}
+            onClick={() => {
+              setCropping(source.sha)
+            }}
+          >
+            Crop
+          </button>
+          <button
+            type="button"
+            className="btn quiet small"
+            onClick={() => {
+              setSource(null)
+              setExtends(null)
+              setSourceGone(false)
+            }}
+          >
+            Remove
+          </button>
+        </div>
+      )}
+    </div>
+  )
+
   const leadingRows = (
     <>
+      {sourceRow}
+      {needsSource && source && misfit && (
+        <div className="setting">
+          <label className="setting-label" htmlFor="fit">
+            Fit
+          </label>
+          <select
+            id="fit"
+            value={fit}
+            onChange={(e) => {
+              setFit(e.target.value as Fit)
+            }}
+          >
+            {FITS.map((f) => (
+              <option key={f.id} value={f.id}>
+                {f.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
       <div className={modelMissing ? 'model-row missing' : 'model-row'}>
         <button
           type="button"
@@ -129,19 +294,52 @@ export function CreateScreen({ onOpenSession, onShowResults }: Props) {
             Not found in Drive. Pick another model.
           </p>
         )}
+        {family &&
+          family.variants.length > 1 &&
+          variant &&
+          model &&
+          !modelMissing &&
+          assetLabel(model, models) !== variant.label && (
+            <p className="row-note">{variant.label}</p>
+          )}
+        {underpowered && (
+          <p className="row-warning">
+            Needs an {variant.min_gpu}; this {sessionGpu} session may run it slowly.
+          </p>
+        )}
+        {sourceIgnored && (
+          <p className="row-warning">
+            This model can’t start from an image. Pick an image-to-video model to use the source.
+          </p>
+        )}
       </div>
-      {family?.lora_format === 'single' && (
-        <LoraList
-          loras={loras}
-          index={loraIndex}
-          onChange={setLoras}
-          onAdd={() => {
-            setPicker('lora')
-          }}
-          onTrigger={insertTrigger}
-        />
-      )}
+      <LoraList
+        loras={loras}
+        index={loraIndex}
+        onChange={setLoras}
+        onAdd={() => {
+          setPicker('lora')
+        }}
+        onTrigger={insertTrigger}
+      />
     </>
+  )
+
+  const modeChips = variant && variant.modes.length > 1 && (
+    <div className="mode-chips" role="group" aria-label="Start from">
+      {variant.modes.map((m) => (
+        <button
+          key={m}
+          type="button"
+          aria-pressed={m === mode}
+          onClick={() => {
+            setMode(m)
+          }}
+        >
+          {MODE_LABELS[m] ?? m}
+        </button>
+      ))}
+    </div>
   )
 
   return (
@@ -152,28 +350,23 @@ export function CreateScreen({ onOpenSession, onShowResults }: Props) {
         submit.mutate()
       }}
     >
-      {families.data.length > 1 && (
-        <div className="settings">
-          <div className="setting">
-            <label className="setting-label" htmlFor="family">
-              Family
-            </label>
-            <select
-              id="family"
-              value={familyId}
-              onChange={(e) => {
-                setFamilyId(e.target.value)
-                setModel('')
-                setParams(null)
+      {media.length > 1 && (
+        <div className="segmented" role="group" aria-label="Make">
+          {media.map((m) => (
+            <button
+              key={m}
+              type="button"
+              aria-pressed={m === family?.media}
+              onClick={() => {
+                const next = families.data.find((f) => f.media === m)
+                if (!next || next.id === familyId) return
+                switchFamily(next.id, String(params.prompt ?? ''))
+                onFamily(next.id)
               }}
             >
-              {families.data.map((f) => (
-                <option key={f.id} value={f.id}>
-                  {f.label}
-                </option>
-              ))}
-            </select>
-          </div>
+              {MEDIA_LABELS[m]}
+            </button>
+          ))}
         </div>
       )}
 
@@ -183,6 +376,8 @@ export function CreateScreen({ onOpenSession, onShowResults }: Props) {
         onChange={setParams}
         presets={variant?.size_constraints.presets ?? []}
         leadingRows={leadingRows}
+        afterPrompt={modeChips}
+        promptPlaceholder={video ? 'Describe the clip' : 'Describe the picture'}
         promptRef={promptRef}
         onPromptFocus={() => {
           promptFocused.current = true
@@ -217,19 +412,30 @@ export function CreateScreen({ onOpenSession, onShowResults }: Props) {
         />
       )}
 
-      {picker === 'model' && (
+      {picker === 'model' && family && (
         <AssetPicker
           title="Model"
           noun="models"
           assets={models ?? []}
           selected={new Set([model])}
+          describe={
+            family.variants.length > 1
+              ? (a) => variantFor(a.path, family)?.label ?? null
+              : undefined
+          }
           empty={
             <p>
-              No models found. Put checkpoints in Drive under{' '}
-              <code>degas/models/{family?.id}/</code>, then rescan.
+              No models found. Put {video ? 'diffusers model folders' : 'checkpoints'} in Drive
+              under{' '}
+              <code>
+                degas/models/{family.id}/{family.variants.length > 1 ? '<variant>/' : ''}
+              </code>
+              , then rescan.
             </p>
           }
           onPick={(a) => {
+            const next = variantFor(a.path, family)
+            if (next && next.lora_format !== variant?.lora_format) setLoras([])
             setModel(a.path)
             setPicker(null)
           }}
@@ -242,23 +448,66 @@ export function CreateScreen({ onOpenSession, onShowResults }: Props) {
         <AssetPicker
           title="Add LoRA"
           noun="LoRAs"
-          assets={loraIndex ?? []}
-          selected={new Set(loras.map((l) => l.path))}
+          assets={choices.rows}
+          selected={
+            new Set(
+              choices.rows
+                .filter((row) => {
+                  const entry = choices.entryFor(row)
+                  const key = JSON.stringify(stripWeights(entry))
+                  return loras.some((l) => JSON.stringify(stripWeights(l)) === key)
+                })
+                .map((row) => row.path),
+            )
+          }
           thumbs
           empty={
             <p>
-              No LoRAs found. Put them in Drive under <code>degas/loras/{family?.id}/</code>, then
-              rescan.
+              No LoRAs for this model. Put them in Drive under{' '}
+              <code>degas/loras/{family?.id}/</code>, then rescan.
+              {variant?.lora_format === 'paired_hi_lo' &&
+                ' A14B LoRAs come in pairs named …_high_noise and …_low_noise.'}
             </p>
           }
           onPick={(a) => {
-            if (!loras.some((l) => l.path === a.path)) {
-              setLoras([...loras, { path: a.path, weight: a.sidecar?.default_weight ?? 1 }])
+            const entry = choices.entryFor(a)
+            const key = JSON.stringify(stripWeights(entry))
+            if (!loras.some((l) => JSON.stringify(stripWeights(l)) === key)) {
+              setLoras([...loras, entry])
             }
             setPicker(null)
           }}
           onClose={() => {
             setPicker(null)
+          }}
+        />
+      )}
+      {picker === 'image' && (
+        <ImagePicker
+          onUse={(image) => {
+            takeSource(image, false)
+            setPicker(null)
+          }}
+          onCrop={(image) => {
+            setPicker(null)
+            setCropping(image.sha256)
+          }}
+          onClose={() => {
+            setPicker(null)
+          }}
+        />
+      )}
+      {cropping && variant && (
+        <CropEditor
+          sha={cropping}
+          target={target}
+          constraints={variant.size_constraints}
+          onApply={(image) => {
+            takeSource(image, true)
+            setCropping(null)
+          }}
+          onCancel={() => {
+            setCropping(null)
           }}
         />
       )}
@@ -272,7 +521,7 @@ export function CreateScreen({ onOpenSession, onShowResults }: Props) {
           ) : queued !== null ? (
             <p className="toast" role="status">
               <span>
-                Queued {queued} {queued === 1 ? 'image' : 'images'}.
+                Queued {queued} {noun(queued)}.
               </span>
               <button type="button" className="link" onClick={onShowResults}>
                 See results
@@ -290,7 +539,7 @@ export function CreateScreen({ onOpenSession, onShowResults }: Props) {
             <div className="stepper" role="group" aria-label="Batch size">
               <button
                 type="button"
-                aria-label="Fewer images"
+                aria-label={`Fewer ${noun(2)}`}
                 disabled={batchCount <= 1}
                 onClick={() => {
                   setBatchCount((n) => Math.max(1, n - 1))
@@ -298,10 +547,10 @@ export function CreateScreen({ onOpenSession, onShowResults }: Props) {
               >
                 −
               </button>
-              <output aria-label="Images per job">{batchCount}</output>
+              <output aria-label={`${video ? 'Clips' : 'Images'} per job`}>{batchCount}</output>
               <button
                 type="button"
-                aria-label="More images"
+                aria-label={`More ${noun(2)}`}
                 disabled={batchCount >= MAX_BATCH}
                 onClick={() => {
                   setBatchCount((n) => Math.min(MAX_BATCH, n + 1))
@@ -313,17 +562,28 @@ export function CreateScreen({ onOpenSession, onShowResults }: Props) {
             <button
               type="submit"
               className="btn"
-              disabled={submit.isPending || !model || modelMissing || !hasPrompt}
+              disabled={
+                submit.isPending ||
+                !model ||
+                modelMissing ||
+                !hasPrompt ||
+                (needsSource && (!source || sourceGone))
+              }
             >
               {submit.isPending
                 ? 'Queuing…'
                 : batchCount === 1
                   ? 'Generate'
-                  : `Generate ${String(batchCount)} ${items}`}
+                  : `Generate ${String(batchCount)} ${noun(batchCount)}`}
             </button>
           </div>
         </div>
       </div>
     </form>
   )
+}
+
+/** A LoRA's files, without weights, to tell whether it's already in the list. */
+function stripWeights(l: LoraEntry): unknown {
+  return isPair(l) ? [l.high?.path, l.low?.path] : l.path
 }

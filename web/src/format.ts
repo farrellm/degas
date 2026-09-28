@@ -10,6 +10,17 @@ export function size(w: unknown, h: unknown): string {
   return `${String(w)} × ${String(h)}`
 }
 
+/** "0:05": a clip's length, as on a video tile. */
+export function clock(seconds: number): string {
+  const s = Math.max(1, Math.round(seconds))
+  return `${String(Math.floor(s / 60))}:${String(s % 60).padStart(2, '0')}`
+}
+
+/** "5.0 s" or "12 s": a clip's length in running text. */
+export function duration(seconds: number): string {
+  return seconds < 10 ? `${seconds.toFixed(1)} s` : `${String(Math.round(seconds))} s`
+}
+
 const PHASES: Record<string, string> = {
   load: 'Loading model',
   denoise: 'Denoising',

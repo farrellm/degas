@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { api, isActive, type SessionSnapshot } from '../api'
 import { assetLabel, bytes, useAssets } from '../assets'
+import { loadDraft } from '../draft'
 import { GiB, GPU_VRAM } from '../format'
 import { ago, countdown, useNow } from '../time'
 import { Sheet } from './Sheet'
@@ -14,6 +15,12 @@ function lastGpu(): string {
   } catch {
     return 'L4'
   }
+}
+
+/** Whether the model in the Create draft is a Wan A14B variant. */
+function wantsHighMem(): boolean {
+  const draft = loadDraft()
+  return /\/[^/]*a14b(\/|$)/i.test(draft.families[draft.family]?.model ?? '')
 }
 
 /** GPU session, Drive and troubleshooting, opened from the header chip. */
@@ -32,7 +39,8 @@ function SessionBody({ snap }: { snap: SessionSnapshot }) {
   const qc = useQueryClient()
   const now = useNow(1000)
   const [gpu, setGpu] = useState(lastGpu)
-  const [highMem, setHighMem] = useState(false)
+  // Wan A14B needs more than the standard 12 GB of system RAM (design §3.1).
+  const [highMem, setHighMem] = useState(wantsHighMem)
   const onSettled = () => qc.invalidateQueries({ queryKey: ['session'] })
   const start = useMutation({
     mutationFn: () => {

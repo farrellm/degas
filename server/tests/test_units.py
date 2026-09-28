@@ -10,6 +10,7 @@ from degas.config import load_config
 from degas.db import Database
 from degas.families.base import SpecError, spec_assets
 from degas.families.sdxl import Sdxl
+from degas.families.wan22 import Wan22
 
 # -- colab CLI -----------------------------------------------------------------------------
 
@@ -81,7 +82,7 @@ def test_sdxl_validate_fills_defaults_and_clamps() -> None:
         ({"params": {"prompt": "x", "scheduler": "nope"}}, "one of"),
         ({"params": {"prompt": "x", "steps": "many"}}, "number"),
         ({"params": {"prompt": "x", "width": 2048, "height": 2048}}, "pixel"),
-        ({"mode": "inpaint"}, "not supported"),
+        ({"mode": "inpaint"}, "can.t do"),
         ({"model": None}, "model"),
     ],
 )
@@ -208,3 +209,65 @@ def test_bundle_is_reproducible(tmp_path: Path) -> None:
     (pkg / "__init__.py").write_text("x = 2\n")
     assert build_bundle(pkg).sha256 != first.sha256
     assert b"junk" not in first.data
+
+
+WAN_SPEC = {
+    "family": "wan22",
+    "variant": "t2v-a14b",
+    "mode": "t2v",
+    "model": {"path": "models/wan22/t2v-a14b/Wan2.2-T2V-A14B-Diffusers"},
+    "params": {"prompt": "waves", "num_frames": 50, "width": 1283, "height": 720},
+}
+
+
+def test_wan_validate() -> None:
+    spec = Wan22().validate(WAN_SPEC)
+    params = spec["params"]
+    assert params["num_frames"] == 49  # 4k + 1
+    assert (params["width"], params["height"]) == (1280, 720)
+    assert (params["fps"], params["steps"], params["cfg_low"]) == (16, 40, 3.0)
+    assert spec["inputs"] == {}
+
+
+def test_wan_i2v_needs_a_source_and_a_matching_model() -> None:
+    i2v = {
+        **WAN_SPEC,
+        "variant": "ti2v-5b",
+        "mode": "i2v",
+        "model": {"path": "models/wan22/ti2v-5b"},
+    }
+    with pytest.raises(SpecError, match="source"):
+        Wan22().validate(i2v)
+    source = "sha256:" + "a" * 64
+    spec = Wan22().validate({**i2v, "inputs": {"source": source, "transforms": {"x": 1}}})
+    assert spec["inputs"] == {"source": source, "fit": "crop"}  # transforms are the server's
+    assert "cfg_low" not in spec["params"]
+    with pytest.raises(SpecError, match=r"isn.t a Wan 2\.2 TI2V 5B model"):
+        Wan22().validate({**i2v, "model": WAN_SPEC["model"], "inputs": {"source": source}})
+    with pytest.raises(SpecError, match="can't do"):
+        Wan22().validate({**WAN_SPEC, "mode": "i2v"})
+
+
+def test_wan_paired_loras() -> None:
+    loras = [
+        {"high": {"path": "h", "weight": 0.5}, "low": {"path": "l", "size": 3}},
+        {"low": {"path": "only-low", "weight": 3}},
+    ]
+    spec = Wan22().validate({**WAN_SPEC, "loras": loras})
+    assert spec["loras"] == [
+        {
+            "high": {"path": "h", "weight": 0.5, "size": None},
+            "low": {"path": "l", "weight": 1.0, "size": 3},
+        },
+        {"low": {"path": "only-low", "weight": 2.0, "size": None}},
+    ]
+    assert [a["path"] for a in spec_assets(spec)] == [
+        WAN_SPEC["model"]["path"],
+        "h",
+        "l",
+        "only-low",
+    ]
+    with pytest.raises(SpecError, match="twice"):
+        Wan22().validate({**WAN_SPEC, "loras": [{"high": {"path": "h"}, "low": {"path": "h"}}]})
+    with pytest.raises(SpecError, match="high-noise or low-noise"):
+        Wan22().validate({**WAN_SPEC, "loras": [{"path": "single"}]})

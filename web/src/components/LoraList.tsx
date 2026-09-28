@@ -1,18 +1,21 @@
-import type { Asset, LoraRef } from '../api'
-import { assetLabel } from '../assets'
+import { isPair, type Asset, type LoraEntry, type LoraRef } from '../api'
+import { loraAssets, loraKey, loraLabel } from '../assets'
 
 interface Props {
-  loras: LoraRef[]
+  loras: LoraEntry[]
   /** The family's LoRAs in the Drive index, for labels and trigger words. */
   index: Asset[] | undefined
-  onChange: (loras: LoraRef[]) => void
+  onChange: (loras: LoraEntry[]) => void
   onAdd: () => void
   onTrigger: (word: string) => void
 }
 
-/** The LoRAs row in Create: each LoRA with its weight, and trigger words to tap into the prompt. */
+/**
+ * The LoRAs row in Create: each LoRA with its weight, and trigger words to tap into the
+ * prompt. A Wan A14B pair has one weight per expert.
+ */
 export function LoraList({ loras, index, onChange, onAdd, onTrigger }: Props) {
-  const update = (i: number, lora: LoraRef | null) => {
+  const update = (i: number, lora: LoraEntry | null) => {
     onChange(lora ? loras.with(i, lora) : loras.toSpliced(i, 1))
   }
 
@@ -27,41 +30,73 @@ export function LoraList({ loras, index, onChange, onAdd, onTrigger }: Props) {
         </button>
       </div>
       {loras.map((lora, i) => {
-        const asset = index?.find((a) => a.path === lora.path)
-        const label = assetLabel(lora.path, index)
+        const found = loraAssets(lora, index)
+        const label = loraLabel(lora, index)
         const id = `lora-${String(i)}`
-        const words = asset?.sidecar?.trigger_words ?? []
-        return (
-          <div key={lora.path} className="lora">
-            <label className="lora-name" htmlFor={id}>
-              {label}
-            </label>
+        const words = [...new Set(found.flatMap((a) => a?.sidecar?.trigger_words ?? []))]
+        const missing = !!index && found.some((a) => !a)
+        const weight = (ref: LoraRef, name: string, change: (w: number) => void, half = '') => (
+          <>
             <input
-              id={id}
-              aria-label={`${label} weight`}
+              id={`${id}${half}`}
+              aria-label={name}
               type="range"
               min={0}
               max={2}
               step={0.05}
-              value={lora.weight}
+              value={ref.weight}
               onChange={(e) => {
-                update(i, { ...lora, weight: Number(e.target.value) })
+                change(Number(e.target.value))
               }}
             />
-            <output htmlFor={id}>{lora.weight.toFixed(2)}</output>
-            <button
-              type="button"
-              className="lora-remove"
-              aria-label={`Remove ${label}`}
-              onClick={() => {
-                update(i, null)
-              }}
-            >
-              <svg viewBox="0 0 12 12" aria-hidden>
-                <path d="M2 2l8 8M10 2l-8 8" />
-              </svg>
-            </button>
-            {index && !asset && (
+            <output htmlFor={`${id}${half}`}>{ref.weight.toFixed(2)}</output>
+          </>
+        )
+        return (
+          <div key={loraKey(lora)} className={isPair(lora) ? 'lora pair' : 'lora'}>
+            <label className="lora-name" htmlFor={isPair(lora) ? `${id}-high` : id}>
+              {label}
+            </label>
+            {isPair(lora) ? (
+              <>
+                <RemoveButton
+                  label={label}
+                  onClick={() => {
+                    update(i, null)
+                  }}
+                />
+                {(['high', 'low'] as const).map((half) => {
+                  const ref = lora[half]
+                  if (!ref) return null
+                  return (
+                    <div key={half} className="lora-half">
+                      <span aria-hidden>{half === 'high' ? 'High noise' : 'Low noise'}</span>
+                      {weight(
+                        ref,
+                        `${label} ${half}-noise weight`,
+                        (w) => {
+                          update(i, { ...lora, [half]: { ...ref, weight: w } })
+                        },
+                        `-${half}`,
+                      )}
+                    </div>
+                  )
+                })}
+              </>
+            ) : (
+              <>
+                {weight(lora, `${label} weight`, (w) => {
+                  update(i, { ...lora, weight: w })
+                })}
+                <RemoveButton
+                  label={label}
+                  onClick={() => {
+                    update(i, null)
+                  }}
+                />
+              </>
+            )}
+            {missing && (
               <p className="lora-missing">Not found in Drive. Remove it, or rescan Drive.</p>
             )}
             {words.length > 0 && (
@@ -85,5 +120,15 @@ export function LoraList({ loras, index, onChange, onAdd, onTrigger }: Props) {
         )
       })}
     </div>
+  )
+}
+
+function RemoveButton({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button type="button" className="lora-remove" aria-label={`Remove ${label}`} onClick={onClick}>
+      <svg viewBox="0 0 12 12" aria-hidden>
+        <path d="M2 2l8 8M10 2l-8 8" />
+      </svg>
+    </button>
   )
 }

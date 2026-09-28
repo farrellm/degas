@@ -13,7 +13,9 @@ from degas.colab.session import SessionError
 from degas.drive import DriveError
 from degas.families import FAMILIES
 from degas.families.base import SpecError, describe, lora_files, spec_assets
+from degas.inputs import MAX_UPLOAD_BYTES
 from degas.library import input_blobs, release, saved_config
+from degas.media import MediaError
 from degas.services import Services
 
 router = APIRouter(prefix="/api")
@@ -41,6 +43,18 @@ class SubmitJob(BaseModel):
 
 
 Tags = Annotated[list[Annotated[str, Field(min_length=1, max_length=40)]], Field(max_length=20)]
+
+
+class FromUrl(BaseModel):
+    url: Annotated[str, Field(min_length=1, max_length=20_000_000)]
+
+
+class Transform(BaseModel):
+    ops: list[dict[str, Any]]
+
+
+class Frame(BaseModel):
+    at: Literal["first", "last"] | Annotated[float, Field(ge=0)] = "first"
 
 
 class LibraryEdit(BaseModel):
@@ -182,6 +196,10 @@ async def submit_job(svc: Svc, body: SubmitJob) -> dict[str, Any]:
     except SpecError as e:
         raise HTTPException(400, str(e)) from None
     _resolve_assets(svc, family.id, spec)
+    try:
+        await svc.inputs.resolve(spec)
+    except MediaError as e:
+        raise HTTPException(400, str(e)) from None
 
     seed = spec["params"].pop("seed", -1)
     base = seed if seed is not None and seed >= 0 else svc.rng.randrange(SEED_MAX)
@@ -255,6 +273,28 @@ async def save_result(svc: Svc, result_id: str) -> dict[str, Any]:
     return item
 
 
+@router.post("/results/{result_id}/extend")
+async def extend_result(svc: Svc, result_id: str) -> dict[str, Any]:
+    """A spec that continues this clip from its last frame, for editing in Create."""
+    result = svc.db.get_result(result_id)
+    if result is None:
+        raise HTTPException(404, "Unknown result")
+    job = svc.db.get_job(result["job_id"])
+    if job is None:
+        raise HTTPException(409, "The job for this result is gone")
+    return await _extend(svc, result["blob_sha"], job["spec"])
+
+
+async def _extend(svc: Services, sha: str, spec: dict[str, Any]) -> dict[str, Any]:
+    family = FAMILIES.get(str(spec.get("family")))
+    if family is None:
+        raise HTTPException(400, "Unknown family")
+    try:
+        return await svc.inputs.extend(family, sha, spec)
+    except MediaError as e:
+        raise HTTPException(400, str(e)) from None
+
+
 # -- library -------------------------------------------------------------------------------
 
 
@@ -293,6 +333,12 @@ async def edit_library_item(svc: Svc, item_id: str, body: LibraryEdit) -> dict[s
     svc.db.update_library_item(item_id, **fields)
     svc.bus.publish({"type": "library", "item": item_id})
     return _library_item(svc, item_id)
+
+
+@router.post("/library/{item_id}/extend")
+async def extend_library_item(svc: Svc, item_id: str) -> dict[str, Any]:
+    item = _library_item(svc, item_id)
+    return await _extend(svc, item["blob_sha"], item["config"])
 
 
 @router.delete("/library/{item_id}")
@@ -353,6 +399,62 @@ async def delete_prompt(svc: Svc, prompt_id: str) -> dict[str, Any]:
 # -- blobs ---------------------------------------------------------------------------------
 
 
+@router.post("/blobs", status_code=201)
+async def upload_blob(svc: Svc, request: Request) -> dict[str, Any]:
+    """Upload an image or video as the raw request body (camera roll)."""
+    data = bytearray()
+    async for chunk in request.stream():
+        data += chunk
+        if len(data) > MAX_UPLOAD_BYTES:
+            raise HTTPException(413, "The file is larger than 200 MB")
+    if not data:
+        raise HTTPException(400, "The upload is empty")
+    try:
+        return await svc.inputs.store(bytes(data), request.headers.get("content-type"))
+    except MediaError as e:
+        raise HTTPException(400, str(e)) from None
+
+
+@router.post("/blobs/from-url", status_code=201)
+async def blob_from_url(svc: Svc, body: FromUrl) -> dict[str, Any]:
+    try:
+        return await svc.inputs.fetch(body.url)
+    except MediaError as e:
+        raise HTTPException(400, str(e)) from None
+
+
+@router.post("/blobs/{sha}/transform", status_code=201)
+async def transform_blob(svc: Svc, sha: str, body: Transform) -> dict[str, Any]:
+    if svc.blobs.path(sha) is None:
+        raise HTTPException(404, "No such blob")
+    try:
+        return await svc.inputs.transform(sha, body.ops)
+    except MediaError as e:
+        raise HTTPException(400, str(e)) from None
+
+
+@router.get("/blobs/{sha}/transform")
+async def get_transform(svc: Svc, sha: str) -> dict[str, Any]:
+    """The original and operations a derived image was made with, to reopen the editor.
+
+    Any other image is its own original, with no operations.
+    """
+    if svc.blobs.path(sha) is None:
+        raise HTTPException(404, "No such blob")
+    record = svc.db.get_transform(sha)
+    if record is None or svc.blobs.path(record["original"]) is None:
+        return {"original": sha, "ops": []}
+    return record
+
+
+@router.post("/blobs/{sha}/frame", status_code=201)
+async def blob_frame(svc: Svc, sha: str, body: Frame) -> dict[str, Any]:
+    try:
+        return await svc.inputs.frame(sha, body.at)
+    except MediaError as e:
+        raise HTTPException(400, str(e)) from None
+
+
 @router.get("/blobs/{sha}")
 async def get_blob(svc: Svc, sha: str) -> FileResponse:
     path = svc.blobs.path(sha)
@@ -364,6 +466,11 @@ async def get_blob(svc: Svc, sha: str) -> FileResponse:
 @router.get("/thumbs/{sha}")
 async def get_thumb(svc: Svc, sha: str) -> FileResponse:
     path = svc.blobs.thumb(sha)
+    if path is None and svc.blobs.is_video(sha):
+        try:
+            path = await svc.inputs.poster(sha)
+        except MediaError:
+            path = None
     if path is None:
         raise HTTPException(404, "No such blob")
     return FileResponse(

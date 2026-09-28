@@ -94,6 +94,11 @@ CREATE TABLE IF NOT EXISTS prompts (
     tags TEXT NOT NULL,
     created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS blob_transforms (
+    derived_sha TEXT PRIMARY KEY,
+    original_sha TEXT NOT NULL,
+    ops TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
@@ -105,10 +110,14 @@ MIGRATIONS = (
     ("assets", "sidecar_rev", "TEXT"),
     ("assets", "preview_rev", "TEXT"),
     ("jobs", "runtime", "TEXT"),
+    ("results", "segments", "TEXT"),
+    ("library_items", "duration", "REAL"),
 )
 
 ACTIVE_SESSION_STATES = ("starting", "ready", "busy", "stopping")
 RESULT_TTL = timedelta(hours=24)
+# Uploads, URL imports, frames and transformed images that no job or kept item holds yet.
+INPUT_TTL = timedelta(hours=24)
 
 
 def now() -> str:
@@ -253,12 +262,27 @@ class Database:
         seed: int | None,
         width: int | None,
         height: int | None,
+        duration: float | None = None,
+        segments: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
+        """`segments`: for a stitched video, the configs of the clips it chains (design §6.4)."""
         id_ = new_id()
         self.conn.execute(
             "INSERT INTO results (id, job_id, item_index, blob_sha, media_type, seed, width,"
-            " height, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (id_, job_id, item_index, blob_sha, media_type, seed, width, height, now()),
+            " height, duration, segments, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                id_,
+                job_id,
+                item_index,
+                blob_sha,
+                media_type,
+                seed,
+                width,
+                height,
+                duration,
+                json.dumps(segments) if segments is not None else None,
+                now(),
+            ),
         )
         self.add_blob_ref(blob_sha, "result", id_)
         result = self.get_result(id_)
@@ -267,7 +291,13 @@ class Database:
 
     def get_result(self, id_: str) -> dict[str, Any] | None:
         row = self.conn.execute(RESULTS_QUERY + " AND r.id = ?", (id_,)).fetchone()
-        return _row(row)
+        return _row(row, RESULT_JSON)
+
+    def result_for_blob(self, sha: str) -> dict[str, Any] | None:
+        row = self.conn.execute(
+            RESULTS_QUERY + " AND r.blob_sha = ? ORDER BY r.created_at DESC LIMIT 1", (sha,)
+        ).fetchone()
+        return _row(row, RESULT_JSON)
 
     def has_result(self, job_id: str, item_index: int) -> bool:
         row = self.conn.execute(
@@ -289,7 +319,8 @@ class Database:
             args.append(job_id)
         query += " ORDER BY r.created_at DESC, r.item_index DESC LIMIT ?"
         args.append(limit)
-        return [dict(r) for r in self.conn.execute(query, args).fetchall()]
+        rows = self.conn.execute(query, args).fetchall()
+        return [r for row in rows if (r := _row(row, RESULT_JSON)) is not None]
 
     def add_blob_ref(
         self, sha: str, ref_type: str, ref_id: str, expires_at: str | None = None
@@ -298,6 +329,36 @@ class Database:
             "INSERT OR IGNORE INTO blob_refs (blob_sha, ref_type, ref_id, expires_at)"
             " VALUES (?, ?, ?, ?)",
             (sha, ref_type, ref_id, expires_at),
+        )
+
+    def hold_input(self, sha: str, ttl: timedelta = INPUT_TTL) -> None:
+        """Keep an input blob for `ttl` from now (jobs and kept items take their own refs)."""
+        expires = (datetime.now(UTC) + ttl).isoformat(timespec="milliseconds")
+        self.conn.execute(
+            "INSERT INTO blob_refs (blob_sha, ref_type, ref_id, expires_at)"
+            " VALUES (?, 'input', ?, ?) ON CONFLICT (blob_sha, ref_type, ref_id)"
+            " DO UPDATE SET expires_at = MAX(expires_at, excluded.expires_at)",
+            (sha, sha, expires),
+        )
+
+    # -- transforms (design §6.5) ----------------------------------------------------------
+
+    def add_transform(self, derived: str, original: str, ops: list[dict[str, Any]]) -> None:
+        self.conn.execute(
+            "INSERT OR REPLACE INTO blob_transforms (derived_sha, original_sha, ops)"
+            " VALUES (?, ?, ?)",
+            (derived, original, json.dumps(ops)),
+        )
+
+    def get_transform(self, derived: str) -> dict[str, Any] | None:
+        row = self.conn.execute(
+            "SELECT original_sha, ops FROM blob_transforms WHERE derived_sha = ?", (derived,)
+        ).fetchone()
+        return None if row is None else {"original": row[0], "ops": json.loads(row[1])}
+
+    def forget_transforms(self, shas: Iterable[str]) -> None:
+        self.conn.executemany(
+            "DELETE FROM blob_transforms WHERE derived_sha = ?", [(s,) for s in shas]
         )
 
     def remove_blob_refs(self, ref_type: str, ref_id: str) -> list[str]:
@@ -362,8 +423,8 @@ class Database:
             self.conn.execute("BEGIN")
             self.conn.execute(
                 "INSERT INTO library_items (id, kind, blob_sha, media_type, width, height,"
-                " config, title, tags, created_at, source_result_id)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, NULL, '[]', ?, ?)",
+                " duration, config, title, tags, created_at, source_result_id)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, '[]', ?, ?)",
                 (
                     id_,
                     kind,
@@ -371,6 +432,7 @@ class Database:
                     result["media_type"],
                     result["width"],
                     result["height"],
+                    result.get("duration"),
                     json.dumps(config),
                     now(),
                     result["id"],
@@ -384,6 +446,13 @@ class Database:
 
     def get_library_item(self, id_: str) -> dict[str, Any] | None:
         row = self.conn.execute("SELECT * FROM library_items WHERE id = ?", (id_,)).fetchone()
+        return _row(row, LIBRARY_JSON)
+
+    def library_item_for_blob(self, sha: str) -> dict[str, Any] | None:
+        row = self.conn.execute(
+            "SELECT * FROM library_items WHERE blob_sha = ? ORDER BY created_at DESC LIMIT 1",
+            (sha,),
+        ).fetchone()
         return _row(row, LIBRARY_JSON)
 
     def library_item_for_result(self, result_id: str) -> dict[str, Any] | None:
@@ -555,6 +624,7 @@ class Database:
 
 JOB_JSON = ("spec", "seeds", "runtime")
 LIBRARY_JSON = ("config", "tags")
+RESULT_JSON = ("segments",)
 
 # Results with the library item that keeps each one, if any.
 RESULTS_QUERY = (

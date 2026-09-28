@@ -20,6 +20,7 @@ from degas.services import Services, build_services
 from degas_worker.app import create_app as create_worker_app
 from degas_worker.families.base import FamilyRunner, Output, RunContext
 from degas_worker.paths import Paths
+from degas_worker.video import encode_mp4
 
 
 class FakeColab:
@@ -111,6 +112,31 @@ class FakeSdxl:
         pass
 
 
+class FakeWan:
+    """Encodes a few solid frames at the spec's size; i2v checks its source was staged."""
+
+    frames = 5
+    sources: list[tuple[int, int]]
+
+    def __init__(self) -> None:
+        self.sources = []
+
+    def run(self, spec: dict[str, Any], seeds: list[int], ctx: RunContext) -> Iterator[Output]:
+        params = spec["params"]
+        w, h = params["width"], params["height"]
+        if spec["mode"] == "i2v":
+            with Image.open(ctx.blob(spec["inputs"]["source"])) as im:
+                self.sources.append(im.size)
+        for item, seed in enumerate(seeds):
+            ctx.progress(item, "denoise", 1, 1)
+            frame = bytes([seed % 256, 80, 120]) * (w * h)
+            data = encode_mp4([frame] * self.frames, w, h, params["fps"])
+            yield Output(item, seed, data, "video/mp4", "mp4")
+
+    def unload(self) -> None:
+        pass
+
+
 class FastIntervals(Intervals):
     tick = 0.02
     health = 0.05
@@ -126,6 +152,7 @@ class Harness:
         self.colab = FakeColab()
         self.tunnels: list[FakeTunnel] = []
         self.runner = FakeSdxl()
+        self.wan = FakeWan()
         self.worker_paths = Paths(home=tmp_path / "vm", models=tmp_path / "vm-models")
         self.worker_paths.ensure()
 
@@ -142,7 +169,7 @@ class Harness:
         rclone.chmod(rclone.stat().st_mode | stat.S_IEXEC)
         self.worker_app = create_worker_app(
             self.worker_paths,
-            {"sdxl": runner_factory},
+            {"sdxl": runner_factory, "wan22": lambda: self.wan},
             rclone=str(rclone),
             exit_process=exit_process,
         )
@@ -196,9 +223,27 @@ LORA = {
 }
 
 
+WAN_5B = {
+    "path": "models/wan22/ti2v-5b",
+    "family": "wan22",
+    "kind": "model",
+    "drive_file_id": "w5",
+    "size": 20,
+}
+WAN_I2V = {
+    "path": "models/wan22/i2v-a14b/Wan2.2-I2V-A14B-Diffusers",
+    "family": "wan22",
+    "kind": "model",
+    "drive_file_id": "w14",
+    "size": 30,
+}
+
+
 @pytest.fixture
 def client(harness: Harness) -> Iterator[TestClient]:
     app = create_app(harness.config, harness.services_factory())
     with TestClient(app) as c:
-        c.app.state.services.db.replace_assets([harness.model, LORA])  # type: ignore[attr-defined]
+        c.app.state.services.db.replace_assets(  # type: ignore[attr-defined]
+            [harness.model, LORA, WAN_5B, WAN_I2V]
+        )
         yield c

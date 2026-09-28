@@ -9,6 +9,7 @@ survive a dropped connection.
 import asyncio
 import json
 import logging
+import re
 import shutil
 import threading
 import traceback
@@ -23,6 +24,7 @@ from degas_worker.paths import Paths
 
 log = logging.getLogger(__name__)
 
+_SHA256 = re.compile(r"^[0-9a-f]{64}$")
 TERMINAL = frozenset({"done", "error", "cancelled"})
 Event = dict[str, Any]
 
@@ -112,6 +114,13 @@ class _Context:
             self.progress(item, "copy", done, total, path)
 
         return self._cache.ensure(path, size, on_progress)
+
+    def blob(self, ref: str) -> Path:
+        sha = ref.removeprefix("sha256:")
+        path = self._cache.paths.blobs / sha
+        if not _SHA256.match(sha) or not path.exists():
+            raise ValueError(f"Input {ref} was not staged on the worker")
+        return path
 
     def release(self) -> None:
         for path in self.pins:

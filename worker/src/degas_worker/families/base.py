@@ -31,6 +31,10 @@ class RunContext(Protocol):
         """Local path of a Drive asset, copying it (with `copy` progress) if needed."""
         ...
 
+    def blob(self, ref: str) -> Path:
+        """Local path of an input blob (`sha256:…`) the server staged for this job."""
+        ...
+
 
 class FamilyRunner(Protocol):
     def run(self, spec: dict[str, Any], seeds: list[int], ctx: RunContext) -> Iterator[Output]:

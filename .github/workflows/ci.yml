@@ -18,6 +18,8 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync --locked
+      - name: ffmpeg (video tests encode, probe and stitch real clips)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
       - uses: actions/cache@v6
         with:
           path: ~/.cache/pre-commit

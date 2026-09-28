@@ -1,8 +1,8 @@
 import { useQuery } from '@tanstack/react-query'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { api, blobUrl, type Asset, type Spec } from '../api'
-import { assetLabel } from '../assets'
-import { size } from '../format'
+import { api, blobUrl, isPair, isVideo, type Asset, type SavedConfig, type Spec } from '../api'
+import { assetLabel, loraLabel } from '../assets'
+import { duration, size } from '../format'
 
 /** What the viewer shows: a result from the feed or a kept library item. */
 export interface ViewerItem {
@@ -12,15 +12,25 @@ export interface ViewerItem {
   seed: number | null
   width: number | null
   height: number | null
+  duration?: number | null
+  /** A stitched video extension: its clips' configs. */
+  segments?: SavedConfig[] | null
   spec: Spec | null
 }
+
+const weight = (w: number) => String(Number(w.toFixed(2)))
 
 /** "Studio XL v10, with Film Grain v3 at 0.8" for the wall label. */
 function modelWithLoras(spec: Spec, assets: Asset[] | undefined): string {
   const model = assetLabel(spec.model.path, assets)
-  const loras = (spec.loras ?? []).map(
-    (l) => `${assetLabel(l.path, assets)} at ${String(Number(l.weight.toFixed(2)))}`,
-  )
+  const loras = (spec.loras ?? []).map((l) => {
+    const at = isPair(l)
+      ? [l.high && `${weight(l.high.weight)} high`, l.low && `${weight(l.low.weight)} low`]
+          .filter(Boolean)
+          .join(', ')
+      : weight(l.weight)
+    return `${loraLabel(l, assets)} at ${at}`
+  })
   return loras.length ? `${model}, with ${loras.join(' and ')}` : model
 }
 
@@ -86,7 +96,19 @@ export function Viewer<T extends ViewerItem>({
   const params = spec?.params ?? {}
   const sampler = schema.data?.properties.scheduler
   const samplerIndex = sampler?.enum?.indexOf(String(params.scheduler)) ?? -1
-  const samplerLabel = sampler?.['x-enum-labels']?.[samplerIndex] ?? String(params.scheduler)
+  const samplerLabel =
+    params.scheduler == null
+      ? null
+      : (sampler?.['x-enum-labels']?.[samplerIndex] ?? String(params.scheduler))
+  const video = isVideo(r.media_type)
+  const cfg =
+    params.cfg_low == null
+      ? String(params.cfg)
+      : `${String(params.cfg)} / ${String(params.cfg_low)}`
+  const sampling = [`${String(params.steps)} steps`, `CFG ${cfg}`, samplerLabel].filter(Boolean)
+  const frames = Number(params.num_frames)
+  const fps = Number(params.fps)
+  const length = r.duration ?? (frames && fps ? frames / fps : null)
 
   return (
     <div
@@ -94,7 +116,7 @@ export function Viewer<T extends ViewerItem>({
       className="viewer"
       role="dialog"
       aria-modal="true"
-      aria-label="Image"
+      aria-label={video ? 'Video' : 'Image'}
       tabIndex={-1}
     >
       <div className="viewer-bar">
@@ -142,7 +164,20 @@ export function Viewer<T extends ViewerItem>({
           if (dx > 50 && index > 0) onIndex(index - 1)
         }}
       >
-        <img src={blobUrl(r.blob_sha)} alt={String(params.prompt ?? '')} draggable={false} />
+        {video ? (
+          <video
+            key={r.blob_sha}
+            src={blobUrl(r.blob_sha)}
+            aria-label={String(params.prompt ?? 'Video')}
+            controls
+            autoPlay
+            loop
+            muted
+            playsInline
+          />
+        ) : (
+          <img src={blobUrl(r.blob_sha)} alt={String(params.prompt ?? '')} draggable={false} />
+        )}
       </div>
       <div className="wall-label">
         <div>
@@ -156,9 +191,16 @@ export function Viewer<T extends ViewerItem>({
           <span>
             {size(r.width, r.height)}, seed {r.seed}
           </span>
-          <span>
-            {String(params.steps)} steps, CFG {String(params.cfg)}, {samplerLabel}
-          </span>
+          {video && r.segments ? (
+            <span>
+              Extended, {r.segments.length} clips{length ? `, ${duration(length)}` : ''}
+            </span>
+          ) : video ? (
+            <span>
+              {frames} frames at {fps} fps{length ? `, ${duration(length)}` : ''}
+            </span>
+          ) : null}
+          <span>{sampling.join(', ')}</span>
         </p>
         {extra?.(r)}
         {/* Keyed so per-item state (errors, confirmations) resets on swipe. */}
@@ -168,6 +210,15 @@ export function Viewer<T extends ViewerItem>({
       </div>
     </div>
   )
+}
+
+const EXTENSIONS: Record<string, string> = {
+  'image/png': 'png',
+  'image/jpeg': 'jpg',
+  'image/webp': 'webp',
+  'video/mp4': 'mp4',
+  'video/webm': 'webm',
+  'video/quicktime': 'mov',
 }
 
 /** Export to the phone: the share sheet where there is one, else a download. */
@@ -183,7 +234,8 @@ export function SaveToPhotos({
   const share = async () => {
     setError(null)
     const blob = await (await fetch(blobUrl(item.blob_sha))).blob()
-    const file = new File([blob], `degas-${String(item.seed)}.png`, { type: item.media_type })
+    const ext = EXTENSIONS[item.media_type] ?? 'png'
+    const file = new File([blob], `degas-${String(item.seed)}.${ext}`, { type: item.media_type })
     if ('canShare' in navigator && navigator.canShare({ files: [file] })) {
       await navigator.share({ files: [file] })
     } else {

@@ -58,7 +58,7 @@ packages = ["degas", "degas_worker"]
 
 [[tool.mypy.overrides]]
 # GPU-only deps: installed on Colab, not in CI
-module = ["torch.*", "diffusers.*", "transformers.*", "peft.*", "accelerate.*"]
+module = ["torch.*", "diffusers.*", "transformers.*", "peft.*", "accelerate.*", "numpy.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

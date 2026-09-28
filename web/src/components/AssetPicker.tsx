@@ -16,6 +16,8 @@ interface Props {
   selected: Set<string>
   /** Show a preview column even when no row has a preview (LoRAs). */
   thumbs?: boolean
+  /** A first fact for each row's meta line (e.g. the model's variant). */
+  describe?: (asset: Asset) => string | null
   empty: ReactNode
   onPick: (asset: Asset) => void
   onClose: () => void
@@ -28,6 +30,7 @@ export function AssetPicker({
   assets,
   selected,
   thumbs = false,
+  describe,
   empty,
   onPick,
   onClose,
@@ -74,7 +77,9 @@ export function AssetPicker({
                 : cached.has(a.path)
                   ? 'on the GPU'
                   : copyEstimate(a.size)
-            const meta = [a.size === null ? null : bytes(a.size), where].filter(Boolean).join(', ')
+            const meta = [describe?.(a), a.size === null ? null : bytes(a.size), where]
+              .filter(Boolean)
+              .join(', ')
             return (
               <li key={a.path}>
                 <button

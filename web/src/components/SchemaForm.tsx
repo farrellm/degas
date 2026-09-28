@@ -14,6 +14,9 @@ interface Props {
   onPromptFocus?: () => void
   /** Shown beside the first prompt's label (e.g. saved prompts). */
   promptAside?: ReactNode
+  /** Between the prompt block and the settings list (e.g. mode chips). */
+  afterPrompt?: ReactNode
+  promptPlaceholder?: string
 }
 
 /**
@@ -30,6 +33,8 @@ export function SchemaForm({
   promptRef,
   onPromptFocus,
   promptAside,
+  afterPrompt,
+  promptPlaceholder = 'Describe the picture',
 }: Props) {
   const set = (name: string, value: string | number | null) => {
     onChange({ ...values, [name]: value })
@@ -66,7 +71,7 @@ export function SchemaForm({
                 id={`param-${name}`}
                 className={i > 0 ? 'secondary-prompt' : undefined}
                 rows={i === 0 ? 3 : 1}
-                placeholder={i === 0 ? 'Describe the picture' : undefined}
+                placeholder={i === 0 ? promptPlaceholder : undefined}
                 value={String(values[name] ?? '')}
                 onChange={(e) => {
                   set(name, e.target.value)
@@ -76,6 +81,8 @@ export function SchemaForm({
           ))}
         </div>
       )}
+
+      {afterPrompt}
 
       <div className="settings">
         {leadingRows}
@@ -185,7 +192,7 @@ function Field({ name, prop, value, set }: FieldProps) {
             type="range"
             min={prop.minimum}
             max={prop.maximum}
-            step={prop.multipleOf ?? (prop.type === 'integer' ? 1 : 0.1)}
+            step={prop['x-step'] ?? prop.multipleOf ?? (prop.type === 'integer' ? 1 : 0.1)}
             value={Number(value)}
             onChange={(e) => {
               set(name, Number(e.target.value))

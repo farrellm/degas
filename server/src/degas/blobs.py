@@ -17,7 +17,10 @@ EXTENSIONS = {
     "image/jpeg": "jpg",
     "image/webp": "webp",
     "video/mp4": "mp4",
+    "video/webm": "webm",
+    "video/quicktime": "mov",
 }
+VIDEO_EXTENSIONS = {"mp4", "webm", "mov"}
 
 
 class BlobStore:
@@ -58,13 +61,29 @@ class BlobStore:
         except OSError:
             return None
 
+    def is_video(self, sha: str) -> bool:
+        path = self.path(sha)
+        return path is not None and path.suffix.lstrip(".") in VIDEO_EXTENSIONS
+
+    def put_thumb(self, sha: str, webp: bytes) -> Path:
+        """Store a thumbnail made elsewhere (a video's poster frame)."""
+        dest = self.thumbs / f"{sha}.webp"
+        self.thumbs.mkdir(parents=True, exist_ok=True)
+        tmp = dest.with_suffix(".tmp")
+        tmp.write_bytes(webp)
+        tmp.replace(dest)
+        return dest
+
     def thumb(self, sha: str) -> Path | None:
-        """WebP thumbnail of an image blob, generated on first use."""
+        """WebP thumbnail of an image blob, generated on first use.
+
+        A video's poster is made with ffmpeg (see `put_thumb`); until then this is None.
+        """
         dest = self.thumbs / f"{sha}.webp"
         if dest.exists():
             return dest
         src = self.path(sha)
-        if src is None:
+        if src is None or self.is_video(sha):
             return None
         try:
             with Image.open(src) as im:

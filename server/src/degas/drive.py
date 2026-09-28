@@ -298,7 +298,7 @@ class DriveIndexer:
         children = await self._children(folder_id)
         # A diffusers-format directory is a single asset.
         if len(parts) >= 3 and any(c["name"] == "model_index.json" for c in children):
-            size = sum(int(c.get("size", 0)) for c in children if c["mimeType"] != FOLDER)
+            size = await self._tree_size(children)
             out.append(self._asset(parts, kind, folder_id, size, None, None))
             return
         # Sidecars and previews sit next to their asset and share its name: foo.yaml, foo.jpg.
@@ -330,6 +330,17 @@ class DriveIndexer:
                     (images[n] for n in images if Path(n).stem == stem), None
                 )
                 asset["folder_images"] = images
+
+    async def _tree_size(self, children: list[dict[str, Any]]) -> int:
+        """Total size of the files in a folder and its subfolders (a diffusers model's weights
+        live in `transformer/`, `vae/` and so on)."""
+        total = 0
+        for child in children:
+            if child["mimeType"] == FOLDER:
+                total += await self._tree_size(await self._children(child["id"]))
+            else:
+                total += int(child.get("size", 0))
+        return total
 
     async def download(self, file_id: str, limit: int) -> bytes:
         token = await self.auth.access_token()

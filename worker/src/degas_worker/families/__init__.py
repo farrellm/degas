@@ -11,4 +11,10 @@ def _sdxl() -> FamilyRunner:
     return SdxlRunner()
 
 
-RUNNERS: dict[str, Callable[[], FamilyRunner]] = {"sdxl": _sdxl}
+def _wan22() -> FamilyRunner:
+    from degas_worker.families.wan22 import Wan22Runner  # noqa: PLC0415 - imports diffusers lazily
+
+    return Wan22Runner()
+
+
+RUNNERS: dict[str, Callable[[], FamilyRunner]] = {"sdxl": _sdxl, "wan22": _wan22}

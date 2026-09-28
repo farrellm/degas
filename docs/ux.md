@@ -119,6 +119,8 @@ Built. Notes on what shipped: *Kept* in the viewer is a toggle, so tapping it ag
 
 ### Phase 4: Wan 2.2 video, image picker, crop editor
 
+Built. Notes on what shipped: the *Image / Video* switch keeps a separate draft per family, and carries the prompt over to a family that has none. The variant follows the model (each variant's models live in their own Drive folder); its name appears under the Model row when the model's label doesn't already say it. A *Fit* row (*Crop to fit*, *Letterbox*, *Stretch*) appears under the source only when its shape differs from the output size. Applying a crop of a different shape (*Free* or a preset) changes the form's size to the crop's, snapped to the model's step. The crop frame's corners are rose chalk L-marks; in *Free* they are the drag handles, and the frame settles back to the middle of the stage when released. The viewer plays clips with the native controls, since Wan clips have no sound to unmute. *Use as source* on an image switches Create to the first image-to-video mode. A14B LoRAs are pairs (`…_high_noise` / `…_low_noise`) with a weight slider per expert. *High memory* in the session sheet starts ticked when the Create model is an A14B.
+
 **Choosing what to make.** A segmented control at the top of Create picks *Image* or *Video* (the family's media type). Below the prompt, a row of mode chips lists only the modes the variant supports: *From text* or *From image*, later *Inpaint* and *Outpaint*. The variant appears in the Model row. If the variant's minimum GPU is above the running session's, a warning line appears under the row: *Needs an A100; this L4 session may run it slowly.*
 
 **Source slot.** It's a settings row with a thumbnail. Tapping it opens the image picker, and a filled slot has *Crop* and *Remove*.
@@ -199,8 +201,8 @@ A *Denoise strength* slider row appears for i2i and inpaint, from the schema.
 | `Viewer`, `SaveToPhotos` | Phase 3 | Shared by Results and Library; actions and extra wall-label rows are slots |
 | `PromptSheet` | Phase 3 | Saved prompts from the prompt block |
 | `LibraryScreen` | Phase 3 | Images / Prompts, search, day-grouped grid |
-| Image picker sheet | Phase 4 | |
-| Crop editor | Phase 4 | Full screen |
+| `ImagePicker` | Phase 4 | Recent, Library, Photos, Link; frame choice for videos |
+| `CropEditor` | Phase 4 | Full screen; geometry in `crop.ts` |
 | Mask editor | Phase 6 | Full screen, canvas; SAM in Phase 7 |
 | Control unit row + editor | Phase 7 | |
 

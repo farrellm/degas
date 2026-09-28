@@ -17,6 +17,7 @@ from degas.db import Database
 from degas.dispatcher import Dispatcher
 from degas.drive import DriveAuth, DriveIndexer
 from degas.events import EventBus
+from degas.inputs import Inputs
 from degas.library import sweep
 
 log = logging.getLogger(__name__)
@@ -35,6 +36,7 @@ class Services:
     indexer: DriveIndexer
     sessions: SessionManager
     dispatcher: Dispatcher
+    inputs: Inputs
     _tasks: list[asyncio.Task[None]] = field(default_factory=list)
     _rescan_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     rng: random.Random = field(default_factory=random.SystemRandom)
@@ -126,5 +128,6 @@ def build_services(
         tunnel_factory or default_tunnel,
         worker_factory or default_worker,
     )
-    dispatcher = Dispatcher(db, blobs, bus, sessions)
-    return Services(config, db, blobs, bus, drive, indexer, sessions, dispatcher)
+    inputs = Inputs(db, blobs)
+    dispatcher = Dispatcher(db, blobs, bus, sessions, inputs)
+    return Services(config, db, blobs, bus, drive, indexer, sessions, dispatcher, inputs)

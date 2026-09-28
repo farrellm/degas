@@ -5,8 +5,11 @@ from typing import Any, Literal
 from degas.families.base import (
     JsonSchema,
     SizeConstraints,
-    SpecError,
     Variant,
+    find_variant,
+    snap_size,
+    validate_inputs,
+    validate_model,
     validate_params,
     validate_single_loras,
 )
@@ -136,34 +139,21 @@ class Sdxl:
     def validate(self, spec: dict[str, Any]) -> dict[str, Any]:
         variant = spec.get("variant", "base")
         mode = spec.get("mode", "t2i")
-        self._check(variant, mode)
-        model = spec.get("model")
-        if not isinstance(model, dict) or not isinstance(model.get("path"), str):
-            raise SpecError("A model is required")
+        v = find_variant(self, variant, mode)
+        model = validate_model(spec.get("model"), v)
         params = validate_params(self.param_schema(variant, mode), spec.get("params") or {})
-        c = self.size_constraints(variant)
-        for dim in ("width", "height"):
-            params[dim] = max(c.multiple_of, params[dim] // c.multiple_of * c.multiple_of)
-        pixels = params["width"] * params["height"]
-        if not c.min_pixels <= pixels <= c.max_pixels:
-            raise SpecError(
-                f"{params['width']}x{params['height']} is outside SDXL's supported pixel count"
-            )
+        snap_size(params, self.size_constraints(variant), "SDXL")
         loras = validate_single_loras(spec.get("loras"), MAX_LORAS)
         return {
             "family": self.id,
             "variant": variant,
             "mode": mode,
-            "model": {"path": model["path"], "size": model.get("size")},
+            "model": model,
             "loras": loras,
             "params": params,
-            "inputs": {},
+            "inputs": validate_inputs(spec.get("inputs"), mode),
             "control": [],
         }
 
     def _check(self, variant: str, mode: str) -> None:
-        v = next((v for v in self.variants if v.id == variant), None)
-        if v is None:
-            raise SpecError(f"Unknown SDXL variant {variant!r}")
-        if mode not in v.modes:
-            raise SpecError(f"SDXL mode {mode!r} is not supported yet")
+        find_variant(self, variant, mode)
