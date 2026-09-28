@@ -6,6 +6,8 @@ import logging
 import random
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import timedelta
+from typing import Any
 
 from degas.blobs import BlobStore
 from degas.colab.cli import Colab, ColabCli
@@ -19,6 +21,8 @@ from degas.drive import DriveAuth, DriveIndexer
 from degas.events import EventBus
 from degas.inputs import Inputs
 from degas.library import sweep
+from degas.notices import RESULTS_URL, SESSION_URL, idle_notice, job_notice
+from degas.push import Push, Sender
 
 log = logging.getLogger(__name__)
 
@@ -37,6 +41,7 @@ class Services:
     sessions: SessionManager
     dispatcher: Dispatcher
     inputs: Inputs
+    push: Push
     _tasks: list[asyncio.Task[None]] = field(default_factory=list)
     _rescan_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     rng: random.Random = field(default_factory=random.SystemRandom)
@@ -53,6 +58,7 @@ class Services:
             with contextlib.suppress(asyncio.CancelledError):
                 await task
         self._tasks.clear()
+        await self.push.drain()
         await self.sessions.aclose()
         await self.indexer.aclose()
         await self.drive.aclose()
@@ -98,6 +104,7 @@ def build_services(
     worker_factory: Callable[[Tunnel], WorkerClient] | None = None,
     drive: DriveAuth | None = None,
     indexer: DriveIndexer | None = None,
+    push_sender: Sender | None = None,
 ) -> Services:
     config.data_dir.mkdir(parents=True, exist_ok=True)
     db = Database(config.data_dir / "degas.sqlite")
@@ -130,4 +137,22 @@ def build_services(
     )
     inputs = Inputs(db, blobs)
     dispatcher = Dispatcher(db, blobs, bus, sessions, inputs)
-    return Services(config, db, blobs, bus, drive, indexer, sessions, dispatcher, inputs)
+    push = Push(db, config.vapid_key_file, config.push.subject, push_sender)
+
+    def job_finished(job: dict[str, Any]) -> None:
+        notice = job_notice(job)
+        if notice is not None:
+            push.notify(*notice, tag=job["id"], url=RESULTS_URL)
+
+    def idle_warning(left: timedelta) -> None:
+        gpu = sessions.session["gpu"] if sessions.session else "The GPU"
+        push.notify(
+            idle_notice(gpu, left),
+            "Open the GPU session to keep it running.",
+            tag="idle",
+            url=SESSION_URL,
+        )
+
+    dispatcher.on_finish.append(job_finished)
+    sessions.on_idle_warning.append(idle_warning)
+    return Services(config, db, blobs, bus, drive, indexer, sessions, dispatcher, inputs, push)

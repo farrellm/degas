@@ -99,6 +99,11 @@ CREATE TABLE IF NOT EXISTS blob_transforms (
     original_sha TEXT NOT NULL,
     ops TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+    endpoint TEXT PRIMARY KEY,
+    keys TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
@@ -239,6 +244,27 @@ class Database:
             "SELECT * FROM jobs WHERE status = 'queued' ORDER BY queue_position LIMIT 1"
         ).fetchone()
         return _row(row, JOB_JSON)
+
+    def move_job(self, id_: str, index: int) -> list[str]:
+        """Move a queued job to `index` in the queue (0 is next). Returns the queue's ids.
+
+        The queued jobs swap their existing positions, so later submissions still go last.
+        """
+        rows = self.conn.execute(
+            "SELECT id, queue_position FROM jobs WHERE status = 'queued' ORDER BY queue_position"
+        ).fetchall()
+        ids = [r["id"] for r in rows]
+        if id_ not in ids:
+            return ids
+        ids.remove(id_)
+        ids.insert(max(0, min(index, len(ids))), id_)
+        with self.conn:
+            self.conn.execute("BEGIN")
+            self.conn.executemany(
+                "UPDATE jobs SET queue_position = ? WHERE id = ?",
+                [(r["queue_position"], job) for r, job in zip(rows, ids, strict=True)],
+            )
+        return ids
 
     def count_pending(self) -> int:
         (n,) = self.conn.execute(
@@ -607,6 +633,23 @@ class Database:
     def get_asset(self, path: str) -> dict[str, Any] | None:
         row = self.conn.execute("SELECT * FROM assets WHERE path = ?", (path,)).fetchone()
         return _row(row, ("sidecar",))
+
+    # -- push subscriptions ----------------------------------------------------------------
+
+    def add_push_subscription(self, endpoint: str, keys: dict[str, str]) -> None:
+        self.conn.execute(
+            "INSERT INTO push_subscriptions (endpoint, keys, created_at) VALUES (?, ?, ?)"
+            " ON CONFLICT (endpoint) DO UPDATE SET keys = excluded.keys",
+            (endpoint, json.dumps(keys), now()),
+        )
+
+    def delete_push_subscription(self, endpoint: str) -> bool:
+        cur = self.conn.execute("DELETE FROM push_subscriptions WHERE endpoint = ?", (endpoint,))
+        return cur.rowcount > 0
+
+    def list_push_subscriptions(self) -> list[dict[str, Any]]:
+        rows = self.conn.execute("SELECT * FROM push_subscriptions ORDER BY created_at").fetchall()
+        return [s for r in rows if (s := _row(r, ("keys",))) is not None]
 
     # -- settings --------------------------------------------------------------------------
 

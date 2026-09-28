@@ -432,7 +432,8 @@ All endpoints are under `/api`. JSON unless noted.
 | DELETE | `/session` | Stop |
 | GET | `/jobs` | Queue + recent jobs |
 | POST | `/jobs` | Submit `{spec, batch_count, seed_mode}` |
-| PATCH | `/jobs/{id}` | Reorder (`queue_position`) |
+| PATCH | `/jobs/{id}` | Reorder: `{position}` in the queue, 0 runs next |
+| POST | `/jobs/{id}/restore` | Undo cancelling a job that hadn't started |
 | DELETE | `/jobs/{id}` | Cancel |
 | GET | `/results?cursor=` | Recent ephemeral results |
 | POST | `/results/{id}/save` | Save to library (image/video + config) |
@@ -446,7 +447,8 @@ All endpoints are under `/api`. JSON unless noted.
 | POST | `/blobs/from-url` | `{url}` → server fetches and stores → `{sha256, media_type, width, height}` |
 | GET | `/blobs/{sha}` / `/thumbs/{sha}` | Media (Range support for video) |
 | POST | `/preprocess` | `{id: depth\|pose\|canny\|sam, image, params}` → `{blob}` |
-| POST | `/push/subscribe` | Store Web Push subscription |
+| GET | `/push` | VAPID public key (`applicationServerKey`) |
+| POST | `/push/subscribe`, `/push/unsubscribe` | Store or drop this device's Web Push subscription |
 | GET | `/events` | SSE: session state, job progress, outputs |
 
 **Batching and seeds.** Submitting a job with `batch_count > 1` creates one job whose worker loop produces N items. The seed for item *i* is `seed + i` in incrementing mode, or a random seed in random mode. The seed actually used is always recorded on each result. A fixed seed with N > 1 is only useful if other parameters vary, so the UI disallows it.
@@ -544,7 +546,7 @@ Phases are numbered from 0.
 2. **Assets and LoRA.** ✅ Built, not yet tested on a live GPU. Sidecars, the rclone-backed model cache with prefetch and eviction, and LoRA application (with diffing) for SDXL. Model and LoRA pickers in the UI. The server prefetches the next queued job's assets once the running job is past its own copy phase. The VM cache budget is `colab.cache_budget_gb` (150 by default), and `/health` reports the cached files so the pickers can say what is already on the GPU.
 3. **Save, library and remix.** ✅ Built. Keep saves a result with its replayable config (§6.4, including the runtime GPU and library versions reported by `/health`) to `library_items`, and the item holds its own blob refs. Saved prompts. An hourly retention sweeper deletes expired results, finished jobs left with no results, and unreferenced blobs (with a 1 h grace for blobs just written). Remix loads a kept image's or a result's config into Create and flags a model or LoRA that's no longer in the Drive index. Library search matches prompt text, title and tags.
 4. **Wan 2.2.** ✅ Built, not yet tested on a live GPU. Wan 2.2 descriptor (TI2V 5B for t2v and i2v; T2V and I2V A14B with high/low LoRA pairs; models are diffusers folders under `models/wan22/<variant>/`, which picks the variant) and runner (`WanImageToVideoPipeline.from_pipe` for 5B i2v, each A14B LoRA half loaded into its expert, MP4 via ffmpeg in `degas_worker/video.py`). Uploads, URL/`data:` imports, video frames, non-destructive transforms and auto-fit at submit (`degas/inputs.py`, `degas/media.py`); video posters, durations and extension stitching in the dispatcher; the image picker, crop editor, video playback, Extend and Use as source in the UI. The 5B variant (t2v and i2v), then the A14B variants with paired LoRAs. Video playback, video extension and stitching. Build the full image picker here (recent results, library, camera-roll upload, URL import, frame selection from videos), together with the crop and resize editor, image transforms, and auto-fit here, since i2v is the first mode that takes a source image.
-5. **Queue UX and push.** Batch generation and seed modes, cancel, reorder, the PWA manifest and service worker, and Web Push.
+5. **Queue UX and push.** ✅ Built, not yet tested on an installed iPhone. Batch generation and seed modes, cancel, reorder, the PWA manifest and service worker, and Web Push. A batch picks *Random seeds* or *Count up* from the seed field. `PATCH /jobs/{id}` `{position}` reorders the queued jobs among their existing positions (new jobs still go last) and re-targets prefetch; `POST /jobs/{id}/restore` undoes cancelling a job that never started. The service worker is hand-written (`web/public/sw.js`) rather than `vite-plugin-pwa`: it caches the hashed build assets, falls back to the cached shell offline, never caches `/api`, and shows pushes. `degas/push.py` generates the VAPID key pair on first use (`push.key_file`, default `<data_dir>/vapid_private.pem`) and sends with `pywebpush` off the event loop, dropping subscriptions the push service reports gone (404/410). Notifications go out when a job finishes or fails (not when it's cancelled) and once per idle deadline when an idle session is 2 minutes from stopping; tapping one opens `/?tab=results` or `/?sheet=session`.
 6. **i2i, inpaint and outpaint.** The mask editor with brush tools, and outpaint canvas extension.
 7. **Control.** Preprocessors (depth, pose, canny), SDXL ControlNet units, SAM-assisted masking, and regional ControlNet.
 

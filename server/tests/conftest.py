@@ -1,6 +1,7 @@
 """Fakes for the Colab CLI and SSH tunnel; the worker is the real app over ASGI."""
 
 import io
+import json
 import stat
 from collections.abc import Callable, Iterator
 from pathlib import Path
@@ -178,6 +179,13 @@ class Harness:
         key.parent.mkdir(parents=True)
         key.write_text("fake key")
         self.model = dict(MODEL)
+        # Web Push deliveries: (endpoint, payload); `push_status` is the push service's reply.
+        self.pushed: list[tuple[str, dict[str, Any]]] = []
+        self.push_status = 201
+
+    async def send_push(self, subscription: dict[str, Any], payload: str) -> int | None:
+        self.pushed.append((subscription["endpoint"], json.loads(payload)))
+        return self.push_status
 
     def tunnel_factory(self) -> Tunnel:
         tunnel = FakeTunnel()
@@ -193,6 +201,7 @@ class Harness:
             colab=self.colab,
             tunnel_factory=self.tunnel_factory,
             worker_factory=self.worker_factory,
+            push_sender=self.send_push,
         )
         svc.sessions.iv = FastIntervals()
         return svc

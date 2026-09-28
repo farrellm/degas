@@ -8,6 +8,7 @@ import {
   type LoraEntry,
   type Params,
   type SavedPrompt,
+  type SeedMode,
   type Spec,
 } from './api'
 
@@ -37,6 +38,8 @@ export interface Draft {
   family: string
   families: Record<string, Partial<FamilyDraft>>
   batchCount: number
+  /** How a batch's seeds are chosen. */
+  seedMode: SeedMode
 }
 
 type Stored = Partial<Draft> & Partial<FamilyDraft>
@@ -54,7 +57,12 @@ export function loadDraft(): Draft {
   if (!raw.families && (raw.model !== undefined || raw.params || raw.loras)) {
     families[family] = { model: raw.model, loras: raw.loras, params: raw.params }
   }
-  return { family, families, batchCount: raw.batchCount ?? 1 }
+  return {
+    family,
+    families,
+    batchCount: raw.batchCount ?? 1,
+    seedMode: raw.seedMode ?? 'random',
+  }
 }
 
 function store(draft: Draft) {
@@ -66,9 +74,14 @@ function store(draft: Draft) {
 }
 
 /** Save the form for `family`, which becomes the family Create opens with. */
-export function saveFamilyDraft(family: string, fd: FamilyDraft, batchCount: number) {
+export function saveFamilyDraft(
+  family: string,
+  fd: FamilyDraft,
+  batchCount: number,
+  seedMode: SeedMode,
+) {
   const draft = loadDraft()
-  store({ family, families: { ...draft.families, [family]: fd }, batchCount })
+  store({ family, families: { ...draft.families, [family]: fd }, batchCount, seedMode })
 }
 
 function update(family: string, change: (fd: Partial<FamilyDraft>) => Partial<FamilyDraft>) {
@@ -112,6 +125,7 @@ export function draftFromSpec(spec: Spec, seed: number | null, source?: BlobInfo
   )
   const draft = loadDraft()
   store({
+    ...draft,
     family: spec.family,
     families: {
       ...draft.families,

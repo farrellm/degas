@@ -46,6 +46,10 @@ print("{STARTED_MARKER}", _p.pid)
 """
 
 
+# The phone is warned this long before an idle session stops (design §8.3).
+IDLE_WARNING = timedelta(minutes=2)
+
+
 class SessionError(RuntimeError):
     pass
 
@@ -96,6 +100,9 @@ class SessionManager:
         self._lock = asyncio.Lock()
         self.on_ready: list[Callable[[], None]] = []
         self.on_end: list[Callable[[], None]] = []
+        # Called with the time left when an idle session is about to stop.
+        self.on_idle_warning: list[Callable[[timedelta], None]] = []
+        self._idle_warned: datetime | None = None  # the deadline already warned about
         self.has_pending_jobs: Callable[[], bool] = lambda: False
 
     # -- state -----------------------------------------------------------------------------
@@ -409,6 +416,7 @@ class SessionManager:
                 last_token = t
                 await self._push_token()
                 self._publish()
+            self._warn_idle()
             if self._idle_expired():
                 self._monitor = None
                 asyncio.create_task(self.stop("idle"))  # noqa: RUF006 - stop() awaits this task
@@ -419,6 +427,18 @@ class SessionManager:
             await coro
         except (ColabError, TunnelError) as e:
             log.warning("%s failed: %s", what, e)
+
+    def _warn_idle(self) -> None:
+        """Warn once per deadline; any activity moves the deadline and re-arms it."""
+        deadline = self.idle_deadline()
+        if self.state != "ready" or deadline is None or deadline == self._idle_warned:
+            return
+        left = deadline - datetime.now(UTC)
+        if left > IDLE_WARNING or left <= timedelta(0) or self.has_pending_jobs():
+            return
+        self._idle_warned = deadline
+        for cb in self.on_idle_warning:
+            cb(left)
 
     def _idle_expired(self) -> bool:
         deadline = self.idle_deadline()

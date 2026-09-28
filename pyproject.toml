@@ -61,6 +61,11 @@ packages = ["degas", "degas_worker"]
 module = ["torch.*", "diffusers.*", "transformers.*", "peft.*", "accelerate.*", "numpy.*"]
 ignore_missing_imports = true
 
+[[tool.mypy.overrides]]
+# Web Push: no type information published
+module = ["py_vapid.*", "pywebpush.*"]
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 testpaths = ["server/tests", "worker/tests"]
 asyncio_mode = "auto"

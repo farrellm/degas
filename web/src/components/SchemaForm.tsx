@@ -1,5 +1,5 @@
 import { Fragment, type ReactNode, type Ref } from 'react'
-import type { ParamProp, ParamSchema, Params } from '../api'
+import type { ParamProp, ParamSchema, Params, SeedMode } from '../api'
 import { size } from '../format'
 
 interface Props {
@@ -17,6 +17,8 @@ interface Props {
   /** Between the prompt block and the settings list (e.g. mode chips). */
   afterPrompt?: ReactNode
   promptPlaceholder?: string
+  /** A batch's seeds: random, or counting up from the seed field (design §7). */
+  seeds?: { batch: boolean; mode: SeedMode; onMode: (mode: SeedMode) => void }
 }
 
 /**
@@ -35,6 +37,7 @@ export function SchemaForm({
   promptAside,
   afterPrompt,
   promptPlaceholder = 'Describe the picture',
+  seeds,
 }: Props) {
   const set = (name: string, value: string | number | null) => {
     onChange({ ...values, [name]: value })
@@ -47,7 +50,14 @@ export function SchemaForm({
   const hasAspect = entries.some(([, p]) => p['x-widget'] === 'aspect')
 
   const render = ([name, prop]: [string, ParamProp]) => (
-    <Field key={name} name={name} prop={prop} value={values[name] ?? null} set={set} />
+    <Field
+      key={name}
+      name={name}
+      prop={prop}
+      value={values[name] ?? null}
+      set={set}
+      seeds={seeds}
+    />
   )
 
   return (
@@ -114,9 +124,10 @@ interface FieldProps {
   prop: ParamProp
   value: string | number | null
   set: (name: string, value: string | number | null) => void
+  seeds?: Props['seeds']
 }
 
-function Field({ name, prop, value, set }: FieldProps) {
+function Field({ name, prop, value, set, seeds }: FieldProps) {
   const label = prop.title ?? name
   const id = `param-${name}`
   const widget = prop['x-widget']
@@ -143,6 +154,20 @@ function Field({ name, prop, value, set }: FieldProps) {
           ))}
         </select>
       </div>
+    )
+  }
+
+  if (widget === 'seed' && seeds?.batch) {
+    return (
+      <BatchSeeds
+        id={id}
+        label={label}
+        value={value}
+        set={(v) => {
+          set(name, v)
+        }}
+        {...seeds}
+      />
     )
   }
 
@@ -221,6 +246,74 @@ function Field({ name, prop, value, set }: FieldProps) {
           set(name, numeric ? Number(e.target.value) : e.target.value)
         }}
       />
+    </div>
+  )
+}
+
+/**
+ * The Seed row for a batch: a fixed seed would make every image the same, so it's a
+ * choice between random seeds and counting up from a first seed.
+ */
+function BatchSeeds({
+  id,
+  label,
+  value,
+  set,
+  mode,
+  onMode,
+}: {
+  id: string
+  label: string
+  value: string | number | null
+  set: (value: number) => void
+  mode: SeedMode
+  onMode: (mode: SeedMode) => void
+}) {
+  const random = value === -1 || value === null
+  return (
+    <div className="setting seed-batch" role="group" aria-labelledby={`${id}-label`}>
+      <span className="setting-label" id={`${id}-label`}>
+        {label}
+      </span>
+      <div className="seed-batch-control">
+        <div className="seed-modes">
+          <button
+            type="button"
+            aria-pressed={mode === 'random'}
+            onClick={() => {
+              onMode('random')
+            }}
+          >
+            Random seeds
+          </button>
+          <button
+            type="button"
+            aria-pressed={mode === 'increment'}
+            onClick={() => {
+              onMode('increment')
+            }}
+          >
+            Count up
+          </button>
+        </div>
+        {mode === 'increment' && (
+          <div className="seed-control">
+            <label htmlFor={id} className="seed-from">
+              from
+            </label>
+            <input
+              id={id}
+              type="number"
+              inputMode="numeric"
+              placeholder="a random seed"
+              value={random ? '' : String(value)}
+              onChange={(e) => {
+                set(e.target.value === '' ? -1 : Number(e.target.value))
+              }}
+            />
+          </div>
+        )}
+      </div>
     </div>
   )
 }

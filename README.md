@@ -18,7 +18,7 @@ Personal generative image/video web app: an iPhone PWA over Tailscale, with infe
 
 ## Running
 
-Phases 1–4 are implemented: SDXL text-to-image with LoRAs, a model cache on the GPU VM, a library of kept images and saved prompts with remix, and Wan 2.2 text- and image-to-video with clip extension, an image picker and a crop editor. One-time setup on the home server:
+Phases 1–5 are implemented: SDXL text-to-image with LoRAs, a model cache on the GPU VM, a library of kept images and saved prompts with remix, Wan 2.2 text- and image-to-video with clip extension, an image picker and a crop editor, and a reorderable queue with an installable PWA and push notifications. One-time setup on the home server:
 
 0. Install `ffmpeg` (video posters, frames and clip stitching).
 1. Install and authenticate the Colab CLI: `uv tool install google-colab-cli`, then run any `colab` command once to sign in.
@@ -29,6 +29,8 @@ Phases 1–4 are implemented: SDXL text-to-image with LoRAs, a model cache on th
 6. `make deploy` builds the PWA, installs the systemd user unit `deploy/degas.service` and (re)starts it: the server listens on `127.0.0.1:8420` and `tailscale serve --https=8448` publishes it on the tailnet (`tailscale serve status` prints the URL). `make logs` follows its journal. To survive a reboot it needs `sudo loginctl enable-linger $USER`. For a one-off foreground run, use `make build && uv run degas`.
 
 In the app: tap **No GPU** in the header to start a GPU session, write a prompt in **Create** → Generate, and watch images arrive in **Results**. Open an image and choose **Keep** to save it, with its settings, to the **Library**; **Remix** loads those settings back into Create. Images you don't keep are deleted 24 hours after the session ends. The session stops itself after `idle_timeout_min` without activity.
+
+On the iPhone, open the app in Safari, then Share → **Add to Home Screen**. Notifications (jobs finishing, and a warning 2 minutes before an idle session stops) only work from the installed app; turn them on in the GPU session sheet. Set `push.subject` in `degas.toml` to a `mailto:` address you read, because push services use it as a contact.
 
 ## Development
 

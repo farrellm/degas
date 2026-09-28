@@ -12,6 +12,7 @@ followed by the continuation (design §6.4).
 
 import asyncio
 import logging
+from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
 
@@ -51,6 +52,8 @@ class Dispatcher:
         self._wake = asyncio.Event()
         self._prefetch: asyncio.Task[None] | None = None
         self._prefetched_after: str | None = None  # the running job that triggered a prefetch
+        # Called with the job when it finishes (done, error or cancelled).
+        self.on_finish: list[Callable[[dict[str, Any]], None]] = []
         sessions.on_ready.append(self.wake)
         sessions.on_end.append(self._orphans)
         sessions.has_pending_jobs = lambda: self.db.count_pending() > 0
@@ -95,6 +98,31 @@ class Dispatcher:
                     log.warning("cancel %s failed: %s", job_id, e)
             return True
         return False
+
+    def move(self, job_id: str, index: int) -> bool:
+        """Reorder the queue: put a queued job at `index` (0 runs next)."""
+        job = self.db.get_job(job_id)
+        if job is None or job["status"] != "queued":
+            return False
+        before = {j["id"]: j["queue_position"] for j in self.db.jobs_with_status("queued")}
+        self.db.move_job(job_id, index)
+        for j in self.db.jobs_with_status("queued"):
+            if before.get(j["id"]) != j["queue_position"]:
+                self.publish_job(j["id"])
+        self._prefetched_after = None  # the next job may have changed: prefetch it instead
+        self.sessions.touch()
+        return True
+
+    def restore(self, job_id: str) -> bool:
+        """Undo cancelling a job that never started: it goes back to its place in the queue."""
+        job = self.db.get_job(job_id)
+        if job is None or job["status"] != "cancelled" or job["started_at"] is not None:
+            return False
+        self.db.update_job(job_id, status="queued", finished_at=None)
+        self.publish_job(job_id)
+        self.sessions.touch()
+        self.wake()
+        return True
 
     def _orphans(self) -> None:
         """The session ended: a running job that nothing is following has failed."""
@@ -183,6 +211,14 @@ class Dispatcher:
         self.db.update_job(job_id, status=status, error=error, finished_at=now())
         self.progress.pop(job_id, None)
         self.publish_job(job_id)
+        job = self.db.get_job(job_id)
+        if job is None:
+            return
+        for cb in self.on_finish:
+            try:
+                cb(job)
+            except Exception:
+                log.exception("job finish callback failed")
 
     async def _stage_inputs(self, worker: WorkerClient, spec: dict[str, Any]) -> None:
         """Send input blobs (content-addressed, so at most once per session)."""
