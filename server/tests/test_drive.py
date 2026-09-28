@@ -21,6 +21,7 @@ TREE: dict[str, list[dict[str, Any]]] = {
         {"id": "models", "name": "models", "mimeType": FOLDER},
         {"id": "loras", "name": "loras", "mimeType": FOLDER},
         {"id": "pre", "name": "preprocessors", "mimeType": FOLDER},
+        {"id": "cn", "name": "controlnets", "mimeType": FOLDER},
         {"id": "junk", "name": "notes.txt", "mimeType": "text/plain"},
     ],
     "models": [
@@ -43,7 +44,24 @@ TREE: dict[str, list[dict[str, Any]]] = {
         {"id": "mi", "name": "model_index.json", "mimeType": "application/json", "size": "5"},
         {"id": "sub", "name": "transformer", "mimeType": FOLDER},
     ],
-    "pre": [{"id": "sam3", "name": "sam3", "mimeType": FOLDER}],
+    "pre": [
+        {"id": "sam3", "name": "sam3", "mimeType": FOLDER},
+        {"id": "dwpose", "name": "dwpose", "mimeType": FOLDER},
+    ],
+    "dwpose": [
+        {"id": "dw1", "name": "yolox_l.onnx", "mimeType": "x", "size": "200"},
+        {"id": "dw2", "name": "dw-ll_ucoco_384.onnx", "mimeType": "x", "size": "100"},
+    ],
+    "cn": [{"id": "cn-sdxl", "name": "sdxl", "mimeType": FOLDER}],
+    "cn-sdxl": [
+        {"id": "cn1", "name": "depth-xl", "mimeType": FOLDER},
+        {"id": "cn2", "name": "canny.safetensors", "mimeType": "x", "size": "2500"},
+        {"id": "cn2y", "name": "canny.yaml", "mimeType": "text/yaml"},
+    ],
+    "cn1": [
+        {"id": "cnc", "name": "config.json", "mimeType": "application/json", "size": "4"},
+        {"id": "cnw", "name": "diffusion_pytorch_model.safetensors", "mimeType": "x", "size": "5"},
+    ],
     "sam3": [
         {"id": "sc", "name": "config.json", "mimeType": "application/json", "size": "7"},
         {"id": "sw", "name": "model.safetensors", "mimeType": "x", "size": "3000"},
@@ -66,6 +84,7 @@ CONTENT = {
     b"preview: film-sample.jpg\nbogus: 1\n",
     "l1p": b"jpeg bytes",
     "l2p": b"png bytes",
+    "cn2y": b"label: Canny XL\ncontrol: canny\n",
 }
 downloads: list[str] = []
 
@@ -126,7 +145,13 @@ async def test_scan(auth: DriveAuth) -> None:
         "loras/sdxl/film.safetensors",
         "loras/sdxl/detail.safetensors",
         "preprocessors/sam3",
+        "preprocessors/dwpose",
+        "controlnets/sdxl/depth-xl",
+        "controlnets/sdxl/canny.safetensors",
     }
+    assert assets["preprocessors/dwpose"]["size"] == 300
+    depth = assets["controlnets/sdxl/depth-xl"]
+    assert (depth["kind"], depth["family"], depth["size"]) == ("controlnet", "sdxl", 9)
     sam = assets["preprocessors/sam3"]
     assert (sam["kind"], sam["family"], sam["size"]) == ("preprocessor", None, 3007)
     model = assets["models/sdxl/juggernaut.safetensors"]
@@ -174,7 +199,9 @@ async def test_sidecars_and_previews(auth: DriveAuth) -> None:
     assert stored[detail["preview_thumb"]] == b"png bytes"
     model = by_path["models/sdxl/juggernaut.safetensors"]
     assert (model["sidecar"], model["preview_thumb"]) == ({"label": "Juggernaut XL v10"}, None)
-    assert sorted(downloads) == ["f2", "l1p", "l1y", "l2p"]
+    canny = by_path["controlnets/sdxl/canny.safetensors"]
+    assert canny["sidecar"] == {"label": "Canny XL", "control": "canny"}
+    assert sorted(downloads) == ["cn2y", "f2", "l1p", "l1y", "l2p"]
 
     # A rescan reuses unchanged sidecars and previews without downloading them again.
     downloads.clear()

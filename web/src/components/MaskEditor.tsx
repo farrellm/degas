@@ -34,8 +34,13 @@ interface Props {
   source: { sha: string; width: number; height: number }
   /** The current mask, to keep editing it. */
   mask: string | null
-  /** The form's mask blur, in image pixels, for the blur preview. */
+  /** The form's mask blur, in image pixels, for the blur preview (0 hides it). */
   blur: number
+  /** A picture the same size as `source` to paint over and select in instead (a
+   * ControlNet area is painted over the photo its trace came from). */
+  underlay?: string
+  /** "Mask", or "Area" for a ControlNet. */
+  title?: string
   /** The stored mask, or null when nothing is painted. */
   onDone: (mask: BlobInfo | null) => void
   onCancel: () => void
@@ -199,7 +204,16 @@ function outline(layer: HTMLCanvasElement, width: number, style: string): HTMLCa
 }
 
 /** Full-screen mask painting over the source (design §8.2, ux.md Phase 6). */
-export function MaskEditor({ source, mask, blur, onDone, onCancel }: Props) {
+export function MaskEditor({
+  source,
+  mask,
+  blur,
+  underlay,
+  title = 'Mask',
+  onDone,
+  onCancel,
+}: Props) {
+  const picture = underlay ?? source.sha
   const work = useMemo(
     () => workingSize({ w: source.width, h: source.height }),
     [source.width, source.height],
@@ -338,7 +352,7 @@ export function MaskEditor({ source, mask, blur, onDone, onCancel }: Props) {
 
   const select = useMutation({
     mutationFn: (req: { points: SelectPoint[]; text: string }) =>
-      api.select(source.sha, { points: req.points, text: req.text || undefined }),
+      api.select(picture, { points: req.points, text: req.text || undefined }),
     onSuccess: async (found) => {
       const loaded: Record<string, HTMLCanvasElement> = {}
       await Promise.all(
@@ -564,14 +578,14 @@ export function MaskEditor({ source, mask, blur, onDone, onCancel }: Props) {
       className="editor mask-editor"
       role="dialog"
       aria-modal="true"
-      aria-label="Mask"
+      aria-label={title}
       tabIndex={-1}
     >
       <div className="editor-bar">
         <button type="button" className="btn quiet small" onClick={onCancel}>
           Cancel
         </button>
-        <h2>Mask</h2>
+        <h2>{title}</h2>
         <button
           type="button"
           className="btn small"
@@ -608,12 +622,7 @@ export function MaskEditor({ source, mask, blur, onDone, onCancel }: Props) {
         }}
       >
         <div className="mask-layer" style={layerStyle}>
-          <img
-            src={blobUrl(source.sha)}
-            alt=""
-            draggable={false}
-            style={{ opacity: imageOpacity }}
-          />
+          <img src={blobUrl(picture)} alt="" draggable={false} style={{ opacity: imageOpacity }} />
           <canvas
             ref={displayRef}
             width={work.w}
@@ -743,16 +752,18 @@ export function MaskEditor({ source, mask, blur, onDone, onCancel }: Props) {
           >
             Clear
           </button>
-          <button
-            type="button"
-            className="tool"
-            aria-pressed={showBlur}
-            onClick={() => {
-              setShowBlur(!showBlur)
-            }}
-          >
-            Blur
-          </button>
+          {blur > 0 && (
+            <button
+              type="button"
+              className="tool"
+              aria-pressed={showBlur}
+              onClick={() => {
+                setShowBlur(!showBlur)
+              }}
+            >
+              Blur
+            </button>
+          )}
         </div>
         <div className="mask-row">
           <label htmlFor="image-opacity">Image</label>

@@ -58,7 +58,10 @@ packages = ["degas", "degas_worker"]
 
 [[tool.mypy.overrides]]
 # GPU-only deps: installed on Colab, not in CI
-module = ["torch.*", "diffusers.*", "transformers.*", "peft.*", "accelerate.*", "numpy.*"]
+module = [
+    "torch.*", "diffusers.*", "transformers.*", "peft.*", "accelerate.*", "numpy.*", "cv2.*",
+    "safetensors.*", "onnxruntime.*",
+]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]

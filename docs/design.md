@@ -119,7 +119,7 @@ The server talks to the worker through `http://127.0.0.1:<local_port>` on the fo
 | GET | `/jobs/{id}/events` | SSE stream of `progress`, `output`, `done`, `error`, `cancelled` events |
 | POST | `/jobs/{id}/cancel` | Cooperative cancel |
 | GET | `/outputs/{job}/{item}` | Download one output; `DELETE` acknowledges it and frees disk |
-| POST | `/preprocess` | Run a preprocessor on a staged blob: `{id, image, asset: {path, size}, params}`. SAM answers `{candidates: [{mask (base64 PNG), score}], chosen}`, smallest mask first |
+| POST | `/preprocess` | Run a preprocessor on a staged blob: `{id, image, asset?: {path, size}, params}` (canny has no asset). SAM answers `{candidates: [{mask (base64 PNG), score}], chosen}`, smallest mask first; depth, pose and canny answer `{image}`, a base64 PNG at the image's size |
 | POST | `/drive-token` | Store a fresh Drive access token |
 | POST | `/assets/fetch` | Copy the given Drive paths into the local model cache (progress is reported via SSE) |
 | POST | `/shutdown` | Unload models and exit (used before `colab stop`) |
@@ -141,7 +141,7 @@ The job's final state comes from the terminal event (`done`, `error` or `cancell
 
 **Cancellation** is cooperative. `POST /jobs/{id}/cancel` sets a flag that the step callback (`callback_on_step_end`) checks. The worker then aborts and emits `cancelled`. Phase 0 showed that killing a client never stops running code on the VM. If the worker is stuck, the last resort is **Force reset worker**: kill the worker process over SSH and restart it. This reloads the models. `colab restart-kernel` is only needed if the kernel itself is wedged.
 
-**Interactive preprocessing.** SAM prompts, and later depth or pose extraction, use `POST /preprocess`. The server stages the image blob first (as for a job), names the preprocessor's model asset, and the worker copies that asset into its cache on first use, so the first SAM request of a session waits for the copy. For taps, the worker caches the image embedding by image hash, so each extra tap only runs the lightweight mask decoder. The expected round trip is 0.12 s of transport plus the inference time. Preprocessing runs in the worker's threadpool, one request at a time, alongside a generation job on the same GPU rather than waiting for it.
+**Interactive preprocessing.** SAM prompts and the depth, pose and edge traces use `POST /preprocess`. The server stages the image blob first (as for a job), names the preprocessor's model asset, and the worker copies that asset into its cache on first use, so the first SAM request of a session waits for the copy. For taps, the worker caches the image embedding by image hash, so each extra tap only runs the lightweight mask decoder. The expected round trip is 0.12 s of transport plus the inference time. Preprocessing runs in the worker's threadpool, one request at a time, alongside a generation job on the same GPU rather than waiting for it. One preprocessor is resident at a time: running another unloads it.
 
 ### 3.3 Phase 0 results
 
@@ -216,8 +216,8 @@ class FamilyRunner:
   - a start and end fraction,
   - an optional mask (regional control).
 
-  The ControlNet variants of the pipelines are used when units are present, and `MultiControlNetModel` when there is more than one unit.
-- **Regional ControlNet:** implemented by multiplying each unit's down-block and mid-block residuals by that unit's downsampled mask. This requires a small custom pipeline subclass or a wrapper around the ControlNet forward pass.
+  The ControlNet variants of the pipelines (`StableDiffusionXLControlNet{,Img2Img,Inpaint}Pipeline`) are made from the loaded pipeline with `from_pipe`, and a list of ControlNets becomes a `MultiControlNetModel`. A job has at most 3 units, and a ControlNet model guides one unit. The runner keeps the requested ControlNets resident and drops the rest. A ControlNet is a single `.safetensors` file (`from_single_file`) or a diffusers folder with `config.json` (`from_pretrained`). Union ControlNets (`ControlNetUnionModel`) are refused with a clear error for now.
+- **Regional ControlNet:** each unit's down-block and mid-block residuals are multiplied by its area mask, downsampled to each residual's size (`area` interpolation). The runner replaces `forward` on the ControlNet instance while the pipeline runs (`limit_to_areas` in the SDXL runner), rather than wrapping it in another module, so the pipelines' `isinstance` checks and accelerate's offload hook keep working. With *Around the mask*, area masks get the same crop as the image.
 - **Parameters:** prompt, negative prompt, width and height (with SDXL aspect-ratio presets), steps, CFG, sampler/scheduler, seed, clip skip, denoise strength (i2i and inpaint), mask blur and padding (inpaint), and an optional refiner.
 
 **Wan 2.2 (`wan22`)**
@@ -237,9 +237,9 @@ Preprocessors run on the GPU, in the worker, as a family-independent registry:
 
 | id | Model | Output |
 |---|---|---|
-| `depth` | Depth Anything V2 | Depth map image |
-| `pose` | DWPose | Pose skeleton image (OpenPose format) |
-| `canny` | OpenCV | Edge image (thresholds are parameters) |
+| `depth` | Depth Anything V2 (`preprocessors/depth-anything-v2/`, the transformers-format `…-hf` folder) | Depth map image, near is white |
+| `pose` | DWPose (`preprocessors/dwpose/`: `yolox_l.onnx` and `dw-ll_ucoco_384.onnx`; `onnxruntime-gpu` is installed on first use) | Pose skeleton image in OpenPose format, drawn at 512 px on the short side and scaled up |
+| `canny` | OpenCV, no model | Edge image; `{low, high}` thresholds |
 | `sam` | SAM 3 (`preprocessors/sam3/`, the transformers-format `facebook/sam3` folder) | Masks from included and excluded taps (`Sam3TrackerModel`, three candidates), or from a description (`Sam3Model`: every match, as one mask; taps then keep or drop matches) |
 
 Preprocessor outputs are ordinary images. They go into the blob store and can be edited, saved, or reused.
@@ -257,7 +257,7 @@ MyDrive/degas/
     wan22/         *.safetensors; A14B pairs named *_high_noise.safetensors / *_low_noise.safetensors or declared in sidecar
   controlnets/
     sdxl/          *.safetensors or diffusers dirs
-  preprocessors/   sam3/ (a transformers folder: config.json + weights), later depth-anything-v2/, dwpose/
+  preprocessors/   one folder per preprocessor: sam3/ and depth-anything-v2/ (transformers folders), dwpose/ (two ONNX files)
   vae/
     sdxl/
 ```
@@ -363,8 +363,8 @@ Saving an image or video stores a config that is self-contained and can be repla
     }
   },
   "control": [
-    { "controlnet": "controlnets/sdxl/depth.safetensors",
-      "image": "sha256:…", "preprocessor": { "id": "depth", "source": "sha256:…" },
+    { "controlnet": { "path": "controlnets/sdxl/depth.safetensors", "size": 2502139136 },
+      "image": "sha256:…", "preprocessor": { "id": "depth", "source": "sha256:…", "params": {} },
       "scale": 0.7, "start": 0.0, "end": 0.8, "mask": "sha256:…" }
   ],
   "runtime": { "gpu": "L4", "diffusers": "0.x", "torch": "2.x", "duration_s": 14.2 }
@@ -453,7 +453,7 @@ All endpoints are under `/api`. JSON unless noted.
 | GET | `/blobs/{sha}` / `/thumbs/{sha}` | Media (Range support for video) |
 | POST | `/blobs/{sha}/mask` | A mask painted over image `sha` (raw PNG body; alpha or white is redrawn) → a single-channel mask blob at the image's size |
 | POST | `/blobs/{mask}/remap` | `{source, to}` → the mask carried from `source` onto `to`, another crop of the same original, plus `empty` |
-| POST | `/preprocess` | `{id: "sam", image, params: {points: [{x, y, include}], text?}}` → `{candidates: [blob], chosen}`, smallest first (depth, pose and canny in Phase 7) |
+| POST | `/preprocess` | `{id: "sam", image, params: {points: [{x, y, include}], text?}}` → `{candidates: [blob], chosen}`, smallest first; `{id: "depth"\|"pose"\|"canny", image, params}` → `{image: blob}`, the trace at the image's size |
 | GET | `/push` | VAPID public key (`applicationServerKey`) |
 | POST | `/push/subscribe`, `/push/unsubscribe` | Store or drop this device's Web Push subscription |
 | GET | `/events` | SSE: session state, job progress, outputs |
@@ -555,7 +555,7 @@ Phases are numbered from 0.
 4. **Wan 2.2.** ✅ Built, not yet tested on a live GPU. Wan 2.2 descriptor (TI2V 5B for t2v and i2v; T2V and I2V A14B with high/low LoRA pairs; models are diffusers folders under `models/wan22/<variant>/`, which picks the variant) and runner (`WanImageToVideoPipeline.from_pipe` for 5B i2v, each A14B LoRA half loaded into its expert, MP4 via ffmpeg in `degas_worker/video.py`). Uploads, URL/`data:` imports, video frames, non-destructive transforms and auto-fit at submit (`degas/inputs.py`, `degas/media.py`); video posters, durations and extension stitching in the dispatcher; the image picker, crop editor, video playback, Extend and Use as source in the UI. The 5B variant (t2v and i2v), then the A14B variants with paired LoRAs. Video playback, video extension and stitching. Build the full image picker here (recent results, library, camera-roll upload, URL import, frame selection from videos), together with the crop and resize editor, image transforms, and auto-fit here, since i2v is the first mode that takes a source image.
 5. **Queue UX and push.** ✅ Built, not yet tested on an installed iPhone. Batch generation and seed modes, cancel, reorder, the PWA manifest and service worker, and Web Push. A batch picks *Random seeds* or *Count up* from the seed field. `PATCH /jobs/{id}` `{position}` reorders the queued jobs among their existing positions (new jobs still go last) and re-targets prefetch; `POST /jobs/{id}/restore` undoes cancelling a job that never started. The service worker is hand-written (`web/public/sw.js`) rather than `vite-plugin-pwa`: it caches the hashed build assets, falls back to the cached shell offline, never caches `/api`, and shows pushes. `degas/push.py` generates the VAPID key pair on first use (`push.key_file`, default `<data_dir>/vapid_private.pem`) and sends with `pywebpush` off the event loop, dropping subscriptions the push service reports gone (404/410). Notifications go out when a job finishes or fails (not when it's cancelled) and once per idle deadline when an idle session is 2 minutes from stopping; tapping one opens `/?tab=results` or `/?sheet=session`.
 6. **i2i, inpaint and outpaint.** ✅ Done. SDXL gains `i2i`, `inpaint` and `outpaint` on regular checkpoints, and an `inpaint` variant for inpainting checkpoints in `models/sdxl/inpaint/` (§4.3). Masks are stored by `POST /blobs/{sha}/mask`, follow their source through re-crops (`POST /blobs/{mask}/remap`) and are fitted with it at submit (§6.5). Outpaint places the source on the Size canvas (`inputs.place`). SAM 3 selection moved up from Phase 7: `POST /api/preprocess` stages the image and asks the worker's new `/preprocess` route, which loads `Sam3TrackerModel` for taps or `Sam3Model` for a description (one at a time) from `preprocessors/sam3/`. Drive indexes a preprocessor folder with a `config.json` as one asset. The mask editor (brush, erase, select, undo, invert, blur preview) and the outpaint placement are in the UI. Live test on a T4 (2026-09-28, a regular checkpoint): inpaint at 1024², 30 steps, strength 0.85, with the mask made by SAM 3 selection and SAM 3 resident next to SDXL; four jobs took 29–34 s each. The first attempts ran out of memory: diffusers 0.40's `from_pipe` defaults to float32 and casts the shared modules in place, which doubled SDXL to 13.1 GiB. SDXL now passes `torch_dtype=torch.float16` (6.6 GiB loaded, 9.7 GiB peak for a 1024² inpaint), and Wan builds its i2v pipeline from the components instead of using `from_pipe`. Still untested live: i2i, outpaint, the `inpaint` variant, and Wan i2v after that change.
-7. **Control.** Preprocessors (depth, pose, canny), SDXL ControlNet units, and regional ControlNet.
+7. **Control.** ✅ Built, not yet tested on a live GPU. Preprocessors (depth, pose, canny), SDXL ControlNet units, and regional ControlNet. A unit is `{controlnet, image, fit, scale, start, end, mask?, preprocessor?}` (§6.4); at submit each control image is fitted to the output size by its own `fit`, and its area mask with it, both recorded in `inputs.transforms`. The Drive index takes a folder under `controlnets/<family>/` with a `config.json` as one asset, and every folder directly under `preprocessors/` as one. A ControlNet's sidecar can say `control: depth|pose|canny`, which the UI uses to pick a model for a trace and to warn about a mismatch. Depth Anything V2 and DWPose run on the worker (DWPose's ONNX pre- and post-processing are adapted from controlnet_aux); canny is OpenCV. `degas_worker/deps.py` installs a missing package the first time it's needed. Untested live: all of it, in particular `from_single_file` for SDXL ControlNets, the ControlNet pipelines built with `from_pipe`, the residual masking under CPU offload, and onnxruntime's CUDA provider on Colab.
 
 ## 11. Risks and open questions
 
@@ -567,7 +567,7 @@ Phases are numbered from 0.
 | SSH tunnel throughput (about 12 MB/s) | Slow transfer of large video outputs | Acceptable: a 10 MB MP4 takes about 1 s. Encode with a sensible CRF |
 | Colab reclaims the VM or hits usage limits | Running job is lost | Detect the failure and move the session to `error`; queued jobs return to the queue; the notification explains what happened |
 | Copying Wan A14B (two 14B experts) from Drive is slow, and it needs offloading | Cold start of about 7 min for the copy; slow generation; standard shapes have only 12 GB of RAM | Show copy progress; prefetch; keep the session warm; default to `--high-mem`; use 5B for drafts |
-| Regional ControlNet needs a custom residual-masking path | Extra complexity | Isolate it in one pipeline wrapper; it is the last item in Phase 7 |
+| Regional ControlNet needs a custom residual-masking path | Extra complexity | Isolated in `limit_to_areas`, which patches `forward` on the ControlNet instance for the length of a call |
 | Session bootstrap time | Measured: `colab new` 3.5 s (CPU), SSH 1.5 s, and packages are preinstalled, so bootstrap takes about 10–20 s before model copy | Good enough; the model copy dominates |
 | Web Push on iOS | Needs a home-screen install and iOS 16.4+ | Document it; the in-app SSE path works regardless |
 | diffusers API churn for newer Wan and ControlNet classes | Upgrades break the worker | Pin versions in `requirements-worker.txt`; record versions in each saved config |

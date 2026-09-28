@@ -163,74 +163,110 @@ class Inputs:
         return await self.derive(original, ops)
 
     async def resolve(self, spec: dict[str, Any]) -> None:
-        """Fit the source (and its mask) to the output size and record every transform in the
-        spec (§6.5).
+        """Fit the source (and its mask) and every control image (and its area) to the output
+        size, and record every transform in the spec (§6.5).
 
         After this the spec has no `fit`, its source is exactly the output size (for an
-        outpaint, the size it is placed at) and its mask exactly the source's size.
+        outpaint, the size it is placed at), each control image exactly the output size, and
+        each mask exactly its image's size.
         """
         inputs = spec.get("inputs") or {}
         fit = inputs.pop("fit", "crop")
         extends = inputs.get("extends")
         if extends and not self.blobs.is_video(unref(extends)):
             raise MediaError("The clip to extend is no longer stored")
-        if not inputs.get("source"):
-            return
-        sha = unref(inputs["source"])
+        transforms: dict[str, Any] = {}
+        output = (int(spec["params"]["width"]), int(spec["params"]["height"]))
+        if inputs.get("source"):
+            place = inputs.get("place")
+            target = (int(place["w"]), int(place["h"])) if place else output
+            inputs["source"], inputs["mask"] = await self._fit(
+                inputs["source"],
+                inputs.get("mask"),
+                target,
+                fit,
+                transforms,
+                "The source image is no longer stored. Choose it again.",
+            )
+            if inputs["mask"] is None:
+                del inputs["mask"]
+            elif await self._mask_empty(inputs["mask"]):
+                raise MediaError("The mask is empty. Paint the area to redraw.")
+        for n, unit in enumerate(spec.get("control") or [], 1):
+            unit["image"], mask = await self._fit(
+                unit["image"],
+                unit.get("mask"),
+                output,
+                unit.pop("fit", "crop"),
+                transforms,
+                f"ControlNet {n}'s image is no longer stored. Choose it again.",
+            )
+            if mask is not None:
+                if await self._mask_empty(mask):
+                    raise MediaError(f"ControlNet {n}'s area is empty. Paint it, or remove it.")
+                unit["mask"] = mask
+        if transforms:
+            spec.setdefault("inputs", inputs)["transforms"] = transforms
+        else:
+            inputs.pop("transforms", None)
+
+    async def _fit(
+        self,
+        image: str,
+        mask: str | None,
+        target: tuple[int, int],
+        fit: str,
+        transforms: dict[str, Any],
+        gone: str,
+    ) -> tuple[str, str | None]:
+        """Fit an image (and the mask painted over it) to `target`; returns the new refs."""
+        sha = unref(image)
         size = self.blobs.image_size(sha) if not self.blobs.is_video(sha) else None
         if size is None:
-            raise MediaError("The source image is no longer stored. Choose it again.")
-        place = inputs.get("place")
-        if place:
-            target = (int(place["w"]), int(place["h"]))
-        else:
-            target = (int(spec["params"]["width"]), int(spec["params"]["height"]))
+            raise MediaError(gone)
         record = self.db.get_transform(sha)
         if record and self.blobs.path(record["original"]) is None:
             record = None  # the original is gone: treat the derived image as the original
-        transforms: dict[str, Any] = {}
         fit_ops = media.fit_ops(*size, *target, fit)
-        if inputs.get("mask"):
-            await self._fit_mask(inputs, size, fit_ops, transforms)
+        if mask:
+            mask = await self._fit_mask(mask, size, fit_ops, transforms)
         if size != target:
             original, previous = (record["original"], record["ops"]) if record else (sha, [])
             ops = [*previous, *fit_ops]
             derived = await self.derive(original, ops)
-            inputs["source"] = ref(derived["sha256"])
-            transforms[inputs["source"]] = {"original": ref(original), "ops": ops}
+            image = ref(derived["sha256"])
+            transforms[image] = {"original": ref(original), "ops": ops}
         elif record:
-            transforms[inputs["source"]] = {
-                "original": ref(record["original"]),
-                "ops": record["ops"],
-            }
-        if transforms:
-            inputs["transforms"] = transforms
-        else:
-            inputs.pop("transforms", None)
+            transforms[image] = {"original": ref(record["original"]), "ops": record["ops"]}
+        return image, mask
 
     async def _fit_mask(
         self,
-        inputs: dict[str, Any],
+        mask: str,
         size: tuple[int, int],
         fit_ops: list[media.Op],
         transforms: dict[str, Any],
-    ) -> None:
-        """Give the mask the fit its source gets, so the two stay pixel for pixel."""
-        mask = unref(inputs["mask"])
-        path = self.blobs.path(mask)
+    ) -> str:
+        """Give the mask the fit its image gets, so the two stay pixel for pixel."""
+        sha = unref(mask)
+        path = self.blobs.path(sha)
         if path is None:
             raise MediaError("The mask is no longer stored. Paint it again.")
         data = path.read_bytes()
         if media.image_size(data) != size:
             raise MediaError("The mask was painted on a different image. Paint it again.")
-        if fit_ops:
-            data = await run_in_threadpool(media.apply_mask_ops, data, fit_ops)
-            fitted = self.blobs.put(data, "image/png")
-            self.db.hold_input(fitted)
-            inputs["mask"] = ref(fitted)
-            transforms[inputs["mask"]] = {"original": ref(mask), "ops": fit_ops}
-        if await run_in_threadpool(media.mask_is_empty, data):
-            raise MediaError("The mask is empty. Paint the area to redraw.")
+        if not fit_ops:
+            return mask
+        data = await run_in_threadpool(media.apply_mask_ops, data, fit_ops)
+        fitted = self.blobs.put(data, "image/png")
+        self.db.hold_input(fitted)
+        transforms[ref(fitted)] = {"original": ref(sha), "ops": fit_ops}
+        return ref(fitted)
+
+    async def _mask_empty(self, mask: str) -> bool:
+        path = self.blobs.path(unref(mask))
+        assert path is not None
+        return await run_in_threadpool(media.mask_is_empty, path.read_bytes())
 
     # -- masks -------------------------------------------------------------------------------
 
@@ -262,6 +298,13 @@ class Inputs:
         ops = [*media.invert_ops(was["ops"] if was else [], *size), *(now["ops"] if now else [])]
         png = await run_in_threadpool(media.apply_mask_ops, data, ops)
         return {**self._put_mask(png), "empty": await run_in_threadpool(media.mask_is_empty, png)}
+
+    async def store_trace(self, data: bytes, size: tuple[int, int]) -> dict[str, Any]:
+        """Store a preprocessor's trace of an image (a depth map, a pose, edges), which must be
+        the image's size so an area painted over one fits the other."""
+        if media.image_size(data) != size:
+            raise MediaError("the trace isn't the size of its image")
+        return self._put_image(data)
 
     def _put_mask(self, png: bytes) -> dict[str, Any]:
         sha = self.blobs.put(png, "image/png")

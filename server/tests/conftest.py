@@ -22,6 +22,7 @@ from degas_worker import masks
 from degas_worker.app import create_app as create_worker_app
 from degas_worker.families.base import FamilyRunner, Output, RunContext
 from degas_worker.paths import Paths
+from degas_worker.preprocess.base import trace
 from degas_worker.video import encode_mp4
 
 
@@ -98,7 +99,7 @@ class FakeSdxl:
     fetch = False  # copy the spec's model and LoRAs into the VM cache, like the real runner
 
     def __init__(self) -> None:
-        self.inputs: list[dict[str, tuple[int, int]]] = []  # sizes of the staged inputs
+        self.inputs: list[dict[str, Any]] = []  # sizes of the staged inputs
 
     def run(self, spec: dict[str, Any], seeds: list[int], ctx: RunContext) -> Iterator[Output]:
         staged = {}
@@ -107,10 +108,18 @@ class FakeSdxl:
             if ref:
                 with Image.open(ctx.blob(ref)) as im:
                     staged[key] = im.size
+        for unit in spec.get("control") or []:
+            with Image.open(ctx.blob(unit["image"])) as im:
+                size = im.size
+            if unit.get("mask"):
+                with Image.open(ctx.blob(unit["mask"])) as im:
+                    staged.setdefault("areas", []).append(im.size)
+            staged.setdefault("control", []).append(size)
         if staged:
             self.inputs.append(staged)
         if self.fetch:
-            for asset in [spec["model"], *spec.get("loras", [])]:
+            nets = [u["controlnet"] for u in spec.get("control") or []]
+            for asset in [spec["model"], *spec.get("loras", []), *nets]:
                 ctx.fetch_asset(asset["path"], asset.get("size"))
             ctx.progress(0, "load", 1, 1)
         for item, seed in enumerate(seeds):
@@ -156,7 +165,7 @@ class FakeSam:
     def __init__(self) -> None:
         self.calls: list[dict[str, Any]] = []
 
-    def run(self, model: Path, image: Path, params: dict[str, Any]) -> dict[str, Any]:
+    def run(self, model: Path | None, image: Path, params: dict[str, Any]) -> dict[str, Any]:
         self.calls.append({"model": model, **params})
         with Image.open(image) as im:
             w, h = im.size
@@ -179,6 +188,21 @@ class FakeSam:
         pass
 
 
+class FakeTrace:
+    """A depth, pose or edges trace: the image's own size, grey."""
+
+    def __init__(self) -> None:
+        self.calls: list[dict[str, Any]] = []
+
+    def run(self, model: Path | None, image: Path, params: dict[str, Any]) -> dict[str, Any]:
+        self.calls.append({"model": model, **params})
+        with Image.open(image) as im:
+            return trace(Image.new("RGB", im.size, (128, 128, 128)))
+
+    def unload(self) -> None:
+        pass
+
+
 class FastIntervals(Intervals):
     tick = 0.02
     health = 0.05
@@ -196,6 +220,7 @@ class Harness:
         self.runner = FakeSdxl()
         self.wan = FakeWan()
         self.sam = FakeSam()
+        self.trace = FakeTrace()
         self.worker_paths = Paths(home=tmp_path / "vm", models=tmp_path / "vm-models")
         self.worker_paths.ensure()
 
@@ -215,7 +240,10 @@ class Harness:
             {"sdxl": runner_factory, "wan22": lambda: self.wan},
             rclone=str(rclone),
             exit_process=exit_process,
-            preprocessors={"sam": lambda: self.sam},
+            preprocessors={
+                "sam": lambda: self.sam,
+                **{kind: (lambda: self.trace) for kind in ("depth", "pose", "canny")},
+            },
         )
         self.config = Config(data_dir=tmp_path / "data", web_dist=tmp_path / "no-web")
         key = self.config.ssh_key
@@ -282,6 +310,21 @@ SAM = {
     "drive_file_id": "s3",
     "size": 10,  # what the fake rclone writes
 }
+DEPTH = {
+    "path": "preprocessors/depth-anything-v2",
+    "family": None,
+    "kind": "preprocessor",
+    "drive_file_id": "da2",
+    "size": 10,
+}
+CONTROLNET = {
+    "path": "controlnets/sdxl/depth-xl",
+    "family": "sdxl",
+    "kind": "controlnet",
+    "drive_file_id": "cn1",
+    "size": 25,
+    "sidecar": {"label": "Depth XL", "control": "depth"},
+}
 INPAINT_MODEL = {
     "path": "models/sdxl/inpaint/sdxl-inpaint.safetensors",
     "family": "sdxl",
@@ -312,6 +355,6 @@ def client(harness: Harness) -> Iterator[TestClient]:
     app = create_app(harness.config, harness.services_factory())
     with TestClient(app) as c:
         c.app.state.services.db.replace_assets(  # type: ignore[attr-defined]
-            [harness.model, LORA, WAN_5B, WAN_I2V, INPAINT_MODEL, SAM]
+            [harness.model, LORA, WAN_5B, WAN_I2V, INPAINT_MODEL, SAM, DEPTH, CONTROLNET]
         )
         yield c

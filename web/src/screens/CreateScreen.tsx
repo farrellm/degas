@@ -13,6 +13,9 @@ import {
 } from '../api'
 import { assetLabel, loraChoices, useAssets, variantFor } from '../assets'
 import { AssetPicker } from '../components/AssetPicker'
+import { ControlEditor } from '../components/ControlEditor'
+import { ControlList } from '../components/ControlList'
+import { newUnit, unitReady, unitSpec, type ControlUnit } from '../control'
 import { CropEditor } from '../components/CropEditor'
 import { ImagePicker } from '../components/ImagePicker'
 import { LoraList } from '../components/LoraList'
@@ -86,6 +89,8 @@ function CreateForm({
   const [maskNote, setMaskNote] = useState<string | null>(null)
   const [painting, setPainting] = useState(false)
   const [chosenPlace, setPlace] = useState<Place | null>(draft.place ?? null)
+  const [control, setControl] = useState<ControlUnit[]>(draft.control ?? [])
+  const [editingUnit, setEditingUnit] = useState<string | null>(null)
   const [batchCount, setBatchCount] = useState(draft.batchCount)
   const [seedMode, setSeedMode] = useState<SeedMode>(draft.seedMode)
   const [queued, setQueued] = useState<number | null>(null)
@@ -118,6 +123,8 @@ function CreateForm({
   })
   const loraIndex = assets.data?.filter((a) => a.family === family?.id && a.kind === 'lora')
   const choices = loraChoices(loraIndex, variant)
+  const controlnets = assets.data?.filter((a) => a.family === family?.id && a.kind === 'controlnet')
+  const withControl = !!family?.supports_control
 
   // The form always fits the current variant's schema: defaults, then what was typed.
   const params = schema.data ? initialParams(schema.data, editedParams ?? draft.params) : null
@@ -126,7 +133,18 @@ function CreateForm({
     if (!params || !mode) return
     saveFamilyDraft(
       familyId,
-      { model, mode, loras, params, source, fit, extends: extendsClip, mask, place: chosenPlace },
+      {
+        model,
+        mode,
+        loras,
+        params,
+        source,
+        fit,
+        extends: extendsClip,
+        mask,
+        place: chosenPlace,
+        control,
+      },
       batchCount,
       seedMode,
     )
@@ -141,6 +159,7 @@ function CreateForm({
     extendsClip,
     mask,
     chosenPlace,
+    control,
     batchCount,
     seedMode,
   ])
@@ -187,6 +206,7 @@ function CreateForm({
                 ...(mode === 'outpaint' && place && { place }),
               },
             }),
+          ...(withControl && control.length > 0 && { control: control.map(unitSpec) }),
         },
         batchCount,
         randomSeeds ? 'random' : 'increment',
@@ -447,6 +467,19 @@ function CreateForm({
         }}
         onTrigger={insertTrigger}
       />
+      {withControl && (
+        <ControlList
+          units={control}
+          index={controlnets}
+          steps={Number(params.steps ?? 30)}
+          onOpen={setEditingUnit}
+          onAdd={() => {
+            const unit = newUnit()
+            setControl([...control, unit])
+            setEditingUnit(unit.key)
+          }}
+        />
+      )}
     </>
   )
 
@@ -641,6 +674,31 @@ function CreateForm({
           }}
         />
       )}
+      {editingUnit && variant && (
+        <UnitEditor
+          unit={control.find((u) => u.key === editingUnit)}
+          controlnets={controlnets ?? []}
+          familyId={familyId}
+          source={needsSource && !sourceGone ? source : null}
+          target={target}
+          steps={Number(params.steps ?? 30)}
+          constraints={variant.size_constraints}
+          onChange={(update) => {
+            setControl((units) => units.map((u) => (u.key === editingUnit ? update(u) : u)))
+          }}
+          onRemove={() => {
+            setControl((units) => units.filter((u) => u.key !== editingUnit))
+            setEditingUnit(null)
+          }}
+          onClose={() => {
+            // A unit left without an image or a model isn't worth keeping.
+            setControl((units) =>
+              units.filter((u) => u.key !== editingUnit || !!u.image || !!u.model),
+            )
+            setEditingUnit(null)
+          }}
+        />
+      )}
       {cropping && variant && (
         <CropEditor
           sha={cropping}
@@ -712,7 +770,8 @@ function CreateForm({
                 modelMissing ||
                 !hasPrompt ||
                 (needsSource && (!source || sourceGone)) ||
-                (mode === 'inpaint' && !maskFits)
+                (mode === 'inpaint' && !maskFits) ||
+                (withControl && !control.every(unitReady))
               }
             >
               {submit.isPending
@@ -726,6 +785,14 @@ function CreateForm({
       </div>
     </form>
   )
+}
+
+/** The control editor for a unit that's still in the list. */
+function UnitEditor({
+  unit,
+  ...props
+}: Omit<Parameters<typeof ControlEditor>[0], 'unit'> & { unit: ControlUnit | undefined }) {
+  return unit ? <ControlEditor unit={unit} {...props} /> : null
 }
 
 /** A LoRA's files, without weights, to tell whether it's already in the list. */

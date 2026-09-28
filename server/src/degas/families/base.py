@@ -171,7 +171,86 @@ def spec_assets(spec: dict[str, Any]) -> list[dict[str, Any]]:
     for lora in spec.get("loras") or []:
         for part in lora_files(lora):
             assets.append({"path": part["path"], "size": part.get("size"), "kind": "lora"})
+    for unit in spec.get("control") or []:
+        net = unit["controlnet"]
+        if all(a["path"] != net["path"] for a in assets):
+            assets.append({"path": net["path"], "size": net.get("size"), "kind": "controlnet"})
     return assets
+
+
+# -- ControlNet units (design §4.3) ----------------------------------------------------------
+
+TRACES = ("depth", "pose", "canny")  # preprocessors whose output is a control image
+CONTROL_SCALE: JsonSchema = {"type": "number", "minimum": 0, "maximum": 2}
+CONTROL_FRACTION: JsonSchema = {"type": "number", "minimum": 0, "maximum": 1}
+
+
+def _sha(value: Any, what: str) -> str:
+    if not isinstance(value, str) or not SHA_REF.match(value):
+        raise SpecError(f"{what}: expected a sha256 reference")
+    return value
+
+
+def validate_control(control: Any, family: str, limit: int) -> list[dict[str, Any]]:
+    """Validate ControlNet units:
+    `[{controlnet: {path}, image, fit?, scale, start, end, mask?, preprocessor?}]`."""
+    if control is None:
+        return []
+    if not isinstance(control, list):
+        raise SpecError("control: expected a list")
+    if len(control) > limit:
+        raise SpecError(f"At most {limit} ControlNets can be used at once")
+    folder = f"controlnets/{family}/"
+    out: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for n, unit in enumerate(control, 1):
+        if not isinstance(unit, dict):
+            raise SpecError("Each ControlNet unit must be an object")
+        net = unit.get("controlnet")
+        path = net.get("path") if isinstance(net, dict) else net
+        if not isinstance(path, str) or not path:
+            raise SpecError(f"ControlNet {n}: choose a model")
+        if not path.startswith(folder):
+            raise SpecError(f"{path} isn't a ControlNet for this model")
+        # Area masks are applied per ControlNet model, so each model guides one unit.
+        if path in seen:
+            raise SpecError(f"{path} is used twice. Each ControlNet can guide one image.")
+        seen.add(path)
+        size = net.get("size") if isinstance(net, dict) else None
+        out.append({"controlnet": {"path": path, "size": size}, **_control_unit(n, unit)})
+    return out
+
+
+def _control_unit(n: int, unit: dict[str, Any]) -> dict[str, Any]:
+    """A unit's image, fit, weight, step range, area and preprocessor record."""
+    if not isinstance(unit.get("image"), str) or not unit["image"]:
+        raise SpecError(f"ControlNet {n}: choose a control image")
+    entry: dict[str, Any] = {
+        "image": _sha(unit["image"], f"ControlNet {n} image"),
+        "fit": unit.get("fit") or "crop",
+        "scale": _coerce("scale", CONTROL_SCALE, unit.get("scale", 0.7)),
+        "start": _coerce("start", CONTROL_FRACTION, unit.get("start", 0.0)),
+        "end": _coerce("end", CONTROL_FRACTION, unit.get("end", 1.0)),
+    }
+    if entry["fit"] not in FIT_MODES:
+        raise SpecError(f"fit: must be one of {', '.join(FIT_MODES)}")
+    if entry["start"] >= entry["end"]:
+        raise SpecError(f"ControlNet {n}: its steps must start before they end")
+    if unit.get("mask") is not None:
+        entry["mask"] = _sha(unit["mask"], f"ControlNet {n} area")
+    pre = unit.get("preprocessor")
+    if pre is not None:
+        if not isinstance(pre, dict) or pre.get("id") not in TRACES:
+            raise SpecError(f"preprocessor: must be one of {', '.join(TRACES)}")
+        params = pre.get("params") or {}
+        if not isinstance(params, dict):
+            raise SpecError("preprocessor params: expected an object")
+        entry["preprocessor"] = {
+            "id": pre["id"],
+            "source": _sha(pre.get("source"), "preprocessor source"),
+            "params": params,
+        }
+    return entry
 
 
 def lora_files(lora: dict[str, Any]) -> list[dict[str, Any]]:

@@ -11,4 +11,27 @@ def _sam() -> Preprocessor:
     return Sam3()
 
 
-PREPROCESSORS: dict[str, Callable[[], Preprocessor]] = {"sam": _sam}
+def _depth() -> Preprocessor:
+    from degas_worker.preprocess.depth import Depth  # noqa: PLC0415 - imports torch lazily
+
+    return Depth()
+
+
+def _pose() -> Preprocessor:
+    from degas_worker.preprocess.dwpose import DwPose  # noqa: PLC0415 - imports cv2 lazily
+
+    return DwPose()
+
+
+def _canny() -> Preprocessor:
+    from degas_worker.preprocess.canny import Canny  # noqa: PLC0415 - imports cv2 lazily
+
+    return Canny()
+
+
+PREPROCESSORS: dict[str, Callable[[], Preprocessor]] = {
+    "sam": _sam,
+    "depth": _depth,
+    "pose": _pose,
+    "canny": _canny,
+}

@@ -9,6 +9,7 @@ from degas.families.base import (
     Variant,
     find_variant,
     snap_size,
+    validate_control,
     validate_inputs,
     validate_model,
     validate_params,
@@ -27,6 +28,7 @@ SCHEDULERS = {
 }
 
 MAX_LORAS = 8
+MAX_CONTROL = 3
 
 # Inpainting checkpoints (9-channel UNets) live apart from the rest, so they don't show up
 # where a text-to-image model is expected.
@@ -53,7 +55,7 @@ class Sdxl:
     label = "Stable Diffusion XL"
     media: Literal["image", "video"] = "image"
     lora_format: Literal["single", "paired_hi_lo"] = "single"
-    supports_control = False  # Phase 7
+    supports_control = True
     variants: tuple[Variant, ...] = (
         Variant(id="base", label="SDXL", min_gpu="T4", modes=("t2i", "i2i", "inpaint", "outpaint")),
         Variant(
@@ -171,7 +173,7 @@ class Sdxl:
             "loras": loras,
             "params": params,
             "inputs": inputs,
-            "control": [],
+            "control": validate_control(spec.get("control"), self.id, MAX_CONTROL),
         }
 
     def _check(self, variant: str, mode: str) -> None:
