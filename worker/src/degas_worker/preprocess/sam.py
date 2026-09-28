@@ -29,7 +29,9 @@ class Sam3:
         self.embeddings: OrderedDict[str, Any] = OrderedDict()
         self.can_embed = True
 
-    def run(self, model: Path, image: Path, params: dict[str, Any]) -> dict[str, Any]:
+    def run(self, model: Path | None, image: Path, params: dict[str, Any]) -> dict[str, Any]:
+        if model is None:
+            raise ValueError("Select needs SAM 3")
         with Image.open(image) as im:
             rgb = im.convert("RGB")
         points = params.get("points") or []

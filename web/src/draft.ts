@@ -11,6 +11,7 @@ import {
   type SeedMode,
   type Spec,
 } from './api'
+import { unitFromSpec, type ControlUnit } from './control'
 import type { Place } from './place'
 
 // The Create form's draft, kept across visits and reloads.
@@ -42,6 +43,8 @@ export interface FamilyDraft {
   mask?: MaskRef | null
   /** Outpaint: where the source sits on the canvas. */
   place?: Place | null
+  /** ControlNet units (SDXL). */
+  control?: ControlUnit[]
 }
 
 export interface Draft {
@@ -154,6 +157,9 @@ export function draftFromSpec(spec: Spec, seed: number | null, source?: BlobInfo
             ? { sha: unref(spec.inputs.mask), source: unref(spec.inputs.source) }
             : null,
         place: spec.inputs?.place ?? null,
+        control: (spec.control ?? []).map((c) =>
+          unitFromSpec(c, { w: Number(spec.params.width), h: Number(spec.params.height) }),
+        ),
       },
     },
     batchCount: 1,

@@ -1,6 +1,7 @@
 """Worker HTTP app, served on 127.0.0.1 inside the VM and reached via SSH tunnel."""
 
 import asyncio
+import contextlib
 import hashlib
 import os
 import re
@@ -49,7 +50,7 @@ class FetchAssets(BaseModel):
 class Preprocess(BaseModel):
     id: str
     image: str  # sha256:… of a staged blob
-    asset: dict[str, Any]  # {path, size?}: the preprocessor's model in Drive
+    asset: dict[str, Any] | None = None  # {path, size?}: its model in Drive, if it has one
     params: dict[str, Any] = {}
 
 
@@ -177,14 +178,16 @@ def create_app(  # noqa: PLR0915 - route definitions
         image = blob_path(body.image.removeprefix("sha256:"))
         if not image.exists():
             raise HTTPException(400, f"Input {body.image} was not staged on the worker")
-        path = body.asset.get("path")
-        if not isinstance(path, str) or not path:
+        asset = body.asset or {}
+        path = asset.get("path")
+        if body.asset is not None and (not isinstance(path, str) or not path):
             raise HTTPException(400, "asset: a path is required")
         try:
-            with pre_lock, cache.pinned(path):
-                model = cache.ensure(path, body.asset.get("size"))
+            with pre_lock, cache.pinned(path) if path else contextlib.nullcontext():
+                model = cache.ensure(path, asset.get("size")) if path else None
                 pre = pre_loaded.get(body.id)
                 if pre is None:
+                    unload_preprocessors()  # one resident at a time, next to the pipeline
                     pre = pre_loaded[body.id] = factory()
                 return pre.run(model, image, body.params)
         except CacheError as e:

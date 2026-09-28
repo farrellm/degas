@@ -296,11 +296,14 @@ class DriveIndexer:
         self, folder_id: str, parts: list[str], kind: str, out: list[dict[str, Any]]
     ) -> None:
         children = await self._children(folder_id)
-        # A diffusers-format directory is a single asset, and so is a transformers-format
-        # preprocessor (SAM 3: `preprocessors/sam3/config.json` and its weights).
+        # A diffusers-format directory is a single asset, and so is a diffusers ControlNet
+        # (`config.json` and its weights) and every folder directly under `preprocessors/`
+        # (SAM 3 and Depth Anything are transformers folders; DWPose is two ONNX files).
         names = {c["name"] for c in children}
-        if (len(parts) >= 3 and "model_index.json" in names) or (
-            kind == "preprocessor" and len(parts) >= 2 and "config.json" in names
+        if (
+            (len(parts) >= 3 and "model_index.json" in names)
+            or (kind == "controlnet" and len(parts) >= 3 and "config.json" in names)
+            or (kind == "preprocessor" and len(parts) == 2)
         ):
             size = await self._tree_size(children)
             out.append(self._asset(parts, kind, folder_id, size, None, None))
@@ -472,4 +475,7 @@ def parse_sidecar(text: str) -> dict[str, Any]:
         and isinstance(pair.get("low"), str)
     ):
         out["pair"] = {"high": pair["high"], "low": pair["low"]}
+    control = data.get("control")  # ControlNets: the kind of control image they read
+    if control in ("depth", "pose", "canny"):
+        out["control"] = control
     return out

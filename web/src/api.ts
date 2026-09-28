@@ -21,6 +21,8 @@ export interface Family {
   label: string
   media: 'image' | 'video'
   lora_format: 'single' | 'paired_hi_lo'
+  /** Whether jobs take ControlNet units (SDXL). */
+  supports_control: boolean
   variants: Variant[]
 }
 
@@ -56,6 +58,8 @@ export interface Sidecar {
   variants?: string[]
   /** Wan 2.2 A14B: the high- and low-noise files of a pair, in the same folder. */
   pair?: { high: string; low: string }
+  /** ControlNets: the kind of control image the model reads. */
+  control?: TraceId
 }
 
 export interface Asset {
@@ -148,6 +152,25 @@ export interface Inputs {
   transforms?: Record<string, { original: string; ops: Op[] }>
 }
 
+/** The preprocessors that trace a control image from a picture. */
+export type TraceId = 'depth' | 'pose' | 'canny'
+
+/** A ControlNet unit in a job spec (design §6.4). */
+export interface ControlSpec {
+  controlnet: { path: string; size?: number | null }
+  /** `sha256:…` of the control image the ControlNet reads. */
+  image: string
+  fit?: Fit
+  scale: number
+  /** The fraction of the steps the unit guides, from start to end. */
+  start: number
+  end: number
+  /** `sha256:…` of the area it's limited to, painted over the control image. */
+  mask?: string
+  /** How the control image was traced, and from which picture. */
+  preprocessor?: { id: TraceId; source: string; params: Params }
+}
+
 export interface Spec {
   family: string
   variant: string
@@ -156,6 +179,7 @@ export interface Spec {
   loras?: LoraEntry[]
   params: Params
   inputs?: Inputs
+  control?: ControlSpec[]
 }
 
 /** A transform operation (design §6.5). Rotation is clockwise. */
@@ -354,6 +378,9 @@ export const api = {
   /** SAM 3: candidate masks for taps (`include` false leaves out) and/or a description. */
   select: (image: string, params: { points: SelectPoint[]; text?: string }) =>
     request<Selection>('POST', '/preprocess', { id: 'sam', image, params }),
+  /** Trace a control image (a depth map, a pose, edges) from a picture, at its size. */
+  trace: (id: TraceId, image: string, params: Params) =>
+    request<{ image: BlobInfo }>('POST', '/preprocess', { id, image, params }),
   extendResult: (id: string) => request<Extension>('POST', `/results/${id}/extend`),
   extendLibraryItem: (id: string) => request<Extension>('POST', `/library/${id}/extend`),
 }

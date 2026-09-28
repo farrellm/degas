@@ -78,6 +78,10 @@ One name per action, used in buttons, confirmations and empty states:
 | Use a SAM selection | Add / Subtract / Replace | Shown as an outline. |
 | Re-crop a masked image | — | The mask moved with the crop. / The crop left out the whole mask. |
 | Letterboxed source | Outpaint the bars | — |
+| Add a ControlNet unit | Add (ControlNet row) | — |
+| Make a control image | As is / Depth / Pose / Edges | Tracing on the GPU… |
+| Limit a unit to part of the image | Limit to an area / Edit area | — |
+| Drop a unit | Remove this ControlNet | — |
 
 "Keep" and "Save to Photos" are deliberately different words. Keeping is about retention inside Degas; Save to Photos exports to the phone.
 
@@ -203,6 +207,19 @@ A *Denoise strength* slider row appears for i2i and inpaint, from the schema.
 
 ### Phase 7: Control
 
+Built. Notes on what shipped, including where it changed from the plan below:
+
+- **A control image is a study, not a picture.** In the ControlNet rows, each unit's image is drawn in chalk on the paper: greyscale and screen-blended on the slate, inverted and multiplied as charcoal on the grey-green. An edge map reads as a line drawing and a depth map as tone. Thin lines are level-stretched so they survive the 34 px thumbnail. With an area, the trace fades to a quarter outside it, since the unit only guides there. No new colour is involved.
+- **The editor shows what the model reads**, in its true colours on the well (a pose's colours tell the model which limb is which). *Over the picture* lays the trace on the photo it came from, dimmed, to check they line up.
+- **Tracing is a tap.** The chips are *As is*, *Depth*, *Pose* and *Edges*; tapping one traces the picture straight away (there's no *Run*), with the preview in pulsing hatching while the GPU works. *Edges* adds a *Detail* slider (0 to 100%, one value for Canny's two thresholds) that traces again when it rests. Without a ready session the trace chips are disabled and a note says why. A trace picks a ControlNet that reads it when the unit has none, and a model that reads another kind gets a warning: *This looks like an edges model; the image is a depth map.*
+- **The picture comes first.** An empty unit asks for the picture whose layout the image should follow, with *Use the source* (when Create has one) and *Choose image*. Cropping crops the picture, not the trace, and traces it again; an area follows the crop.
+- **Weight, not strength**, so it doesn't collide with *Denoise strength* in the same form, and matches the LoRA rows.
+- **Steps** is two thumbs on one track counted in the form's steps, with the guided span in rose and a readout, *1–24 of 30*, rather than fractions. The note under it says what the range is for: *Early steps set the layout; ending early leaves the details free.*
+- **Area** opens the mask editor titled *Area*, painting over the photo the trace came from (same size) and selecting in it with SAM. The blur preview is hidden, since areas aren't blurred.
+- A ControlNet model can guide one unit; up to three units. A unit closed with neither an image nor a model is dropped. Generate stays disabled until every unit has both.
+
+The plan as written before building:
+
 - **ControlNet section** in Create, under LoRAs. Each unit is a row showing a thumbnail of its control image, the model name and the scale. Tapping a unit opens the **control editor sheet**: an image slot (using the picker), preprocessor chips (*Depth*, *Pose*, *Edges*) with a *Run* button and a preview, the model, strength, a two-thumb start–end range, and *Limit to an area*, which opens the mask editor for regional control.
 - SAM in the mask editor shipped in Phase 6.
 
@@ -224,7 +241,8 @@ A *Denoise strength* slider row appears for i2i and inpaint, from the schema.
 | `CropEditor` | Phase 4 | Full screen; geometry in `crop.ts` |
 | `MaskEditor`, `MaskThumb` | Phase 6 | Full screen, canvas; helpers in `mask.ts`; SAM 3 Select |
 | `PlaceEditor` | Phase 6 | Outpaint placement; geometry in `place.ts` |
-| Control unit row + editor | Phase 7 | |
+| `ControlList`, `ControlThumb` | Phase 7 | Unit rows; the chalk-study thumbnail |
+| `ControlEditor` | Phase 7 | Sheet; hosts the image picker, crop, area and model pickers in its place; `StepRange`; helpers in `control.ts` |
 
 ## 6. Quality floor
 

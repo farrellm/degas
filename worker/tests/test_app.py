@@ -140,22 +140,25 @@ def test_drive_token_writes_rclone_config(client: TestClient, paths: Paths) -> N
 
 class FakePre:
     def __init__(self) -> None:
-        self.calls: list[tuple[Path, Path, dict[str, Any]]] = []
+        self.calls: list[tuple[Path | None, Path, dict[str, Any]]] = []
+        self.unloads = 0
 
-    def run(self, model: Path, image: Path, params: dict[str, Any]) -> dict[str, Any]:
+    def run(self, model: Path | None, image: Path, params: dict[str, Any]) -> dict[str, Any]:
         self.calls.append((model, image, params))
         return {"candidates": [], "chosen": 0}
 
     def unload(self) -> None:
-        pass
+        self.unloads += 1
 
 
 def test_preprocess(paths: Paths, tmp_path: Path) -> None:
-    pre = FakePre()
+    pre, edges = FakePre(), FakePre()
     rclone = tmp_path / "rclone"
     rclone.write_text('#!/bin/sh\nmkdir -p "$(dirname "$3")"\nprintf 0123456789 > "$3"\n')
     rclone.chmod(0o755)
-    app = create_app(paths, {}, rclone=str(rclone), preprocessors={"sam": lambda: pre})
+    app = create_app(
+        paths, {}, rclone=str(rclone), preprocessors={"sam": lambda: pre, "canny": lambda: edges}
+    )
     with TestClient(app) as c:
         data = b"image bytes"
         sha = hashlib.sha256(data).hexdigest()
@@ -172,3 +175,8 @@ def test_preprocess(paths: Paths, tmp_path: Path) -> None:
         assert image.name == sha
         assert params == {"text": "a cat"}
         assert c.post("/preprocess", json={**body, "id": "depth"}).status_code == 400
+        # Edges need no model; loading them unloads SAM, so one preprocessor is resident.
+        edges_body = {"id": "canny", "image": f"sha256:{sha}", "params": {"low": 10}}
+        assert c.post("/preprocess", json=edges_body).status_code == 200
+        assert edges.calls[0] == (None, image, {"low": 10})
+        assert pre.unloads == 1

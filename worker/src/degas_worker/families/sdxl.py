@@ -1,23 +1,35 @@
-"""Stable Diffusion XL runner: text-to-image, image-to-image, inpaint and outpaint, with LoRAs.
+"""Stable Diffusion XL runner: text-to-image, image-to-image, inpaint and outpaint, with LoRAs
+and ControlNets.
 
 A regular checkpoint is loaded as the text-to-image pipeline, and the image-to-image and
 inpaint pipelines are made from it with `from_pipe` (they share its weights and LoRAs). An
 inpainting checkpoint (the `inpaint` variant, a 9-channel UNet) only has the inpaint pipeline.
+With ControlNet units, the ControlNet version of the mode's pipeline is made the same way.
+
+Regional ControlNet: a unit with an area mask has its ControlNet's residuals multiplied by
+the mask, downsampled to each residual's size, so it only guides that area.
 """
 
 import contextlib
 import gc
 import io
+import json
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import torch
+import torch.nn.functional as F  # noqa: N812 - the usual name
 from diffusers import (
+    ControlNetModel,
     DDIMScheduler,
     DPMSolverMultistepScheduler,
     EulerAncestralDiscreteScheduler,
     EulerDiscreteScheduler,
+    StableDiffusionXLControlNetImg2ImgPipeline,
+    StableDiffusionXLControlNetInpaintPipeline,
+    StableDiffusionXLControlNetPipeline,
     StableDiffusionXLImg2ImgPipeline,
     StableDiffusionXLInpaintPipeline,
     StableDiffusionXLPipeline,
@@ -27,6 +39,7 @@ from PIL import Image
 
 from degas_worker import masks
 from degas_worker.families.base import Output, RunContext
+from degas_worker.families.control import control_kwargs, crop_areas
 from degas_worker.families.lora import plan_loras
 
 # Keep in sync with the server descriptor (degas/families/sdxl.py).
@@ -51,6 +64,7 @@ class SdxlRunner:
         self.offload = False
         self.derived: dict[str, Any] = {}  # mode → pipeline made from `pipe` with from_pipe
         self.adapters: dict[str, str] = {}  # LoRA asset path → loaded adapter name
+        self.controlnets: dict[str, Any] = {}  # ControlNet asset path → loaded model
         self._scheduler_config: Any = None
 
     def run(self, spec: dict[str, Any], seeds: list[int], ctx: RunContext) -> Iterator[Output]:
@@ -63,11 +77,17 @@ class SdxlRunner:
             (lora["path"], ctx.fetch_asset(lora["path"], lora.get("size")), float(lora["weight"]))
             for lora in spec.get("loras") or []
         ]
+        units = spec.get("control") or []
+        nets = [
+            (net["path"], ctx.fetch_asset(net["path"], net.get("size")))
+            for net in (u["controlnet"] for u in units)
+        ]
         ctx.check_cancelled()
         ctx.progress(0, "load", 0, 1)
         self._load(path, inpaint=spec.get("variant") == "inpaint")
         self._apply_loras(loras)
-        pipe = self._pipe_for(mode)
+        self._load_controlnets(nets)
+        pipe = self._pipe_for(mode, [p for p, _ in nets])
         ctx.progress(0, "load", 1, 1)
 
         params = spec["params"]
@@ -75,6 +95,18 @@ class SdxlRunner:
         steps = int(params["steps"])
         size = (int(params["width"]), int(params["height"]))
         kwargs, original, keep = self._inputs(mode, spec, size, ctx)
+        areas: list[Image.Image | None] = []
+        if units:
+            images, areas = self._control_inputs(units, ctx)
+            if "padding_mask_crop" in kwargs:
+                box = pipe.mask_processor.get_crop_region(
+                    kwargs["mask_image"], *size, pad=kwargs["padding_mask_crop"]
+                )
+                areas = crop_areas(areas, box, size)
+            kwargs.update(control_kwargs(units, images, mode))
+        regional = [
+            (self.controlnets[p], area) for (p, _), area in zip(nets, areas, strict=False) if area
+        ]
         # Starting from an image skips the first (1 - strength) of the schedule.
         strength = float(kwargs.get("strength", 1.0))
         runs = max(1, min(steps, int(steps * strength)))
@@ -91,16 +123,17 @@ class SdxlRunner:
                 ctx.progress(item, "denoise" if done < runs else "decode", done, runs)
                 return kw
 
-            result = pipe(
-                prompt=params["prompt"],
-                negative_prompt=params.get("negative_prompt") or None,
-                num_inference_steps=steps,
-                guidance_scale=float(params["cfg"]),
-                clip_skip=clip_skip or None,
-                generator=torch.Generator("cpu").manual_seed(seed),
-                callback_on_step_end=on_step,
-                **kwargs,
-            )
+            with limit_to_areas(regional):
+                result = pipe(
+                    prompt=params["prompt"],
+                    negative_prompt=params.get("negative_prompt") or None,
+                    num_inference_steps=steps,
+                    guidance_scale=float(params["cfg"]),
+                    clip_skip=clip_skip or None,
+                    generator=torch.Generator("cpu").manual_seed(seed),
+                    callback_on_step_end=on_step,
+                    **kwargs,
+                )
             ctx.progress(item, "encode", runs, runs)
             image = result.images[0]
             if original is not None and keep is not None:
@@ -146,6 +179,49 @@ class SdxlRunner:
             kwargs["padding_mask_crop"] = int(params.get("mask_padding") or 0)
         return kwargs, image, soft
 
+    @staticmethod
+    def _control_inputs(
+        units: list[dict[str, Any]], ctx: RunContext
+    ) -> tuple[list[Image.Image], list[Image.Image | None]]:
+        """Each unit's control image, and its area mask if it has one (both at output size)."""
+        images: list[Image.Image] = []
+        areas: list[Image.Image | None] = []
+        for unit in units:
+            with Image.open(ctx.blob(unit["image"])) as im:
+                images.append(im.convert("RGB"))
+            if unit.get("mask"):
+                with Image.open(ctx.blob(unit["mask"])) as im:
+                    areas.append(im.convert("L"))
+            else:
+                areas.append(None)
+        return images, areas
+
+    def _load_controlnets(self, nets: list[tuple[str, Path]]) -> None:
+        """Keep the requested ControlNets resident and drop the rest."""
+        wanted = {path for path, _ in nets}
+        gone = [path for path in self.controlnets if path not in wanted]
+        if gone:
+            for path in gone:
+                del self.controlnets[path]
+            self.derived = {k: v for k, v in self.derived.items() if "+" not in k}
+            gc.collect()
+            torch.cuda.empty_cache()
+        for path, local in nets:
+            if path not in self.controlnets:
+                self.controlnets[path] = self._load_controlnet(path, local)
+
+    def _load_controlnet(self, path: str, local: Path) -> Any:
+        if _is_union(local):
+            raise ValueError(f"{path} is a union ControlNet, which Degas can't use yet")
+        try:
+            if local.is_dir():
+                net = ControlNetModel.from_pretrained(str(local), torch_dtype=torch.float16)
+            else:
+                net = ControlNetModel.from_single_file(str(local), torch_dtype=torch.float16)
+        except Exception as e:
+            raise ValueError(f"Could not load ControlNet {path}: {e}") from e
+        return net if self.offload else net.to("cuda")
+
     def _load(self, path: Path, inpaint: bool) -> None:
         if self.pipe is not None and self.model_path == path:
             return
@@ -168,23 +244,25 @@ class SdxlRunner:
         self.adapters = {}
         self._scheduler_config = pipe.scheduler.config
 
-    def _pipe_for(self, mode: str) -> Any:
-        if self.inpaint_model:
-            if mode not in ("inpaint", "outpaint"):
-                raise ValueError("An inpainting model can only inpaint or outpaint")
+    def _pipe_for(self, mode: str, controlnets: list[str]) -> Any:
+        """The pipeline for a mode, with these ControlNets (asset paths) if any."""
+        if self.inpaint_model and mode not in ("inpaint", "outpaint"):
+            raise ValueError("An inpainting model can only inpaint or outpaint")
+        base = mode if mode in ("t2i", "i2i") else "inpaint"
+        if not controlnets and (self.inpaint_model or base == "t2i"):
             return self.pipe
-        if mode == "t2i":
-            return self.pipe
-        key = "i2i" if mode == "i2i" else "inpaint"
+        key = "+".join([base, *controlnets])
         if key not in self.derived:
-            cls = (
-                StableDiffusionXLImg2ImgPipeline
-                if key == "i2i"
-                else StableDiffusionXLInpaintPipeline
-            )
+            extra: dict[str, Any] = {}
+            if controlnets:
+                cls = CONTROL_PIPELINES[base]
+                nets = [self.controlnets[p] for p in controlnets]
+                extra["controlnet"] = nets[0] if len(nets) == 1 else nets
+            else:
+                cls = PIPELINES[base]
             # from_pipe defaults to float32 and casts the *shared* modules in place, which
             # would double the loaded pipeline's VRAM (OOM on a T4).
-            derived = cls.from_pipe(self.pipe, torch_dtype=torch.float16)
+            derived = cls.from_pipe(self.pipe, torch_dtype=torch.float16, **extra)
             if self.offload:
                 derived.enable_model_cpu_offload()
             derived.set_progress_bar_config(disable=True)
@@ -223,5 +301,77 @@ class SdxlRunner:
         self.model_path = None
         self.derived = {}
         self.adapters = {}
+        self.controlnets = {}
         gc.collect()
         torch.cuda.empty_cache()
+
+
+PIPELINES: dict[str, Any] = {
+    "i2i": StableDiffusionXLImg2ImgPipeline,
+    "inpaint": StableDiffusionXLInpaintPipeline,
+}
+CONTROL_PIPELINES: dict[str, Any] = {
+    "t2i": StableDiffusionXLControlNetPipeline,
+    "i2i": StableDiffusionXLControlNetImg2ImgPipeline,
+    "inpaint": StableDiffusionXLControlNetInpaintPipeline,
+}
+
+
+def _is_union(local: Path) -> bool:
+    """Whether a ControlNet is a union model (one net for many control types)."""
+    if local.is_dir():
+        try:
+            config = json.loads((local / "config.json").read_text())
+        except (OSError, ValueError):
+            return False
+        return bool(config.get("_class_name") == "ControlNetUnionModel")
+    if local.suffix != ".safetensors":
+        return False
+    from safetensors import safe_open  # noqa: PLC0415 - only needed here
+
+    with safe_open(str(local), framework="pt") as f:
+        return any(k.startswith(("task_embedding", "control_type_proj")) for k in f.keys())  # noqa: SIM118 - not a dict
+
+
+@contextlib.contextmanager
+def limit_to_areas(units: list[tuple[Any, Image.Image]]) -> Iterator[None]:
+    """While the pipeline runs, multiply each ControlNet's residuals by its area mask.
+
+    `forward` is replaced on the instance rather than the model being wrapped in another
+    module, so the pipelines' `isinstance` checks keep passing. accelerate's offload hook also
+    lives on the instance's `forward`; the masked one calls through it.
+    """
+    restore: list[tuple[Any, Any]] = []
+    try:
+        for net, area in units:
+            restore.append((net, net.__dict__.get("forward")))
+            net.forward = _masked(net.forward, area)
+        yield
+    finally:
+        for net, forward in reversed(restore):
+            if forward is None:
+                del net.forward
+            else:
+                net.forward = forward
+
+
+def _masked(forward: Any, area: Image.Image) -> Any:
+    mask = torch.from_numpy(np.asarray(area, dtype=np.float32) / 255.0)[None, None]
+    sized: dict[tuple[Any, ...], Any] = {}
+
+    def fit(residual: Any) -> Any:
+        key = (tuple(residual.shape[-2:]), residual.device, residual.dtype)
+        if key not in sized:
+            m = F.interpolate(mask.to(residual.device), size=residual.shape[-2:], mode="area")
+            sized[key] = m.to(residual.dtype)
+        return residual * sized[key]
+
+    def masked_forward(*args: Any, **kwargs: Any) -> Any:
+        out = forward(*args, **kwargs)
+        if isinstance(out, tuple):  # return_dict=False, as the pipelines call it
+            return ([fit(d) for d in out[0]], fit(out[1]), *out[2:])
+        out.down_block_res_samples = [fit(d) for d in out.down_block_res_samples]
+        out.mid_block_res_sample = fit(out.mid_block_res_sample)
+        return out
+
+    return masked_forward
