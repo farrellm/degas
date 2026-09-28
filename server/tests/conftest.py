@@ -119,7 +119,8 @@ class FakeSdxl:
             self.inputs.append(staged)
         if self.fetch:
             nets = [u["controlnet"] for u in spec.get("control") or []]
-            for asset in [spec["model"], *spec.get("loras", []), *nets]:
+            vae = [spec["vae"]] if spec.get("vae") else []
+            for asset in [spec["model"], spec["config"], *vae, *spec.get("loras", []), *nets]:
                 ctx.fetch_asset(asset["path"], asset.get("size"))
             ctx.progress(0, "load", 1, 1)
         for item, seed in enumerate(seeds):
@@ -301,6 +302,29 @@ LORA = {
     "size": 10,
     "sidecar": {"label": "Film Grain v3", "trigger_words": ["filmgrain"]},
 }
+VAE = {
+    "path": "vae/sdxl/sdxl-vae-fp16-fix",
+    "family": "sdxl",
+    "kind": "vae",
+    "drive_file_id": "v1",
+    "size": 10,
+}
+CONFIGS = [
+    {
+        "path": "configs/sdxl/stable-diffusion-xl-base-1.0",
+        "family": "sdxl",
+        "kind": "config",
+        "drive_file_id": "c1",
+        "size": 10,
+    },
+    {
+        "path": "configs/sdxl/stable-diffusion-xl-1.0-inpainting-0.1",
+        "family": "sdxl",
+        "kind": "config",
+        "drive_file_id": "c2",
+        "size": 10,
+    },
+]
 
 
 SAM = {
@@ -355,6 +379,17 @@ def client(harness: Harness) -> Iterator[TestClient]:
     app = create_app(harness.config, harness.services_factory())
     with TestClient(app) as c:
         c.app.state.services.db.replace_assets(  # type: ignore[attr-defined]
-            [harness.model, LORA, WAN_5B, WAN_I2V, INPAINT_MODEL, SAM, DEPTH, CONTROLNET]
+            [
+                harness.model,
+                LORA,
+                VAE,
+                *CONFIGS,
+                WAN_5B,
+                WAN_I2V,
+                INPAINT_MODEL,
+                SAM,
+                DEPTH,
+                CONTROLNET,
+            ]
         )
         yield c

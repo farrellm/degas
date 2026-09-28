@@ -242,12 +242,22 @@ async def submit_job(svc: Svc, body: SubmitJob) -> dict[str, Any]:
     return svc.dispatcher.describe(job)
 
 
+# Assets a family adds to every job, and what to do when one isn't in Drive.
+MISSING = {
+    "config": "The pipeline configs aren't in Drive. Put them in degas/{path}/, then rescan.",
+    "vae": "The fp16-fix VAE isn't in Drive. Put it in degas/{path}/, then rescan, "
+    "or tick Built-in VAE in More settings.",
+}
+
+
 def _resolve_assets(svc: Services, family: str, spec: dict[str, Any]) -> None:
     """Check that every asset the spec names is in the Drive index, and record its size."""
     sizes: dict[str, int | None] = {}
     for need in spec_assets(spec):
         asset = svc.db.get_asset(need["path"])
         if asset is None or asset["kind"] != need["kind"] or asset["family"] != family:
+            if need["kind"] in MISSING:
+                raise HTTPException(400, MISSING[need["kind"]].format(path=need["path"]))
             what = {"model": "Model", "lora": "LoRA", "controlnet": "ControlNet"}[need["kind"]]
             raise HTTPException(400, f"{what} {need['path']} is not in the Drive index")
         sizes[need["path"]] = asset["size"]
@@ -257,6 +267,9 @@ def _resolve_assets(svc: Services, family: str, spec: dict[str, Any]) -> None:
             part["size"] = sizes[part["path"]]
     for unit in spec.get("control") or []:
         unit["controlnet"]["size"] = sizes[unit["controlnet"]["path"]]
+    for kind in MISSING:
+        if spec.get(kind):
+            spec[kind]["size"] = sizes[spec[kind]["path"]]
 
 
 @router.delete("/jobs/{job_id}")

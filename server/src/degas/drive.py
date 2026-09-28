@@ -35,6 +35,7 @@ KINDS = {
     "loras": "lora",
     "controlnets": "controlnet",
     "vae": "vae",
+    "configs": "config",
     "preprocessors": "preprocessor",
 }
 WEIGHT_SUFFIXES = (".safetensors", ".ckpt", ".pt", ".pth", ".bin", ".gguf")
@@ -296,13 +297,14 @@ class DriveIndexer:
         self, folder_id: str, parts: list[str], kind: str, out: list[dict[str, Any]]
     ) -> None:
         children = await self._children(folder_id)
-        # A diffusers-format directory is a single asset, and so is a diffusers ControlNet
-        # (`config.json` and its weights) and every folder directly under `preprocessors/`
+        # A diffusers-format directory is a single asset (a Wan model, or a pipeline's configs
+        # under `configs/`), and so is a diffusers ControlNet or VAE (`config.json` and its
+        # weights) and every folder directly under `preprocessors/`
         # (SAM 3 and Depth Anything are transformers folders; DWPose is two ONNX files).
         names = {c["name"] for c in children}
         if (
             (len(parts) >= 3 and "model_index.json" in names)
-            or (kind == "controlnet" and len(parts) >= 3 and "config.json" in names)
+            or (kind in ("controlnet", "vae") and len(parts) >= 3 and "config.json" in names)
             or (kind == "preprocessor" and len(parts) == 2)
         ):
             size = await self._tree_size(children)

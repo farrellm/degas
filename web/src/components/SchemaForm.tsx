@@ -39,7 +39,7 @@ export function SchemaForm({
   promptPlaceholder = 'Describe the picture',
   seeds,
 }: Props) {
-  const set = (name: string, value: string | number | null) => {
+  const set = (name: string, value: string | number | boolean | null) => {
     onChange({ ...values, [name]: value })
   }
   const entries = Object.entries(schema.properties)
@@ -122,8 +122,8 @@ export function SchemaForm({
 interface FieldProps {
   name: string
   prop: ParamProp
-  value: string | number | null
-  set: (name: string, value: string | number | null) => void
+  value: string | number | boolean | null
+  set: (name: string, value: string | number | boolean | null) => void
   seeds?: Props['seeds']
 }
 
@@ -154,6 +154,25 @@ function Field({ name, prop, value, set, seeds }: FieldProps) {
           ))}
         </select>
       </div>
+    )
+  }
+
+  if (prop.type === 'boolean') {
+    return (
+      <label className="setting check" htmlFor={id}>
+        <span className="setting-label">
+          {label}
+          {prop.description && <small>{prop.description}</small>}
+        </span>
+        <input
+          id={id}
+          type="checkbox"
+          checked={value === true}
+          onChange={(e) => {
+            set(name, e.target.checked)
+          }}
+        />
+      </label>
     )
   }
 
@@ -264,7 +283,7 @@ function BatchSeeds({
 }: {
   id: string
   label: string
-  value: string | number | null
+  value: FieldProps['value']
   set: (value: number) => void
   mode: SeedMode
   onMode: (mode: SeedMode) => void

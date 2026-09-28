@@ -106,6 +106,8 @@ def test_sdxl_loras() -> None:
     ]
     assert spec_assets(spec) == [
         {"path": "m", "size": 5, "kind": "model"},
+        {"path": "configs/sdxl/stable-diffusion-xl-base-1.0", "size": None, "kind": "config"},
+        {"path": "vae/sdxl/sdxl-vae-fp16-fix", "size": None, "kind": "vae"},
         {"path": "a", "size": None, "kind": "lora"},
         {"path": "b", "size": None, "kind": "lora"},
     ]

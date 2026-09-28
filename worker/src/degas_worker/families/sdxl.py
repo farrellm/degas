@@ -22,6 +22,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F  # noqa: N812 - the usual name
 from diffusers import (
+    AutoencoderKL,
     ControlNetModel,
     DDIMScheduler,
     DPMSolverMultistepScheduler,
@@ -63,6 +64,7 @@ class SdxlRunner:
     def __init__(self) -> None:
         self.pipe: Any = None
         self.model_path: Path | None = None
+        self.vae_path: Path | None = None  # None: the checkpoint's own VAE
         self.inpaint_model = False
         self.offload = False
         self.derived: dict[str, Any] = {}  # mode → pipeline made from `pipe` with from_pipe
@@ -76,6 +78,9 @@ class SdxlRunner:
             raise ValueError(f"SDXL can't do {mode!r}")
         model = spec["model"]
         path = ctx.fetch_asset(model["path"], model.get("size"))
+        config = ctx.fetch_asset(spec["config"]["path"], spec["config"].get("size"))
+        vae = spec.get("vae")
+        vae_path = ctx.fetch_asset(vae["path"], vae.get("size")) if vae else None
         loras = [
             (lora["path"], ctx.fetch_asset(lora["path"], lora.get("size")), float(lora["weight"]))
             for lora in spec.get("loras") or []
@@ -87,7 +92,7 @@ class SdxlRunner:
         ]
         ctx.check_cancelled()
         ctx.progress(0, "load", 0, 1)
-        self._load(path, inpaint=spec.get("variant") == "inpaint")
+        self._load(path, config, vae_path, inpaint=spec.get("variant") == "inpaint")
         self._apply_loras(loras)
         self._load_controlnets(nets)
         pipe = self._pipe_for(mode, [p for p, _ in nets])
@@ -229,13 +234,25 @@ class SdxlRunner:
             raise ValueError(f"Could not load ControlNet {path}: {e}") from e
         return net if self.offload else net.to("cuda")
 
-    def _load(self, path: Path, inpaint: bool) -> None:
-        if self.pipe is not None and self.model_path == path:
+    def _load(self, path: Path, config: Path, vae_path: Path | None, inpaint: bool) -> None:
+        if self.pipe is not None and self.model_path == path and self.vae_path == vae_path:
             return
         self.unload()
         cls = StableDiffusionXLInpaintPipeline if inpaint else StableDiffusionXLPipeline
+        extra: dict[str, Any] = {}
+        if vae_path is not None:
+            # The checkpoint's own VAE overflows in float16, so the pipelines would move it to
+            # float32 for every encode and decode; the fp16 fix (`force_upcast` off) doesn't.
+            extra["vae"] = AutoencoderKL.from_pretrained(
+                str(vae_path), torch_dtype=torch.float16, local_files_only=True
+            )
         pipe = cls.from_single_file(
-            str(path), torch_dtype=torch.float16, use_safetensors=path.suffix == ".safetensors"
+            str(path),
+            config=str(config),
+            local_files_only=True,
+            torch_dtype=torch.float16,
+            use_safetensors=path.suffix == ".safetensors",
+            **extra,
         )
         _free, total = torch.cuda.mem_get_info()
         self.offload = total < _OFFLOAD_BELOW_BYTES
@@ -246,6 +263,7 @@ class SdxlRunner:
         pipe.set_progress_bar_config(disable=True)
         self.pipe = pipe
         self.model_path = path
+        self.vae_path = vae_path
         self.inpaint_model = inpaint
         self.derived = {}
         self.adapters = {}
@@ -306,6 +324,7 @@ class SdxlRunner:
             return
         self.pipe = None
         self.model_path = None
+        self.vae_path = None
         self.derived = {}
         self.adapters = {}
         self.controlnets = {}

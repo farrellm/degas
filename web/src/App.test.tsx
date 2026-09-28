@@ -55,6 +55,13 @@ const SCHEMA = {
       'x-widget': 'select',
       'x-advanced': true,
     },
+    vae_fp32: {
+      type: 'boolean',
+      title: 'Built-in VAE in float32',
+      description: "The checkpoint's own VAE instead of the fp16 fix. Slower.",
+      default: false,
+      'x-advanced': true,
+    },
   },
 }
 
@@ -403,6 +410,8 @@ describe('App', () => {
     renderApp()
     await user.type(await screen.findByLabelText('Prompt'), 'a lighthouse')
     await user.click(screen.getByRole('button', { name: '832×1216' }))
+    await user.click(screen.getByText('More settings'))
+    await user.click(screen.getByRole('checkbox', { name: /Built-in VAE in float32/ }))
     await user.click(screen.getByRole('button', { name: 'Generate' }))
 
     expect(await screen.findByText('Queued 1 image.')).toBeInTheDocument()
@@ -421,6 +430,7 @@ describe('App', () => {
             steps: 30,
             seed: -1,
             scheduler: 'euler',
+            vae_fp32: true,
           },
         },
         batch_count: 1,
