@@ -1,4 +1,4 @@
-from degas_worker.families.lora import adapter_name, plan_loras
+from degas_worker.families.lora import adapter_name, plan_loras, strip_text_model
 
 
 def test_first_application_loads_everything() -> None:
@@ -28,3 +28,16 @@ def test_adapter_names_are_stable_and_flat() -> None:
     assert name == adapter_name("loras/sdxl/film.v3.safetensors")
     assert "." not in name
     assert "/" not in name
+
+
+def test_strip_text_model_only_touches_its_prefix() -> None:
+    keys = {
+        "text_encoder.text_model.encoder.layers.0.mlp.fc1.lora_linear_layer.down.weight": 1,
+        "text_encoder_2.text_model.encoder.layers.0.mlp.fc1.lora_linear_layer.down.weight": 2,
+        "unet.mid_block.attentions.0.proj_in.lora.down.weight": 3,
+    }
+    assert strip_text_model(keys, "text_encoder") == {
+        "text_encoder.encoder.layers.0.mlp.fc1.lora_linear_layer.down.weight": 1,
+        "text_encoder_2.text_model.encoder.layers.0.mlp.fc1.lora_linear_layer.down.weight": 2,
+        "unet.mid_block.attentions.0.proj_in.lora.down.weight": 3,
+    }
