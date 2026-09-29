@@ -56,7 +56,7 @@ Scale: 13 / 15 / 16 / 20 / 26 px (`--step--1` … `--step-2`). Labels are senten
 
 - **Session chip** (replaces the Session tab). It shows *No GPU*, *L4 starting*, *L4 12:40* (idle countdown) or *L4* while a job runs, with a coloured state dot. Tapping it opens the **GPU session sheet**: start (GPU choice, high memory), status, VRAM, stop, keep running, restart worker, and Drive status and rescan.
 - **Results** merges the old Queue and Results tabs into one contact-sheet feed. Each job is a group with its prompt as an italic caption, the model and size underneath, and its images in a grid (three columns for portrait and square, two for landscape). Running and queued jobs come first, with sketch tiles for images that aren't finished. The corner of each group shows *Cancel* while it's pending, then the time the images have left.
-- **Create** stays put after Generate. A confirmation line in the generate bar says *Queued 2 images* and links to Results. When no GPU is running, the same line says jobs will wait and offers *Start a session*.
+- **Create** stays put after Generate. A confirmation line in the generate bar says *Queued 2 images* and links to Results. When no GPU is running, the same line says jobs will wait and offers *Start a session*. Each slider has a small `--ink-muted` tick under its track at the family's default, and the default size preset has the same tick under its box. When a slider, number or select differs from its default, *Reset to 28* appears under its label. It sits in the label column, so the row doesn't grow while you drag. Seed, prompts and checkboxes don't get one.
 - **Viewer** is full screen on the image well, with swipe, arrow keys and ‹ › to move through the feed. Under the image is a **wall label**: the prompt as the title, then the model, the size and seed, and the sampling settings on separate lines. Actions: *Save to Photos* and *Reuse settings*, which loads the spec and its seed into Create.
 
 ### Vocabulary
@@ -85,6 +85,7 @@ One name per action, used in buttons, confirmations and empty states:
 | Drop a unit | Remove this ControlNet | — |
 | Add a reference image (Qwen or FLUX.2 [klein] edit) | Add image (Images row) | — |
 | Reorder or drop a reference | Earlier / Remove | — |
+| Put a setting back to the family's default | Reset to 28 (under the label, only when changed) | — |
 | Discretion mode (Phase 9) | Cover images (header switch) | Covered tiles read *Show image 1*; prompts *Show prompt* |
 
 "Keep" and "Save to Photos" are deliberately different words. Keeping is about retention inside Degas; Save to Photos exports to the phone.
@@ -262,7 +263,7 @@ Built. Two new families, found under the Model button like Qwen. They need no ne
 |---|---|---|
 | `Sheet` | Phase 1 | Bottom sheet; Escape and scrim close it; focus returns to the opener |
 | `SessionChip`, `SessionSheet` | Phase 1 | |
-| `SchemaForm` | Phase 1 | Prompt block + settings rows; `leadingRows` slot for non-schema rows |
+| `SchemaForm` | Phase 1 | Prompt block + settings rows; `leadingRows` slot for non-schema rows; default ticks and *Reset to …* (`resetLabel` in `schema.ts`) |
 | Sketch tile | Phase 1 | `.tile.sketch` with `--p` in 0..1; `.waiting` and `.indeterminate` variants |
 | Viewer + wall label | Phase 1 | Shared by Results and Library |
 | `AssetPicker` | Phase 2 | Models and LoRAs (ControlNets in Phase 7); search from 7 rows |

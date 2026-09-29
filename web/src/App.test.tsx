@@ -404,6 +404,23 @@ describe('App', () => {
     expect(screen.getByText(/No GPU is running/)).toBeInTheDocument()
   })
 
+  it('marks the defaults and resets a setting to its default', async () => {
+    mockApi()
+    const user = userEvent.setup()
+    renderApp()
+    const steps = await screen.findByRole('slider', { name: /Steps/ })
+    expect(screen.getByRole('button', { name: '1024×1024, default' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Reset / })).not.toBeInTheDocument()
+
+    fireEvent.change(steps, { target: { value: '42' } })
+    const reset = screen.getByRole('button', { name: 'Reset Steps to 30' })
+    expect(reset).toHaveTextContent('Reset to 30')
+
+    await user.click(reset)
+    expect(steps).toHaveValue('30')
+    expect(screen.queryByRole('button', { name: /^Reset / })).not.toBeInTheDocument()
+  })
+
   it('submits a job and confirms it was queued', async () => {
     const submitted: unknown[] = []
     mockApi({
