@@ -837,6 +837,7 @@ describe('App', () => {
           min_gpu: 'L4',
           modes: ['t2i', 'edit', 'inpaint'],
           model_dir: null,
+          max_refs: 9,
           size_constraints: {
             multiple_of: 32,
             min_pixels: 262144,
@@ -927,6 +928,66 @@ describe('App', () => {
       model: { path: 'models/qwen21/Qwen-Image-2.1' },
       inputs: { source: 'sha256:abc', refs: ['sha256:abc', 'sha256:d2'] },
     })
+  })
+
+  it("stops adding images at the model's limit", async () => {
+    const klein = {
+      id: 'klein',
+      label: 'FLUX.2 [klein]',
+      media: 'image',
+      lora_format: 'single',
+      variants: [
+        {
+          id: '9b',
+          label: 'FLUX.2 [klein] 9B',
+          min_gpu: 'L4',
+          modes: ['edit'],
+          model_dir: null,
+          max_refs: 3,
+          size_constraints: {
+            multiple_of: 16,
+            min_pixels: 262144,
+            max_pixels: 4194304,
+            presets: [[1024, 1024]],
+          },
+        },
+      ],
+    }
+    mockApi({
+      'GET /api/families': () => [...FAMILIES, klein],
+      'GET /api/families/klein/schema': () => SCHEMA,
+      'GET /api/assets': () => [
+        ...ASSETS,
+        {
+          path: 'models/klein/FLUX.2-klein-9B',
+          family: 'klein',
+          kind: 'model',
+          size: 35e9,
+          sidecar: null,
+          preview_thumb: null,
+        },
+      ],
+    })
+    const image = (sha: string) => ({ sha, width: 640, height: 480 })
+    localStorage.setItem(
+      'degas.create.draft',
+      JSON.stringify({
+        family: 'klein',
+        families: {
+          klein: {
+            model: 'models/klein/FLUX.2-klein-9B',
+            mode: 'edit',
+            loras: [],
+            params: { prompt: 'make it night', width: 1024, height: 1024 },
+            source: image('abc'),
+            refs: [image('r1'), image('r2'), image('r3')],
+          },
+        },
+      }),
+    )
+    renderApp()
+    expect(await screen.findByRole('button', { name: 'Add image' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Crop image 4' })).toBeInTheDocument()
   })
 
   it('finds a described selection without submitting the Create form', async () => {

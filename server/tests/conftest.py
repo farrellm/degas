@@ -161,7 +161,9 @@ class FakeWan:
 
 
 class FakeQwen:
-    """Records the sizes of the condition images (source first, then references) and mask."""
+    """Records the sizes of the condition images (source first, then references) and mask.
+
+    Also stands in for FLUX.1 and FLUX.2 [klein], recording the assets each job names."""
 
     def __init__(self) -> None:
         self.calls: list[dict[str, Any]] = []
@@ -169,6 +171,8 @@ class FakeQwen:
     def run(self, spec: dict[str, Any], seeds: list[int], ctx: RunContext) -> Iterator[Output]:
         inputs = spec.get("inputs") or {}
         staged: dict[str, Any] = {"mode": spec["mode"], "images": []}
+        if spec.get("config"):
+            staged["config"] = spec["config"]["path"]
         for ref in [inputs.get("source"), *(inputs.get("refs") or [])]:
             if ref:
                 with Image.open(ctx.blob(ref)) as im:
@@ -246,6 +250,8 @@ class Harness:
         self.runner = FakeSdxl()
         self.wan = FakeWan()
         self.qwen = FakeQwen()
+        self.flux = FakeQwen()
+        self.klein = FakeQwen()
         self.sam = FakeSam()
         self.trace = FakeTrace()
         self.worker_paths = Paths(home=tmp_path / "vm", models=tmp_path / "vm-models")
@@ -264,7 +270,13 @@ class Harness:
         rclone.chmod(rclone.stat().st_mode | stat.S_IEXEC)
         self.worker_app = create_worker_app(
             self.worker_paths,
-            {"sdxl": runner_factory, "wan22": lambda: self.wan, "qwen21": lambda: self.qwen},
+            {
+                "sdxl": runner_factory,
+                "wan22": lambda: self.wan,
+                "qwen21": lambda: self.qwen,
+                "flux1": lambda: self.flux,
+                "klein": lambda: self.klein,
+            },
             rclone=str(rclone),
             exit_process=exit_process,
             preprocessors={
@@ -398,6 +410,27 @@ QWEN = {
     "drive_file_id": "q21",
     "size": 10,
 }
+FLUX1 = {
+    "path": "models/flux1/flux1-dev-fp8.safetensors",
+    "family": "flux1",
+    "kind": "model",
+    "drive_file_id": "fx1",
+    "size": 12,
+}
+FLUX1_BASE = {
+    "path": "configs/flux1/FLUX.1-dev",
+    "family": "flux1",
+    "kind": "config",
+    "drive_file_id": "fx1c",
+    "size": 11,
+}
+KLEIN = {
+    "path": "models/klein/FLUX.2-klein-9B",
+    "family": "klein",
+    "kind": "model",
+    "drive_file_id": "k9",
+    "size": 35,
+}
 WAN_I2V = {
     "path": "models/wan22/i2v-a14b/Wan2.2-I2V-A14B-Diffusers",
     "family": "wan22",
@@ -420,6 +453,9 @@ def client(harness: Harness) -> Iterator[TestClient]:
                 WAN_5B,
                 WAN_I2V,
                 QWEN,
+                FLUX1,
+                FLUX1_BASE,
+                KLEIN,
                 INPAINT_MODEL,
                 SAM,
                 DEPTH,

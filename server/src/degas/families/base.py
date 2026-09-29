@@ -24,6 +24,11 @@ class Variant:
     model_dir: str | None = None
     # Overrides the family's LoRA format (Wan 2.2: the 5B takes single files, A14B pairs).
     lora_format: Literal["single", "paired_hi_lo"] | None = None
+    # How many reference images an edit reads after its source (0: none).
+    max_refs: int = 0
+    # References bigger than this are scaled down to it and smaller ones kept as they are.
+    # None: the pipeline scales each to the output's pixel count (Qwen).
+    ref_max_pixels: int | None = None
 
 
 @dataclass(frozen=True)
@@ -70,6 +75,8 @@ def describe(family: FamilyDescriptor) -> dict[str, Any]:
                 "modes": list(v.modes),
                 "model_dir": v.model_dir,
                 "lora_format": v.lora_format or family.lora_format,
+                "max_refs": v.max_refs,
+                "ref_max_pixels": v.ref_max_pixels,
                 "size_constraints": family.size_constraints(v.id).__dict__,
             }
             for v in family.variants
@@ -129,6 +136,21 @@ def validate_inputs(inputs: Any, mode: str) -> dict[str, Any]:
             raise SpecError("extends: expected a sha256 reference")
         out["extends"] = extends
     return out
+
+
+def validate_refs(refs: Any, limit: int) -> list[str]:
+    """The reference images after the source: `["sha256:…", …]`, in the order the prompt
+    numbers them (the source is image 1)."""
+    if refs is None:
+        return []
+    if not isinstance(refs, list):
+        raise SpecError("refs: expected a list")
+    if len(refs) > limit:
+        raise SpecError(f"At most {limit} images can go with the source")
+    for n, ref in enumerate(refs, 2):
+        if not isinstance(ref, str) or not SHA_REF.match(ref):
+            raise SpecError(f"Image {n}: expected a sha256 reference")
+    return list(refs)
 
 
 MIN_PLACE = 64

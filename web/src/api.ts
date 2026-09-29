@@ -8,6 +8,10 @@ export interface Variant {
   /** Drive folder of this variant's models, when the family has several variants. */
   model_dir: string | null
   lora_format: 'single' | 'paired_hi_lo'
+  /** How many images an edit reads after its source (0: none). */
+  max_refs: number
+  /** References are scaled down to this and never up; null: to the output's pixel count. */
+  ref_max_pixels?: number | null
   size_constraints: {
     multiple_of: number
     min_pixels: number
@@ -144,7 +148,7 @@ export type Fit = 'crop' | 'pad' | 'stretch'
 export interface Inputs {
   /** `sha256:…` of the source image (i2i, edit, inpaint, outpaint, i2v). */
   source?: string
-  /** Qwen edit and inpaint: `sha256:…` of the images after the source, in reading order. */
+  /** Edit (and Qwen's inpaint): `sha256:…` of the images after the source, in reading order. */
   refs?: string[]
   /** `sha256:…` of the inpaint mask, painted over the source (white is redrawn). */
   mask?: string

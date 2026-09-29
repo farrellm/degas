@@ -83,7 +83,7 @@ One name per action, used in buttons, confirmations and empty states:
 | Make a control image | As is / Depth / Pose / Edges | Tracing on the GPU… |
 | Limit a unit to part of the image | Limit to an area / Edit area | — |
 | Drop a unit | Remove this ControlNet | — |
-| Add a reference image (Qwen edit) | Add image (Images row) | — |
+| Add a reference image (Qwen or FLUX.2 [klein] edit) | Add image (Images row) | — |
 | Reorder or drop a reference | Earlier / Remove | — |
 | Discretion mode (Phase 9) | Cover images (header switch) | Covered tiles read *Show image 1*; prompts *Show prompt* |
 
@@ -247,6 +247,14 @@ Built. For the subway or the couch: a switch in the header, left of the session 
 - **Covering again.** Closing the viewer, changing tabs, and leaving the app cover everything.
 - **App switcher.** When the app loses focus, a plain paper shield with the wordmark covers the screen. It's set on the DOM directly, not through React, so it paints as soon as possible. It drops when the app has focus again. A share sheet or photo picker also raises it, but only hiding the app covers what you'd uncovered. iOS may take its snapshot before the shield paints, so covered is also the resting state: at worst, the snapshot shows what you uncovered just before leaving.
 - **Notifications.** While the mode is on, the service worker drops the body (the prompt, or an error) and keeps the title, *2 images finished*.
+
+### Phase 10: Flux
+
+Built. Two new families, found under the Model button like Qwen. They need no new widgets, because each form is built from its family's schema.
+
+- **FLUX.1 [dev]** has only *From text*. Its settings are *Guidance* (3.5), *Steps* (28) and the size. There's no *Negative prompt* and no *CFG*, because the model is guidance-distilled, and the Guidance field says so.
+- **FLUX.2 [klein]** has only *Edit*. Its settings are *Steps* (4, and the field says the model is distilled to 4) and the size. The *Images* row takes up to 3 images after the source, since klein reads 4 in all. Its *Add image* is disabled at that limit, as Qwen's is at 9: the limit comes from the variant (`max_refs`). A family whose variant declares no references has no Images row, even in *Edit*.
+- **Crop readout.** Klein scales references down to 1 megapixel and never up, so cropping a reference small doesn't bring the ochre *The model scales it up* warning that Qwen shows.
 
 ## 5. Component inventory
 

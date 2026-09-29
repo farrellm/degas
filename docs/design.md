@@ -248,6 +248,25 @@ class FamilyRunner:
 - **LoRAs:** single files, applied with the pipeline's `QwenImageLoraLoaderMixin` (transformer only).
 - **Not in v1:** transparent output, native mask editing, sizing references by their longest edge, the prompt-rewriting models, and faster attention. §12.1 says why for each, and what adding it would take.
 
+**FLUX.1 [dev] (`flux1`)**
+
+- **Model.** A 12B guidance-distilled rectified-flow transformer, T5-XXL and CLIP-L text encoders, and a 16-channel VAE. Non-commercial license. diffusers' `FluxPipeline`.
+- **Variant `dev`**, mode `t2i` only, minimum GPU L4.
+- **Checkpoints.** A single `.safetensors` file in `models/flux1/` holds the transformer. `flux1-dev-fp8.safetensors` from `Kijai/flux-fp8` (11.9 GB, fp8 e4m3fn) is the one to use. Comfy-Org's file of the same name (17.2 GB) bundles an fp8 T5, CLIP and the VAE with the transformer; it loads too, but only its transformer is used, so its extra 5 GB is copied for nothing. Civitai fine-tunes load the same way. The transformer is loaded with `FluxTransformer2DModel.from_single_file`. Everything else comes from `configs/flux1/FLUX.1-dev/`, the official diffusers folder without the transformer's weights (about 10 GB, mostly T5), which the job names as its `config`. A whole diffusers folder in `models/flux1/` loads by itself with no `config`.
+- **fp8.** `from_single_file` casts fp8 weights up to bf16, which would make the transformer 24 GB again. The runner reads the checkpoint's header (`degas_worker/safetensors_info.py`). If the transformer blocks are stored in fp8, it calls `enable_layerwise_casting(storage_dtype=float8, compute_dtype=bfloat16)`, so the weights stay 12 GB on the GPU and each layer is cast up as it runs. Casting fp8 weights up and back loses nothing. A bf16 transformer that wouldn't fit the GPU even by itself (an L4) is stored in fp8 too, which does lose a little precision. Placement then follows the rule the Qwen runner uses (`families/offload.py`): model CPU offload when the weights exceed 70% of the GPU. On an L4 that means T5 moves off the GPU before denoising; on an A100 everything stays on the GPU.
+- **Parameters:** prompt, width and height (multiples of 16, up to 2.4 MP; about-1-megapixel presets plus 1536²), steps (default 28), *Guidance* (the distilled guidance, default 3.5) and seed. The model is guidance-distilled, so there's no negative prompt and no CFG.
+- **LoRAs:** single files, in `loras/flux1/`. The kohya, xlabs and diffusers formats all load through `FluxLoraLoaderMixin`. CLIP keys are renamed to match transformers 5's flattened `CLIPTextModel`, as for SDXL. PEFT gives a new adapter its base layer's dtype, which with fp8 storage would put the LoRA in fp8. The runner moves each adapter back to bf16 before the LoRA's weights are copied into it (`_adapters_in_bf16`). Flux Control LoRAs aren't supported.
+
+**FLUX.2 [klein] (`klein`)**
+
+- **Model.** FLUX.2 [klein] 9B: a 9B flow transformer with Qwen3-8B as its text encoder and the FLUX.2 VAE, step-distilled to 4 steps. Released January 2026 under the FLUX Non-Commercial License. diffusers' `Flux2KleinPipeline`, which is in diffusers 0.40 and in the pinned commit.
+- **Checkpoint.** The official diffusers folder `black-forest-labs/FLUX.2-klein-9B` under `models/klein/` (about 35 GB: transformer 18.2 GB, text encoder 16.4 GB, all bf16).
+- **Variant `9b`**, mode `edit` only, minimum GPU L4. It uses the same offload rule as Qwen: offloaded on an L4 or A100, and fully on the GPU on an H100.
+- **Edit.** The source is image 1 and `inputs.refs` adds up to 3 more: BFL's model table allows klein 4 images, and the pipeline itself sets no limit. The pipeline scales each condition image down to at most 1 megapixel and never up, so the crop editor doesn't warn that a small reference will be enlarged (`Variant.ref_max_pixels`). Images with alpha are flattened onto white.
+- **Parameters:** prompt, width and height (multiples of 16, up to 4 MP, default 1024²), steps (default 4) and seed. There's no CFG or negative prompt, so guidance is fixed at 1.
+- **LoRAs:** single files, in `loras/klein/`, loaded by the pipeline's `Flux2LoraLoaderMixin`.
+- **Not in v1:** `t2i` and `inpaint` (the same pipeline does text-to-image, and inpaint could work like Qwen's, as an edit pasted back through the mask); the 4B and undistilled base models.
+
 ### 4.4 Preprocessors
 
 Preprocessors run on the GPU, in the worker, as a family-independent registry:
@@ -270,10 +289,14 @@ MyDrive/degas/
       inpaint/     inpainting checkpoints (9-channel UNet): the `inpaint` variant
     wan22/         <variant>/…   (diffusers-format directories)
     qwen21/        Qwen-Image-2.1/ (the official diffusers folder)
+    flux1/         *.safetensors (single-file transformers, e.g. flux1-dev-fp8)
+    klein/         FLUX.2-klein-9B/ (the official diffusers folder)
   loras/
     sdxl/          *.safetensors (+ *.yaml, preview *.jpg/png)
     wan22/         *.safetensors; A14B pairs named *_high_noise.safetensors / *_low_noise.safetensors or declared in sidecar
     qwen21/        *.safetensors
+    flux1/         *.safetensors
+    klein/         *.safetensors
   controlnets/
     sdxl/          *.safetensors or diffusers dirs
   preprocessors/   one folder per preprocessor: sam3/ and depth-anything-v2/ (transformers folders), dwpose/ (two ONNX files)
@@ -282,6 +305,8 @@ MyDrive/degas/
   configs/
     sdxl/          stable-diffusion-xl-base-1.0/, stable-diffusion-xl-1.0-inpainting-0.1/
                    (the repos' configs and tokenizers, no weights)
+    flux1/         FLUX.1-dev/ (the diffusers folder without transformer weights: T5, CLIP,
+                   VAE, scheduler, and transformer/config.json)
 ```
 
 **Sidecar YAML** (optional; every field is optional):
@@ -583,6 +608,12 @@ Phases are numbered from 0.
 
 8. **Qwen-Image 2.1.** 🚧 In progress. The `qwen21` family (§4.3): `t2i`, `edit` with up to 10 ordered images (the source plus `inputs.refs`), and `inpaint` as an edit pasted back through the mask. The server validates the references, checks they're still stored, and keeps them (and a cropped reference's original) with the job and any kept item. The runner loads `QwenImage21Pipeline` from the diffusers folder in Drive and offloads to the CPU when the weights don't fit. It maps CFG to `true_cfg_scale` and the schedule to the scheduler's settings, and runs the ported DeGrid filter. The bootstrap installs a pinned diffusers commit with the pipeline when the image lacks it. In the UI, *Edit* is a mode chip, and an *Images* row under Source adds, crops, orders and removes references. A reference's crop is free and keeps its own size. Live test to do, on an L4 (high memory) and an A100: cold copy, load, and per-image time at 1K and 2K; a 40-step Default against 30-step Beta comparison to settle the default schedule; the grid filter on skin and hair; and SDXL and Wan on the pinned diffusers.
 9. **Discretion.** ✅ Built, not yet tested on an installed iPhone. A header switch (`web/src/discretion.ts`, kept in `localStorage` and set on `<html data-discreet>` by an inline script before the first paint) covers images and prompts with a blur until tapped; ux.md Phase 9 has the behaviour. Uncovered items are held in a module store and cleared by closing the viewer, a tab change or hiding the app. On `blur`, `visibilitychange` and `pagehide` a CSS-only shield covers the viewport for the app switcher. The page tells the service worker the mode (`postMessage`, kept in the `degas-prefs` cache, which activation no longer deletes), and pushes then leave out the body. `App.test.tsx` now renders under `StrictMode`, as `main.tsx` does. To check on the phone: whether the shield is in the switcher's snapshot, from the feed and from an uncovered viewer; scrolling with ~100 covered tiles (if CSS blur is slow, use a tiny thumbnail scaled up instead); and the lock-screen notification text.
+10. **Flux.** ✅ Built, not yet tested on a live GPU. Two families (§4.3): `flux1`, FLUX.1 [dev] for text-to-image, and `klein`, FLUX.2 [klein] 9B for editing. A FLUX.1 checkpoint is a single-file transformer. The base folder in `configs/flux1/FLUX.1-dev/` supplies the rest and is the job's `config`, so it's checked at submit and prefetched like SDXL's. A checkpoint stored in fp8 stays fp8 on the GPU through layerwise casting. Klein reads the source and up to 3 references. Variants now declare `max_refs` (the web *Images* row stops there) and `ref_max_pixels`. `validate_refs` moved to `families/base.py`, and the offload rule to `degas_worker/families/offload.py`. Both models are gated on Hugging Face: accept their licenses, download with an HF token, and upload with rclone, creating the Drive folders first. Live test to do, on an L4 (high memory) and an A100:
+    - load time, peak memory and per-image time for `flux1-dev-fp8` at 1024², 28 steps;
+    - fp8 against bf16 on a fixed seed (an A100 holds the bf16 folder);
+    - a kohya-format Civitai LoRA on the fp8 transformer, checking that the adapters stay bf16 and the output is sane;
+    - that layerwise casting works under model CPU offload;
+    - klein edits with 0 and 3 references, and their time on an L4, where it offloads.
 
 ## 11. Risks and open questions
 
@@ -598,12 +629,13 @@ Phases are numbered from 0.
 | Session bootstrap time | Measured: `colab new` 3.5 s (CPU), SSH 1.5 s, and packages are preinstalled, so bootstrap takes about 10–20 s before model copy | Good enough; the model copy dominates |
 | Web Push on iOS | Needs a home-screen install and iOS 16.4+ | Document it; the in-app SSE path works regardless |
 | diffusers API churn for newer Wan and ControlNet classes | Upgrades break the worker | Pin versions in `requirements-worker.txt`; record versions in each saved config |
+| fp8 layerwise casting is newer diffusers code, used here with model CPU offload and PEFT LoRAs | FLUX.1 fails to load a LoRA, or runs slowly, on an L4 | `_adapters_in_bf16` keeps adapters out of fp8; the live test covers offload and a LoRA; on an A100 and up, a bf16 folder model skips fp8 entirely |
 | Qwen-Image 2.1 needs diffusers `main` (not in 0.40.0) | The pinned commit also runs SDXL and Wan, and could break them | Install the pin only when the image's diffusers lacks `QwenImage21Pipeline`; re-test SDXL and Wan on it; move to the first release that has the pipeline |
 
 ## 12. Future work
 
 - Video control for Wan 2.2 (VACE / Fun-Control): pose- or depth-driven video, reusing the preprocessors and control-unit UI.
-- Additional families such as Flux, SD3.5 and Hunyuan/LTX video, added through the plugin interface.
+- Additional families such as SD3.5, FLUX.2 [dev] and Hunyuan/LTX video, added through the plugin interface.
 - Upscaling / hires-fix passes, and video frame interpolation.
 - Live latent previews during sampling using TAESD / TAEW.
 - Regional LoRA.

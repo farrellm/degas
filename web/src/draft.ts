@@ -45,7 +45,7 @@ export interface FamilyDraft {
   place?: Place | null
   /** ControlNet units (SDXL). */
   control?: ControlUnit[]
-  /** Qwen edit and inpaint: the images after the source, in the order the model reads them. */
+  /** Edit (and Qwen's inpaint): the images after the source, in the order the model reads them. */
   refs?: Source[]
 }
 
