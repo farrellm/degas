@@ -231,7 +231,7 @@ The plan as written before building:
 The plan:
 
 - **A second image family, no new screen.** Under Image, the Model picker lists SDXL checkpoints and Qwen models together, each row naming its family; choosing one from the other family switches Create to it, carrying the prompt. Qwen's mode chips are *From text*, *Edit* and *Inpaint*. The form comes from the schema, so CFG, Steps, Schedule and *Remove VAE grid* need no new widgets. CFG's note says what the number does: *Above 1 uses the negative prompt and takes twice as long.*
-- **Images row.** In *Edit* and *Inpaint*, a row under Source lists the other images the prompt can refer to, as thumbnails numbered from 2. The source is image 1, and the Source row says so (*Image 1*). *Add image* opens the image picker. Each thumbnail has *Earlier* (move up one) and *Remove*. There are up to 9, and the row says *Refer to them by number: "the jacket from image 2".* The references are not cropped: the model takes each at its own shape, so there's no Fit row for them.
+- **Images row.** In *Edit* and *Inpaint*, a row under Source lists the other images the prompt can refer to, as thumbnails numbered from 2. The source is image 1, and the Source row says so (*Image 1*). *Add image* opens the image picker. Each thumbnail has *Crop*, *Earlier* (move up one) and *Remove*. There are up to 9, and the row says *Refer to them by number: "the jacket from image 2".* A reference has no Fit row, because the model takes each at its own shape. Its *Crop* (on the row, or in the picker) opens the crop editor without *Match size*: the crop starts as the whole image, is *Free* by default, and keeps its own pixel size. The readout turns ochre when the model will scale the crop up more than 1.5× (to the output's pixel count): *The model scales it up 2.4×, so fine detail will be soft.*
 - **Inpaint** reads as it does for SDXL (Source, Mask), plus the Images row. There's no *Denoise strength*, because the model redraws the whole picture and the mask decides what is kept.
 - **Size.** The presets come in two tiers, 1K and 2K. 2048² is selected by default. The GPU warning under Model already covers a T4 session.
 - **Nothing is rose that isn't changing:** reference thumbnails are ordinary image thumbnails, not hatched.
@@ -251,12 +251,12 @@ The plan:
 | `PromptSheet` | Phase 3 | Saved prompts from the prompt block |
 | `LibraryScreen` | Phase 3 | Images / Prompts, search, day-grouped grid |
 | `ImagePicker` | Phase 4 | Recent, Library, Photos, Link; frame choice for videos |
-| `CropEditor` | Phase 4 | Full screen; geometry in `crop.ts` |
+| `CropEditor` | Phase 4 | Full screen; geometry in `crop.ts`; `free` for references (Phase 8) |
 | `MaskEditor`, `MaskThumb` | Phase 6 | Full screen, canvas; helpers in `mask.ts`; SAM 3 Select |
 | `PlaceEditor` | Phase 6 | Outpaint placement; geometry in `place.ts` |
 | `ControlList`, `ControlThumb` | Phase 7 | Unit rows; the chalk-study thumbnail |
 | `ControlEditor` | Phase 7 | Sheet; hosts the image picker, crop, area and model pickers in its place; `StepRange`; helpers in `control.ts` |
-| `RefList` | Phase 8 | Ordered reference images for Qwen edits; *Earlier* and *Remove* |
+| `RefList` | Phase 8 | Ordered reference images for Qwen edits; *Crop*, *Earlier* and *Remove* |
 
 ## 6. Quality floor
 

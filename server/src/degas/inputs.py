@@ -165,7 +165,7 @@ class Inputs:
 
     async def resolve(self, spec: dict[str, Any]) -> None:
         """Fit the source (and its mask) and every control image (and its area) to the output
-        size, and record every transform in the spec (§6.5).
+        size, and record every transform in the spec, references' crops included (§6.5).
 
         After this the spec has no `fit`, its source is exactly the output size (for an
         outpaint, the size it is placed at), each control image exactly the output size, and
@@ -193,11 +193,15 @@ class Inputs:
                 del inputs["mask"]
             elif await self._mask_empty(inputs["mask"]):
                 raise MediaError("The mask is empty. Paint the area to redraw.")
-        # References go as they are: the pipeline sizes each one itself.
+        # References go as they are: the pipeline sizes each one itself. A cropped one keeps
+        # its original, so a remix can crop it again.
         for n, value in enumerate(inputs.get("refs") or [], 2):
             sha = unref(value)
             if self.blobs.is_video(sha) or self.blobs.image_size(sha) is None:
                 raise MediaError(f"Image {n} is no longer stored. Choose it again.")
+            record = self.db.get_transform(sha)
+            if record and self.blobs.path(record["original"]):
+                transforms[value] = {"original": ref(record["original"]), "ops": record["ops"]}
         for n, unit in enumerate(spec.get("control") or [], 1):
             unit["image"], mask = await self._fit(
                 unit["image"],

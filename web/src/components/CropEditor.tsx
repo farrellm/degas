@@ -18,9 +18,11 @@ import {
   dragCorner,
   exactCrop,
   frameFor,
+  FREE_ASPECTS,
   frameOf,
   intersect,
   mirror,
+  modelUpscale,
   outputSize,
   parseOps,
   ratio,
@@ -45,6 +47,11 @@ interface Props {
   /** The form's output size. */
   target: Size
   constraints: Constraints
+  /**
+   * A free crop, for a reference: any shape, kept at its own size, because the model sizes
+   * each reference itself (to the output's pixel count).
+   */
+  free?: boolean
   onApply: (image: BlobInfo) => void
   onCancel: () => void
 }
@@ -75,7 +82,7 @@ interface CornerDrag {
 }
 
 /** Full-screen crop, rotate and flip on the image well (design §8.2, ux.md Phase 4). */
-export function CropEditor({ sha, target, constraints, onApply, onCancel }: Props) {
+export function CropEditor({ sha, target, constraints, free = false, onApply, onCancel }: Props) {
   const history = useQuery({
     queryKey: ['transform', sha],
     queryFn: () => api.getTransform(sha),
@@ -126,16 +133,22 @@ export function CropEditor({ sha, target, constraints, onApply, onCancel }: Prop
 
   const targetRatio = target.w / target.h
 
-  // Until edited: the earlier crop of a derived image, else the target's shape, centred.
+  /** Where a crop starts: all of a free crop's image, else the target's shape, centred. */
+  const initial = (image: Size): Pick<Edit, 'aspect' | 'crop'> =>
+    free
+      ? { aspect: 'free', crop: { x: 0, y: 0, ...image } }
+      : { aspect: 'match', crop: centered(image, targetRatio) }
+
+  // Until edited: the earlier crop of a derived image, else where a crop starts.
   let edit = edited
   if (!edit && natural && history.data) {
     const { rot, flip, crop } = parseOps(history.data.ops)
     const img = rotated(natural, rot)
     if (crop) {
-      const match = Math.abs(crop.w / crop.h / targetRatio - 1) < 0.01
+      const match = !free && Math.abs(crop.w / crop.h / targetRatio - 1) < 0.01
       edit = { rot, flip, aspect: match ? 'match' : 'free', crop }
     } else {
-      edit = { rot, flip, aspect: 'match', crop: centered(img, targetRatio) }
+      edit = { rot, flip, ...initial(img) }
     }
   }
 
@@ -166,8 +179,9 @@ export function CropEditor({ sha, target, constraints, onApply, onCancel }: Prop
   const frame = corner?.frame ?? (edit ? frameFor(stage, edit.crop.w / edit.crop.h) : null)
   const view = corner?.view ?? (edit && frame ? viewFor(edit.crop, frame) : null)
   const crop = view && frame && img ? cropOf(view, frame, img) : null
-  const out = crop && edit ? outputSize(crop, edit.aspect, target, constraints) : null
-  const scale = crop && out ? upscale(crop, out) : 1
+  const out =
+    crop && edit ? (free ? crop : outputSize(crop, edit.aspect, target, constraints)) : null
+  const scale = crop && out ? (free ? modelUpscale(crop, target) : upscale(crop, out)) : 1
 
   /** Move or zoom the image under the frame. */
   const moveView = (change: (v: View) => View) => {
@@ -191,8 +205,12 @@ export function CropEditor({ sha, target, constraints, onApply, onCancel }: Prop
     if (!edit || !natural) return
     const rot = ((edit.rot + 270) % 360) as Rotation // a quarter turn anticlockwise
     const im = rotated(natural, rot)
-    const r = ratio(edit.aspect, target) ?? edit.crop.h / edit.crop.w
-    setEdit({ ...edit, rot, crop: centered(im, r) })
+    const r = ratio(edit.aspect, target)
+    if (free && r === null) {
+      setEdit({ ...edit, rot, crop: { x: 0, y: 0, ...im } })
+      return
+    }
+    setEdit({ ...edit, rot, crop: centered(im, r ?? edit.crop.h / edit.crop.w) })
   }
 
   const flip = () => {
@@ -202,7 +220,7 @@ export function CropEditor({ sha, target, constraints, onApply, onCancel }: Prop
 
   const reset = () => {
     if (!natural) return
-    setEdit({ rot: 0, flip: false, aspect: 'match', crop: centered(natural, targetRatio) })
+    setEdit({ rot: 0, flip: false, ...initial(natural) })
   }
 
   const point = (e: ReactPointerEvent) => {
@@ -383,7 +401,7 @@ export function CropEditor({ sha, target, constraints, onApply, onCancel }: Prop
 
       <div className="editor-controls">
         <div className="aspect-chips" role="group" aria-label="Shape">
-          {ASPECTS.map((a) => (
+          {(free ? FREE_ASPECTS : ASPECTS).map((a) => (
             <button
               key={a.id}
               type="button"
@@ -429,7 +447,8 @@ export function CropEditor({ sha, target, constraints, onApply, onCancel }: Prop
             {scale > UPSCALE_WARN && (
               <>
                 <br />
-                Scaled up {scale.toFixed(1)}×, so fine detail will be soft.
+                {free ? 'The model scales it up' : 'Scaled up'} {scale.toFixed(1)}×, so fine detail
+                will be soft.
               </>
             )}
           </p>

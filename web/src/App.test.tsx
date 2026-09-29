@@ -818,6 +818,7 @@ describe('App', () => {
 
   it('switches to Qwen from the model picker and edits with ordered images', async () => {
     const submitted: { spec: Record<string, unknown> }[] = []
+    const transforms: { ops: unknown[] }[] = []
     const qwen = {
       id: 'qwen21',
       label: 'Qwen-Image 2.1',
@@ -856,6 +857,11 @@ describe('App', () => {
         },
       ],
       'GET /api/results': () => ({ results: [RESULT, harbour], cursor: null }),
+      'GET /api/blobs/def/transform': () => ({ original: 'def', ops: [] }),
+      'POST /api/blobs/def/transform': (init) => {
+        transforms.push(JSON.parse(init?.body as string) as (typeof transforms)[number])
+        return { sha256: 'd2', media_type: 'image/png', width: 640, height: 480 }
+      },
       'POST /api/jobs': (init) => {
         submitted.push(JSON.parse(init?.body as string) as (typeof submitted)[number])
         return { id: 'j2' }
@@ -877,14 +883,33 @@ describe('App', () => {
     await user.click(await within(picker).findByRole('button', { name: 'Image: a lighthouse' }))
     await user.click(within(picker).getByRole('button', { name: 'Use image' }))
 
-    for (const name of ['Image: a harbour', 'Image: a lighthouse']) {
-      await user.click(screen.getByRole('button', { name: 'Add image' }))
-      picker = screen.getByRole('dialog', { name: 'Choose image' })
-      expect(within(picker).queryByRole('button', { name: 'Crop' })).not.toBeInTheDocument()
-      await user.click(await within(picker).findByRole('button', { name }))
-      await user.click(within(picker).getByRole('button', { name: 'Use image' }))
-    }
+    // A reference crops freely, and keeps its own size: the model sizes it.
+    await user.click(screen.getByRole('button', { name: 'Add image' }))
+    picker = screen.getByRole('dialog', { name: 'Choose image' })
+    await user.click(await within(picker).findByRole('button', { name: 'Image: a harbour' }))
+    await user.click(within(picker).getByRole('button', { name: 'Crop' }))
+    const editor = await screen.findByRole('dialog', { name: 'Crop' })
+    const img = editor.querySelector('img')
+    if (!img) throw new Error('no image in the editor')
+    Object.defineProperty(img, 'naturalWidth', { value: 640 })
+    Object.defineProperty(img, 'naturalHeight', { value: 480 })
+    fireEvent.load(img)
+    expect(within(editor).getByRole('button', { name: 'Free' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    expect(within(editor).queryByRole('button', { name: /^Match/ })).not.toBeInTheDocument()
+    expect(await within(editor).findByText(/640 × 480 from 640 × 480/)).toBeInTheDocument()
+    expect(within(editor).getByText(/The model scales it up 1\.8×/)).toBeInTheDocument()
+    await user.click(within(editor).getByRole('button', { name: 'Apply' }))
+    expect(transforms).toEqual([{ ops: [] }])
+
+    await user.click(screen.getByRole('button', { name: 'Add image' }))
+    picker = screen.getByRole('dialog', { name: 'Choose image' })
+    await user.click(await within(picker).findByRole('button', { name: 'Image: a lighthouse' }))
+    await user.click(within(picker).getByRole('button', { name: 'Use image' }))
     expect(screen.getByText('640 × 480')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Crop image 3' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Move image 2 earlier' })).toBeDisabled()
     await user.click(screen.getByRole('button', { name: 'Move image 3 earlier' }))
 
@@ -894,7 +919,7 @@ describe('App', () => {
       family: 'qwen21',
       mode: 'edit',
       model: { path: 'models/qwen21/Qwen-Image-2.1' },
-      inputs: { source: 'sha256:abc', refs: ['sha256:abc', 'sha256:def'] },
+      inputs: { source: 'sha256:abc', refs: ['sha256:abc', 'sha256:d2'] },
     })
   })
 

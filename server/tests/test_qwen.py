@@ -97,6 +97,28 @@ def test_edit_fits_the_source_and_sends_references_as_they_are(
     assert saved["config"]["inputs"]["refs"] == refs
 
 
+def test_a_cropped_reference_keeps_its_original(client: TestClient, harness: Harness) -> None:
+    src = upload(client, image(1024, 1024))
+    photo = upload(client, image(800, 600))
+    crop = [{"op": "crop", "x": 100, "y": 50, "w": 300, "h": 400}]
+    face = client.post(f"/api/blobs/{photo['sha256']}/transform", json={"ops": crop}).json()
+    spec = {
+        **SPEC,
+        "mode": "edit",
+        "params": {"prompt": "her face from image 2", "width": 1024, "height": 1024},
+        "inputs": {"source": f"sha256:{src['sha256']}", "refs": [f"sha256:{face['sha256']}"]},
+    }
+    done = run(client, spec)
+    assert harness.qwen.calls[-1]["images"] == [(1024, 1024), (300, 400)]
+    assert done["spec"]["inputs"]["transforms"] == {
+        f"sha256:{face['sha256']}": {"original": f"sha256:{photo['sha256']}", "ops": crop}
+    }
+    # Keeping the result keeps the original too.
+    result = results(client, done["id"])[0]
+    saved = client.post(f"/api/results/{result['id']}/save").json()
+    assert photo["sha256"] in input_blobs(saved["config"])
+
+
 def test_inpaint_sends_the_mask_and_references(client: TestClient, harness: Harness) -> None:
     src = upload(client, image(1024, 1024))
     mask = put_mask(client, src["sha256"], mask_png(1024, 1024, (0, 0, 512, 512)))

@@ -42,6 +42,9 @@ export const ASPECTS: { id: Aspect; label: string }[] = [
   { id: 'free', label: 'Free' },
 ]
 
+/** Aspect choices for a free crop, which has no form size to match. */
+export const FREE_ASPECTS = ASPECTS.filter((a) => a.id !== 'match')
+
 // Beyond this, the crop is upscaled enough that the readout warns.
 export const UPSCALE_WARN = 1.5
 const FRAME_MARGIN = 20
@@ -177,6 +180,11 @@ export function outputSize(crop: Rect, aspect: Aspect, target: Size, c: Constrai
 /** How much the crop is scaled up to reach the output size (1 = not at all). */
 export function upscale(crop: Rect, out: Size): number {
   return Math.max(out.w / crop.w, out.h / crop.h)
+}
+
+/** How much the model scales a reference up, sizing it to the output's pixel count. */
+export function modelUpscale(crop: Size, target: Size): number {
+  return Math.sqrt((target.w * target.h) / (crop.w * crop.h))
 }
 
 /** Operations for the server, leaving out any that do nothing. */

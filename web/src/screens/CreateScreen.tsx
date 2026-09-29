@@ -98,7 +98,9 @@ function CreateForm({
   const [seedMode, setSeedMode] = useState<SeedMode>(draft.seedMode)
   const [queued, setQueued] = useState<number | null>(null)
   const [picker, setPicker] = useState<'model' | 'lora' | 'prompts' | 'image' | 'ref' | null>(null)
-  const [cropping, setCropping] = useState<string | null>(null)
+  // The image being cropped, and for a reference, its place in the Images row (one past the
+  // end adds it).
+  const [cropping, setCropping] = useState<{ sha: string; ref?: number } | null>(null)
   const [sourceGone, setSourceGone] = useState(false)
   const promptRef = useRef<HTMLTextAreaElement>(null)
   const promptFocused = useRef(false)
@@ -335,7 +337,7 @@ function CreateForm({
             className="btn quiet small"
             disabled={sourceGone}
             onClick={() => {
-              setCropping(source.sha)
+              setCropping({ sha: source.sha })
             }}
           >
             Crop
@@ -443,6 +445,10 @@ function CreateForm({
           onChange={setRefs}
           onAdd={() => {
             setPicker('ref')
+          }}
+          onCrop={(i) => {
+            const ref = refs[i]
+            if (ref) setCropping({ sha: ref.sha, ref: i })
           }}
         />
       )}
@@ -682,7 +688,7 @@ function CreateForm({
           }}
           onCrop={(image) => {
             setPicker(null)
-            setCropping(image.sha256)
+            setCropping({ sha: image.sha256 })
           }}
           onClose={() => {
             setPicker(null)
@@ -697,6 +703,10 @@ function CreateForm({
               { sha: image.sha256, width: image.width ?? 0, height: image.height ?? 0 },
             ])
             setPicker(null)
+          }}
+          onCrop={(image) => {
+            setPicker(null)
+            setCropping({ sha: image.sha256, ref: refs.length })
           }}
           onClose={() => {
             setPicker(null)
@@ -745,11 +755,22 @@ function CreateForm({
       )}
       {cropping && variant && (
         <CropEditor
-          sha={cropping}
+          sha={cropping.sha}
           target={target}
           constraints={variant.size_constraints}
+          free={cropping.ref !== undefined}
           onApply={(image) => {
-            takeSource(image, true)
+            const at = cropping.ref
+            if (at === undefined) {
+              takeSource(image, true)
+            } else {
+              const cropped = {
+                sha: image.sha256,
+                width: image.width ?? 0,
+                height: image.height ?? 0,
+              }
+              setRefs([...refs.slice(0, at), cropped, ...refs.slice(at + 1)])
+            }
             setCropping(null)
           }}
           onCancel={() => {
