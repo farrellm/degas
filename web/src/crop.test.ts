@@ -6,7 +6,9 @@ import {
   cropOf,
   dragCorner,
   exactCrop,
+  FREE_ASPECTS,
   frameFor,
+  modelUpscale,
   outputSize,
   parseOps,
   reshape,
@@ -73,6 +75,15 @@ describe('crop geometry', () => {
       { op: 'resize', w: 480, h: 640 },
     ])
     expect(parseOps(ops)).toEqual({ rot: 90, flip: true, crop: { x: 10, y: 0, w: 600, h: 800 } })
+  })
+
+  it('keeps a free crop at its own size, and says how far the model scales it up', () => {
+    expect(FREE_ASPECTS.map((a) => a.id)).not.toContain('match')
+    const image = { w: 1000, h: 800 }
+    const crop = { x: 100, y: 50, w: 300, h: 400 }
+    expect(buildOps(0, false, crop, image, { w: 300, h: 400 })).toEqual([{ op: 'crop', ...crop }])
+    expect(modelUpscale({ w: 512, h: 512 }, { w: 2048, h: 2048 })).toBeCloseTo(4)
+    expect(modelUpscale({ w: 4096, h: 2048 }, { w: 2048, h: 2048 })).toBeLessThan(1)
   })
 
   it('reshapes a crop about its centre, staying on the image', () => {

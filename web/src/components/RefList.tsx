@@ -9,10 +9,11 @@ interface Props {
   refs: Source[]
   onChange: (refs: Source[]) => void
   onAdd: () => void
+  onCrop: (index: number) => void
 }
 
 /** The images a Qwen edit reads after the source, numbered from 2 in the order it reads them. */
-export function RefList({ refs, onChange, onAdd }: Props) {
+export function RefList({ refs, onChange, onAdd, onCrop }: Props) {
   return (
     <div className="ref-group" role="group" aria-labelledby="refs-label">
       <div className="setting">
@@ -38,6 +39,16 @@ export function RefList({ refs, onChange, onAdd }: Props) {
               <span className="ref-name">Image {n}</span>
               {ref.width > 0 && <span className="ref-meta">{size(ref.width, ref.height)}</span>}
             </span>
+            <button
+              type="button"
+              className="btn quiet small"
+              aria-label={`Crop image ${n}`}
+              onClick={() => {
+                onCrop(i)
+              }}
+            >
+              Crop
+            </button>
             <button
               type="button"
               className="btn quiet small"
