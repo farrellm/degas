@@ -51,6 +51,9 @@ CONFIGS = {
     "inpaint": "configs/sdxl/stable-diffusion-xl-1.0-inpainting-0.1",
 }
 
+# Inpainting checkpoints default to DPM++ 2M SDE.
+SAMPLER = {"base": "dpmpp_2m", "inpaint": "dpmpp_2m_sde"}
+
 # Denoise strength defaults: an inpainting checkpoint is made to redraw the mask from scratch.
 STRENGTH = {("base", "i2i"): 0.6, ("base", "inpaint"): 0.85, ("inpaint", "inpaint"): 1.0}
 
@@ -150,7 +153,7 @@ class Sdxl:
             "scheduler": {
                 "type": "string",
                 "title": "Sampler",
-                "default": "dpmpp_2m",
+                "default": SAMPLER[variant],
                 "enum": list(SCHEDULERS),
                 "x-enum-labels": list(SCHEDULERS.values()),
                 "x-widget": "select",
