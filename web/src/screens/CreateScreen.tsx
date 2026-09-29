@@ -5,7 +5,9 @@ import {
   isActive,
   isPair,
   thumbUrl,
+  type Asset,
   type BlobInfo,
+  type Family,
   type Fit,
   type LoraEntry,
   type Params,
@@ -50,6 +52,9 @@ const MODE_LABELS: Record<string, string> = {
   inpaint: 'Inpaint',
   outpaint: 'Outpaint',
 }
+
+// The order the mode chips come in; any mode not listed goes after these.
+const MODE_ORDER = Object.keys(MODE_LABELS)
 
 const MEDIA_LABELS = { image: 'Image', video: 'Video' } as const
 
@@ -112,19 +117,41 @@ function CreateForm({
   const models = assets.data?.filter(
     (a) => !!family && a.family === family.id && a.kind === 'model' && !!variantFor(a.path, family),
   )
-  // The picker offers every family that makes the same media: choosing another family's model
-  // switches to it.
+  // Every mode that a family making the same media offers. Choosing one this family can't do
+  // switches to a family that can.
   const siblings = families.data?.filter((f) => f.media === family?.media) ?? []
+  const siblingModes = new Set(siblings.flatMap((f) => f.variants.flatMap((v) => v.modes)))
+  const allModes = [
+    ...MODE_ORDER.filter((m) => siblingModes.has(m)),
+    ...[...siblingModes].filter((m) => !MODE_ORDER.includes(m)),
+  ]
+  const familyModes = new Set(family?.variants.flatMap((v) => v.modes))
+  // The mode picks the model: without one chosen, it's the chosen model's first.
+  const firstModel = chosenModel || (models?.[0]?.path ?? '')
+  const mode =
+    chosenMode && familyModes.has(chosenMode)
+      ? chosenMode
+      : ((family && firstModel ? variantFor(firstModel, family) : undefined)?.modes[0] ??
+        family?.variants[0]?.modes[0])
+  const fits = (path: string, f: Family | undefined) =>
+    !!f && !!mode && !!variantFor(path, f)?.modes.includes(mode)
+  // The picker offers every model of the same media that can do the mode: choosing another
+  // family's model switches to it.
   const pickable = assets.data?.filter((a) => {
     const f = siblings.find((s) => s.id === a.family)
-    return a.kind === 'model' && !!f && !!variantFor(a.path, f)
+    return a.kind === 'model' && fits(a.path, f)
   })
   // A model remixed from an older image may have left Drive: keep it, flagged, rather
   // than silently swapping in another.
-  const model = chosenModel || (models?.[0]?.path ?? '')
+  const model =
+    chosenModel && fits(chosenModel, family)
+      ? chosenModel
+      : (models?.find((a) => fits(a.path, family))?.path ?? '')
   const modelMissing = !!model && !!models && !models.some((m) => m.path === model)
-  const variant = (family && model ? variantFor(model, family) : undefined) ?? family?.variants[0]
-  const mode = chosenMode && variant?.modes.includes(chosenMode) ? chosenMode : variant?.modes[0]
+  const variant =
+    (family && model ? variantFor(model, family) : undefined) ??
+    family?.variants.find((v) => !!mode && v.modes.includes(mode)) ??
+    family?.variants[0]
   const needsSource = !!mode && SOURCE_MODES.has(mode)
   // Edits can read more images after the source; so does Qwen's inpaint, which is an edit.
   const maxRefs = variant?.max_refs ?? 0
@@ -251,7 +278,6 @@ function CreateForm({
   const sessionGpu = isActive(session.data) ? session.data?.session?.gpu : undefined
   const underpowered =
     !!sessionGpu && !!variant && GPUS.indexOf(sessionGpu) < GPUS.indexOf(variant.min_gpu)
-  const sourceIgnored = !!source && !!variant && !variant.modes.some((m) => SOURCE_MODES.has(m))
   const misfit =
     !!source && Math.abs(source.width / source.height / (target.w / target.h) - 1) > 0.01
   const media = [...new Set(families.data.map((f) => f.media))]
@@ -262,6 +288,48 @@ function CreateForm({
     // Before the prompt has been touched there's no cursor to honour: append.
     const at = promptFocused.current && el ? el.selectionEnd : text.length
     setParams({ ...params, prompt: insertWord(text, at, word) })
+  }
+
+  const carry = (m: string, next?: Asset) => ({
+    prompt: String(params.prompt ?? ''),
+    model: next?.path,
+    mode: m,
+    source: sourceGone ? null : source,
+    refs,
+  })
+
+  const pickModel = (path: string) => {
+    const next = family && variantFor(path, family)
+    if (next && next.lora_format !== variant?.lora_format) setLoras([])
+    setModel(path)
+  }
+
+  // A mode this model can't do takes the first model that can: from this family if it has
+  // one, else from the family used most recently that does.
+  const chooseMode = (m: string) => {
+    if (!family) return
+    const recent = loadDraft().recent
+    const rank = (f: Family) => (f.id === family.id ? -1 : recent.indexOf(f.id) + 1 || Infinity)
+    const candidates = siblings
+      .filter((f) => f.variants.some((v) => v.modes.includes(m)))
+      .sort((a, b) => rank(a) - rank(b))
+    const fitting = (f: Family) =>
+      assets.data?.find(
+        (a) =>
+          a.family === f.id && a.kind === 'model' && !!variantFor(a.path, f)?.modes.includes(m),
+      )
+    const withModel = candidates.find((f) => fitting(f))
+    const target = withModel ?? candidates[0]
+    if (!target) return
+    if (target.id !== family.id) {
+      switchFamily(target.id, carry(m, withModel && fitting(withModel)))
+      onFamily(target.id)
+      return
+    }
+    setMode(m)
+    const current = model ? variantFor(model, family) : undefined
+    const next = fitting(family)
+    if (!current?.modes.includes(m) && next) pickModel(next.path)
   }
 
   const takeSource = (image: BlobInfo, fromCrop: boolean) => {
@@ -466,7 +534,7 @@ function CreateForm({
         >
           <span className="setting-label">Model</span>{' '}
           <span className={model ? 'setting-value' : 'setting-value none'}>
-            {model ? assetLabel(model, models) : models ? 'None found' : 'Loading…'}
+            {model ? assetLabel(model, models) : assets.data ? 'None found' : 'Loading…'}
           </span>
         </button>
         {modelMissing && (
@@ -483,11 +551,6 @@ function CreateForm({
         {underpowered && (
           <p className="row-warning">
             Needs an {variant.min_gpu}; this {sessionGpu} session may run it slowly.
-          </p>
-        )}
-        {sourceIgnored && (
-          <p className="row-warning">
-            This model can’t start from an image. Pick an image-to-video model to use the source.
           </p>
         )}
       </div>
@@ -516,15 +579,15 @@ function CreateForm({
     </>
   )
 
-  const modeChips = variant && variant.modes.length > 1 && (
+  const modeChips = (
     <div className="mode-chips" role="group" aria-label="Start from">
-      {variant.modes.map((m) => (
+      {allModes.map((m) => (
         <button
           key={m}
           type="button"
           aria-pressed={m === mode}
           onClick={() => {
-            setMode(m)
+            chooseMode(m)
           }}
         >
           {MODE_LABELS[m] ?? m}
@@ -551,7 +614,7 @@ function CreateForm({
               onClick={() => {
                 const next = families.data.find((f) => f.media === m)
                 if (!next || next.id === familyId) return
-                switchFamily(next.id, String(params.prompt ?? ''))
+                switchFamily(next.id, { prompt: String(params.prompt ?? '') })
                 onFamily(next.id)
               }}
             >
@@ -561,13 +624,14 @@ function CreateForm({
         </div>
       )}
 
+      {modeChips}
+
       <SchemaForm
         schema={schema.data}
         values={params}
         onChange={setParams}
         presets={variant?.size_constraints.presets ?? []}
         leadingRows={leadingRows}
-        afterPrompt={modeChips}
         promptPlaceholder={video ? 'Describe the clip' : 'Describe the picture'}
         promptRef={promptRef}
         seeds={{ batch: batchCount > 1, mode: seedMode, onMode: setSeedMode }}
@@ -621,8 +685,8 @@ function CreateForm({
           }
           empty={
             <p>
-              No models found. Put {video ? 'diffusers model folders' : 'checkpoints'} in Drive
-              under{' '}
+              No models found for “{MODE_LABELS[mode ?? ''] ?? mode}”. Put{' '}
+              {video ? 'diffusers model folders' : 'checkpoints'} in Drive under{' '}
               <code>
                 degas/models/{family.id}/{family.variants.length > 1 ? '<variant>/' : ''}
               </code>
@@ -631,13 +695,11 @@ function CreateForm({
           }
           onPick={(a) => {
             if (a.family && a.family !== family.id) {
-              switchFamily(a.family, String(params.prompt ?? ''), a.path)
+              switchFamily(a.family, carry(mode ?? '', a))
               onFamily(a.family)
               return
             }
-            const next = variantFor(a.path, family)
-            if (next && next.lora_format !== variant?.lora_format) setLoras([])
-            setModel(a.path)
+            pickModel(a.path)
             setPicker(null)
           }}
           onClose={() => {

@@ -930,6 +930,119 @@ describe('App', () => {
     })
   })
 
+  it('offers every mode, and follows it with the model', async () => {
+    const sizes = { multiple_of: 8, min_pixels: 262144, max_pixels: 4194304, presets: [] }
+    const edit = (id: string, label: string, modes: string[]) => ({
+      id,
+      label,
+      media: 'image',
+      lora_format: 'single',
+      variants: [
+        {
+          id: 'base',
+          label,
+          min_gpu: 'L4',
+          modes,
+          model_dir: null,
+          max_refs: 3,
+          size_constraints: sizes,
+        },
+      ],
+    })
+    const sdxl = {
+      ...FAMILIES[0],
+      variants: [
+        { ...FAMILIES[0]?.variants[0], modes: ['t2i', 'i2i', 'inpaint', 'outpaint'] },
+        {
+          id: 'inpainting',
+          label: 'SDXL Inpainting',
+          min_gpu: 'T4',
+          modes: ['inpaint', 'outpaint'],
+          model_dir: 'models/sdxl/inpainting',
+          size_constraints: sizes,
+        },
+      ],
+    }
+    const model = (path: string, family: string) => ({
+      path,
+      family,
+      kind: 'model',
+      size: 1e9,
+      sidecar: null,
+      preview_thumb: null,
+    })
+    mockApi({
+      'GET /api/families': () => [
+        sdxl,
+        edit('qwen21', 'Qwen-Image 2.1', ['t2i', 'edit', 'inpaint']),
+        edit('klein', 'FLUX.2 [klein]', ['edit']),
+      ],
+      'GET /api/families/klein/schema': () => SCHEMA,
+      'GET /api/assets': () => [
+        ...ASSETS,
+        model('models/sdxl/inpainting/fill.safetensors', 'sdxl'),
+        model('models/qwen21/Qwen-Image-2.1', 'qwen21'),
+        model('models/klein/Klein-9B', 'klein'),
+      ],
+    })
+    localStorage.setItem(
+      'degas.create.draft',
+      JSON.stringify({
+        family: 'sdxl',
+        recent: ['sdxl', 'klein', 'qwen21'],
+        families: {
+          sdxl: {
+            model: 'models/sdxl/inpainting/fill.safetensors',
+            mode: 'inpaint',
+            loras: [],
+            params: { prompt: 'a lighthouse', width: 1024, height: 1024 },
+            source: { sha: 'abc', width: 1024, height: 1024 },
+          },
+        },
+      }),
+    )
+    const user = userEvent.setup()
+    renderApp()
+    const chips = await screen.findByRole('group', { name: 'Start from' })
+    expect(
+      within(chips)
+        .getAllByRole('button')
+        .map((b) => b.textContent),
+    ).toEqual(['From text', 'From image', 'Edit', 'Inpaint', 'Outpaint'])
+    expect(within(chips).getByRole('button', { name: 'Inpaint' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    // The chips come before the prompt.
+    expect(
+      chips.compareDocumentPosition(screen.getByLabelText('Prompt')) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+
+    // The picker lists only the models that can inpaint.
+    await user.click(screen.getByRole('button', { name: /^Model fill/ }))
+    let sheet = screen.getByRole('dialog', { name: 'Model' })
+    expect(within(sheet).getByRole('button', { name: /^fill/ })).toBeInTheDocument()
+    expect(within(sheet).getByRole('button', { name: /^Qwen-Image-2\.1/ })).toBeInTheDocument()
+    expect(within(sheet).queryByRole('button', { name: /^Klein/ })).not.toBeInTheDocument()
+    await user.click(within(sheet).getByRole('button', { name: 'Done' }))
+
+    // An inpainting checkpoint can't start from text: the family's first model that can.
+    await user.click(within(chips).getByRole('button', { name: 'From text' }))
+    expect(screen.getByRole('button', { name: 'Model Studio XL v10' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Model Studio XL v10' }))
+    sheet = screen.getByRole('dialog', { name: 'Model' })
+    expect(within(sheet).queryByRole('button', { name: /^fill/ })).not.toBeInTheDocument()
+    await user.click(within(sheet).getByRole('button', { name: 'Done' }))
+
+    // SDXL can't edit: the family used most recently that can, with the prompt and source.
+    await user.click(screen.getByRole('button', { name: 'Edit' }))
+    expect(await screen.findByRole('button', { name: /^Model Klein/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Edit' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByLabelText('Prompt')).toHaveValue('a lighthouse')
+    expect(screen.getByRole('button', { name: /^Image 1 1024 × 1024/ })).toBeInTheDocument()
+  })
+
   it("stops adding images at the model's limit", async () => {
     const klein = {
       id: 'klein',
@@ -1206,7 +1319,15 @@ describe('App', () => {
       await screen.findByText('Needs an A100; this L4 session may run it slowly.'),
     ).toBeInTheDocument()
     expect(screen.getByText('Wan 2.2 T2V A14B')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'From image' })).not.toBeInTheDocument()
+    // Every video mode is offered; this model starts from text.
+    expect(screen.getByRole('button', { name: 'From text' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    expect(screen.getByRole('button', { name: 'From image' })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    )
 
     await user.click(screen.getByRole('button', { name: 'Add LoRA' }))
     const sheet = screen.getByRole('dialog', { name: 'Add LoRA' })
