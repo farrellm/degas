@@ -225,14 +225,13 @@ export function Viewer<T extends ViewerItem>({
         </div>
         <p className="lines">
           <span>
-            {spec ? assetLabel(spec.model.path, assets) : 'Unknown model'}
-            {loras && (
-              <>
-                , with{' '}
-                <CoveredText id={`prompt:${r.id}`} label="Show LoRAs" shown={!covered}>
-                  {loras}
-                </CoveredText>
-              </>
+            {spec ? (
+              <CoveredText id={`prompt:${r.id}`} label="Show model" shown={!covered}>
+                {assetLabel(spec.model.path, assets)}
+                {loras && `, with ${loras}`}
+              </CoveredText>
+            ) : (
+              'Unknown model'
             )}
           </span>
           <span>

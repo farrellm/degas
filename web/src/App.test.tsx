@@ -1420,7 +1420,7 @@ describe('App', () => {
     expect(await screen.findByRole('button', { name: 'Show image 1' })).toHaveClass('covered')
   })
 
-  it('covers LoRA names and errors', async () => {
+  it('covers model and LoRA names and errors', async () => {
     const withLora = { ...SPEC, loras: [{ path: 'loras/sdxl/film.safetensors', weight: 0.8 }] }
     const first = { ...RESULT, spec: withLora }
     const second = { ...first, id: 'r2', item_index: 1, blob_sha: 'def', seed: 1235 }
@@ -1443,7 +1443,14 @@ describe('App', () => {
     await user.click(await screen.findByRole('button', { name: 'Show error' }))
     expect(screen.getByText(/Could not load LoRA/)).not.toHaveClass('covered-text')
 
-    // An uncovered image names its LoRAs; a covered one hides them until it's tapped.
+    // The feed's model line uncovers with the prompt.
+    const group = screen.getByText('Studio XL v10 + 1 LoRA').closest('section')
+    if (!group) throw new Error('no group')
+    expect(within(group).getByRole('button', { name: 'Show model' })).toBeInTheDocument()
+    await user.click(within(group).getByRole('button', { name: 'Show prompt' }))
+    expect(within(group).queryByRole('button', { name: 'Show model' })).not.toBeInTheDocument()
+
+    // An uncovered image names its model and LoRAs; a covered one hides them until it's tapped.
     await user.click(screen.getByRole('button', { name: 'Show image 1' }))
     await user.click(screen.getByRole('button', { name: /Open image 1/ }))
     const viewer = screen.getByRole('dialog', { name: 'Image' })
@@ -1451,9 +1458,9 @@ describe('App', () => {
       within(viewer).getByText(/Studio XL v10, with Film Grain v3 at 0.8/),
     ).toBeInTheDocument()
     await user.click(within(viewer).getByRole('button', { name: 'Next image' }))
-    expect(within(viewer).getByRole('button', { name: 'Show LoRAs' })).toBeInTheDocument()
+    expect(within(viewer).getByRole('button', { name: 'Show model' })).toBeInTheDocument()
     await user.click(within(viewer).getByRole('button', { name: 'Show image' }))
-    expect(within(viewer).queryByRole('button', { name: 'Show LoRAs' })).not.toBeInTheDocument()
+    expect(within(viewer).queryByRole('button', { name: 'Show model' })).not.toBeInTheDocument()
   })
 
   it('covers library images', async () => {
