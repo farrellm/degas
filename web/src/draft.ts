@@ -55,6 +55,8 @@ export interface Draft {
   batchCount: number
   /** How a batch's seeds are chosen. */
   seedMode: SeedMode
+  /** Families by when Create last had them open, most recent first. */
+  recent: string[]
 }
 
 type Stored = Partial<Draft> & Partial<FamilyDraft>
@@ -77,12 +79,14 @@ export function loadDraft(): Draft {
     families,
     batchCount: raw.batchCount ?? 1,
     seedMode: raw.seedMode ?? 'random',
+    recent: raw.recent ?? [family],
   }
 }
 
 function store(draft: Draft) {
+  const recent = [draft.family, ...draft.recent.filter((f) => f !== draft.family)]
   try {
-    localStorage.setItem(DRAFT_KEY, JSON.stringify(draft))
+    localStorage.setItem(DRAFT_KEY, JSON.stringify({ ...draft, recent }))
   } catch {
     // storage unavailable (private mode): the draft just isn't kept
   }
@@ -96,7 +100,7 @@ export function saveFamilyDraft(
   seedMode: SeedMode,
 ) {
   const draft = loadDraft()
-  store({ family, families: { ...draft.families, [family]: fd }, batchCount, seedMode })
+  store({ ...draft, family, families: { ...draft.families, [family]: fd }, batchCount, seedMode })
 }
 
 function update(family: string, change: (fd: Partial<FamilyDraft>) => Partial<FamilyDraft>) {
@@ -105,16 +109,34 @@ function update(family: string, change: (fd: Partial<FamilyDraft>) => Partial<Fa
   store({ ...draft, family, families: { ...draft.families, [family]: fd } })
 }
 
+/** What Create takes with it to another family. */
+export interface Carry {
+  prompt: string
+  model?: string
+  mode?: string
+  /** Kept only if the other family's draft has no source (or references) of its own. */
+  source?: Source | null
+  refs?: Source[]
+}
+
 /**
- * Switch Create to another family, carrying the prompt over if that family has none yet,
- * and choosing `model` if given.
+ * Switch Create to another family, carrying the prompt (and source) over if that family has
+ * none yet, and choosing `model` and `mode` if given.
  */
-export function switchFamily(family: string, prompt: string, model?: string) {
+export function switchFamily(family: string, carry: Carry) {
   update(family, (fd) => {
-    const next = model ? { ...fd, model } : fd
-    return String(next.params?.prompt ?? '').trim() || !prompt
+    const next = {
+      ...fd,
+      ...(carry.model && { model: carry.model }),
+      ...(carry.mode && { mode: carry.mode }),
+    }
+    if (carry.source && !next.source) {
+      Object.assign(next, { source: carry.source, extends: null, mask: null, place: null })
+    }
+    if (carry.refs?.length && !next.refs?.length) next.refs = carry.refs
+    return String(next.params?.prompt ?? '').trim() || !carry.prompt
       ? next
-      : { ...next, params: { ...next.params, prompt } }
+      : { ...next, params: { ...next.params, prompt: carry.prompt } }
   })
 }
 

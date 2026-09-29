@@ -14,8 +14,6 @@ interface Props {
   onPromptFocus?: () => void
   /** Shown beside the first prompt's label (e.g. saved prompts). */
   promptAside?: ReactNode
-  /** Between the prompt block and the settings list (e.g. mode chips). */
-  afterPrompt?: ReactNode
   promptPlaceholder?: string
   /** A batch's seeds: random, or counting up from the seed field (design §7). */
   seeds?: { batch: boolean; mode: SeedMode; onMode: (mode: SeedMode) => void }
@@ -35,7 +33,6 @@ export function SchemaForm({
   promptRef,
   onPromptFocus,
   promptAside,
-  afterPrompt,
   promptPlaceholder = 'Describe the picture',
   seeds,
 }: Props) {
@@ -91,8 +88,6 @@ export function SchemaForm({
           ))}
         </div>
       )}
-
-      {afterPrompt}
 
       <div className="settings">
         {leadingRows}
