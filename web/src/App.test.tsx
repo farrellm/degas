@@ -1444,7 +1444,7 @@ describe('App', () => {
     expect(screen.getByText(/Could not load LoRA/)).not.toHaveClass('covered-text')
 
     // The feed's model line uncovers with the prompt.
-    const group = screen.getByText('Studio XL v10 + 1 LoRA').closest('section')
+    const group = screen.getByText('Studio XL v10 + 1 LoRA,').closest('section')
     if (!group) throw new Error('no group')
     expect(within(group).getByRole('button', { name: 'Show model' })).toBeInTheDocument()
     await user.click(within(group).getByRole('button', { name: 'Show prompt' }))
