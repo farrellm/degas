@@ -240,13 +240,13 @@ class FamilyRunner:
 - **Modes:**
   - `t2i`: text-to-image.
   - `edit`: the source is image 1, and `inputs.refs` adds up to 9 more, in order. Order matters, because each image attends only to the ones before it (block-causal), and prompts refer to images by position ("the jacket from image 2"). The source is fitted to the output size like an i2i source. The pipeline sizes each reference to the output's pixel count at its own aspect ratio, so references aren't fitted on the server.
-  - `inpaint`: an edit of the source (with any references) that is pasted back outside the blurred mask, as SDXL does. The model itself doesn't see the mask. Its native editing by painted marks or masks is future work.
+  - `inpaint`: an edit of the source (with any references) that is pasted back outside the blurred mask, as SDXL does. The model itself doesn't see the mask. Its native editing by painted marks or masks is future work (§12.1).
 - **Sizes:** multiples of 32. The VAE shrinks 16× and the transformer doesn't patch, so 16 would be enough in principle, but the pipeline rounds down to 32. The 2K presets are Qwen's table (2048², 2400×1792, 2528×1696, 2752×1536 and their portraits); the 1K presets are 1024², 1152×864, 1248×832 and 1376×768, and portraits. The default is 2048², which is what Qwen recommends.
 - **Guidance.** `true_cfg_scale`, default 1 (off). Above 1, the negative prompt is used and each step does twice the work. Past about 2, images over-saturate.
 - **Schedule.** Flow-match Euler with Qwen's exponential dynamic shift, 40 steps by default. *Beta* (`use_beta_sigmas`) is offered because a ComfyUI comparison preferred Euler/Beta at 30 steps. ComfyUI's "simple" isn't Qwen's schedule, though, so the defaults stay until a live A/B (Phase 8).
 - **Grid removal.** The VAE leaves a faint 2 px lattice, most visible on skin and flat areas (Hugging Face discussion #12). *Remove VAE grid* (on by default) runs the notch filter from ComfyUI-DeGrid (Apache-2.0, ported to `degas_worker/degrid.py`) after the decode. The filter detects the lattice's phase and does nothing to an image without one.
 - **LoRAs:** single files, applied with the pipeline's `QwenImageLoraLoaderMixin` (transformer only).
-- **Not in v1:** transparent (RGBA) output, the prompt-rewriting models (`Qwen-Image-2.1-PE-*`), and flex attention with `torch.compile`.
+- **Not in v1:** transparent output, native mask editing, cropping references, sizing references by their longest edge, the prompt-rewriting models, and faster attention. §12.1 says why for each, and what adding it would take.
 
 ### 4.4 Preprocessors
 
@@ -606,3 +606,20 @@ Phases are numbered from 0.
 - Live latent previews during sampling using TAESD / TAEW.
 - Regional LoRA.
 - Multiple concurrent sessions, e.g. an L4 for images alongside an A100 for video.
+
+### 12.1 Qwen-Image 2.1 after Phase 8
+
+Phase 8 leaves these out, to get a first live test sooner:
+
+- **Transparent output.** The VAE decodes RGBA and the model can make images with a real alpha channel. Qwen's recommended prompt: *"This is an RGBA image with transparency. [description]. The image has alpha channel and the background is transparent."* Uploads with alpha already stay PNG, and the grid filter keeps the alpha it's given. What's missing:
+  - a way to ask for it (a *Transparent background* switch that adds Qwen's wording);
+  - a checkerboard behind transparent images in the viewer and thumbnails;
+  - inpaint, whose paste-back flattens to RGB;
+  - a check of what *Save to Photos* does with alpha on iOS.
+- **Native mask editing.** The model card lists editing guided by circles, painted marks, or a separate mask. The diffusers pipeline has no mask argument, so the mask would have to reach the model as a condition image (a mark drawn on the source, or the mask as its own image). The format it was trained on isn't documented yet. Until then, Degas inpaints by editing the whole picture and pasting the original back outside the mask. That keeps the unmasked area exact, but the model can't tell which area it is meant to change.
+- **Cropping references.** The image picker offers no *Crop* for references, because the crop editor is locked to the output's size. References need a free crop (any shape, no resize). Cropping to a face or a garment gives the model more pixels of what matters, since each reference is scaled to the output's pixel count.
+- **Sizing references by their longest edge.** The pipeline scales every reference to the output's pixel count. It rounds to 32, and a thin reference ends up much longer than a square one. A community ComfyUI workflow for Qwen-Image 2.1 scales by the longest edge instead and says results are more predictable. Doing this needs either pre-resized references with the pipeline's own resize bypassed, or an option upstream. It's worth an A/B test first.
+- **Prompt rewriting.** Qwen publishes two rewriting models, `Qwen/Qwen-Image-2.1-PE-T2I` and `-PE-I2I` (Qwen3.5-VL 9B fine-tunes). They expand a short prompt and suggest an aspect ratio. They're another ~9B model, so they'd compete with the image model for GPU memory. They would suit an *Expand prompt* action that shows the rewritten text for review before the job runs, rather than a hidden step.
+- **Faster attention and smaller weights.**
+  - diffusers' `QwenImage21FlexAttnProcessor` is faster, but only with `torch.compile`: uncompiled, it runs out of memory at high resolution, and compiling costs time on the first job of each session. The ComfyUI write-up reports ~30% from SageAttention, but the model uses its own attention processors, so it doesn't plug straight in.
+  - ComfyUI's int8 weights (6.9 GB transformer) don't load in diffusers. Quantizing when loading could make the text encoder fit an L4 without offload. The usual tool is torchao, which the bootstrap currently uninstalls because Colab's copy is too old for peft; that would need a newer torchao instead.
