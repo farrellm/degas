@@ -75,6 +75,14 @@ def test_sdxl_validate_fills_defaults_and_clamps() -> None:
     assert spec["mode"] == "t2i"
 
 
+def test_sdxl_inpaint_variant_defaults_to_dpmpp_2m_sde() -> None:
+    def sampler(variant: str, mode: str) -> object:
+        return Sdxl().param_schema(variant, mode)["properties"]["scheduler"]["default"]
+
+    assert sampler("inpaint", "inpaint") == "dpmpp_2m_sde"
+    assert sampler("base", "inpaint") == "dpmpp_2m"
+
+
 @pytest.mark.parametrize(
     ("given", "expected"),
     [
