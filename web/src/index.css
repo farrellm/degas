@@ -346,6 +346,11 @@ html[data-discreet] .control-thumb canvas {
   -webkit-user-select: none;
 }
 
+/* A covered error still reads as an error. */
+.group-error .covered-text {
+  text-shadow: 0 0 0.65em var(--danger);
+}
+
 /*
  * The app switcher's snapshot: plain paper and the wordmark, raised the moment the
  * app loses focus (discretion.ts installShield).
