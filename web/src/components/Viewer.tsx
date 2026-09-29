@@ -211,13 +211,13 @@ export function Viewer<T extends ViewerItem>({
       <div className="wall-label">
         <div>
           <p className="title">
-            <CoveredText id={`prompt:${r.id}`}>
+            <CoveredText id={`prompt:${r.id}`} shown={!covered}>
               {String(params.prompt ?? '') || 'No prompt'}
             </CoveredText>
           </p>
           {params.negative_prompt ? (
             <p className="avoid">
-              <CoveredText id={`prompt:${r.id}`} label="Show negative prompt">
+              <CoveredText id={`prompt:${r.id}`} label="Show negative prompt" shown={!covered}>
                 Negative: {String(params.negative_prompt)}
               </CoveredText>
             </p>

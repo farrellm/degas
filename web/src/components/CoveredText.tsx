@@ -1,18 +1,23 @@
 import type { ReactNode } from 'react'
 import { reveal, useCovered } from '../discretion'
 
-/** A prompt under glassine in discretion mode; a tap uncovers it. */
+/**
+ * A prompt under glassine in discretion mode; a tap uncovers it. `shown` uncovers
+ * it with something else, such as its image in the viewer.
+ */
 export function CoveredText({
   id,
   label = 'Show prompt',
+  shown = false,
   children,
 }: {
   id: string
   label?: string
+  shown?: boolean
   children: ReactNode
 }) {
   const covered = useCovered(id)
-  if (!covered) return children
+  if (!covered || shown) return children
   return (
     <button
       type="button"
