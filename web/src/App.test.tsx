@@ -1336,13 +1336,16 @@ describe('App', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: /Open image 1, seed 1234/ }))
     const viewer = screen.getByRole('dialog', { name: 'Image' })
+    // An uncovered image shows its prompt too.
     expect(within(viewer).queryByRole('button', { name: 'Show image' })).not.toBeInTheDocument()
-    expect(within(viewer).getByRole('button', { name: 'Show prompt' })).toBeInTheDocument()
+    expect(within(viewer).queryByRole('button', { name: 'Show prompt' })).not.toBeInTheDocument()
 
-    // The next image is still covered.
+    // The next image is still covered, and so is its prompt, until the image is tapped.
     await user.click(within(viewer).getByRole('button', { name: 'Next image' }))
+    expect(within(viewer).getByRole('button', { name: 'Show prompt' })).toBeInTheDocument()
     await user.click(within(viewer).getByRole('button', { name: 'Show image' }))
     expect(within(viewer).queryByRole('button', { name: 'Show image' })).not.toBeInTheDocument()
+    expect(within(viewer).queryByRole('button', { name: 'Show prompt' })).not.toBeInTheDocument()
 
     // Closing the viewer covers everything again.
     await user.click(within(viewer).getByRole('button', { name: 'Close' }))
