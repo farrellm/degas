@@ -468,9 +468,9 @@ function GroupView({
   ) : spec ? (
     <>
       <CoveredText id={`prompt:${group.id}`} label="Show model">
-        {modelLine(spec, assets)}
-      </CoveredText>
-      , {shape}
+        {`${modelLine(spec, assets)},`}
+      </CoveredText>{' '}
+      {shape}
     </>
   ) : (
     shape
