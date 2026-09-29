@@ -1,9 +1,11 @@
 import { useQuery } from '@tanstack/react-query'
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { api, blobUrl, isPair, isVideo, type Asset, type SavedConfig, type Spec } from '../api'
 import { assetLabel, loraLabel } from '../assets'
+import { coverAll, reveal, useCovered } from '../discretion'
 import { duration, size } from '../format'
 import { enumLabel } from '../schema'
+import { CoveredText } from './CoveredText'
 
 /** What the viewer shows: a result from the feed or a kept library item. */
 export interface ViewerItem {
@@ -60,6 +62,14 @@ export function Viewer<T extends ViewerItem>({
   const r = items[index]
   const ref = useRef<HTMLDivElement>(null)
   const swipe = useRef<number | null>(null)
+  // A swipe ends in a click on the cover, which mustn't uncover the next image.
+  const swiped = useRef(false)
+  const covered = useCovered(r?.id ?? '')
+  // Leaving the viewer covers everything again.
+  const close = useCallback(() => {
+    coverAll()
+    onClose()
+  }, [onClose])
 
   useEffect(() => {
     const opener = document.activeElement as HTMLElement | null
@@ -75,7 +85,7 @@ export function Viewer<T extends ViewerItem>({
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement) return
-      if (e.key === 'Escape') onClose()
+      if (e.key === 'Escape') close()
       if (e.key === 'ArrowRight' && index < items.length - 1) onIndex(index + 1)
       if (e.key === 'ArrowLeft' && index > 0) onIndex(index - 1)
     }
@@ -83,7 +93,7 @@ export function Viewer<T extends ViewerItem>({
     return () => {
       document.removeEventListener('keydown', onKey)
     }
-  }, [index, items.length, onIndex, onClose])
+  }, [index, items.length, onIndex, close])
 
   const spec = r?.spec
   const schema = useQuery({
@@ -127,7 +137,7 @@ export function Viewer<T extends ViewerItem>({
       tabIndex={-1}
     >
       <div className="viewer-bar">
-        <button type="button" className="btn quiet small" onClick={onClose}>
+        <button type="button" className="btn quiet small" onClick={close}>
           Close
         </button>
         <span className="position">
@@ -159,7 +169,7 @@ export function Viewer<T extends ViewerItem>({
         </span>
       </div>
       <div
-        className="viewer-image"
+        className={covered ? 'viewer-image covered' : 'viewer-image'}
         onPointerDown={(e) => {
           swipe.current = e.clientX
         }}
@@ -167,6 +177,7 @@ export function Viewer<T extends ViewerItem>({
           if (swipe.current === null) return
           const dx = e.clientX - swipe.current
           swipe.current = null
+          swiped.current = Math.abs(dx) > 10
           if (dx < -50 && index < items.length - 1) onIndex(index + 1)
           if (dx > 50 && index > 0) onIndex(index - 1)
         }}
@@ -185,12 +196,31 @@ export function Viewer<T extends ViewerItem>({
         ) : (
           <img src={blobUrl(r.blob_sha)} alt={String(params.prompt ?? '')} draggable={false} />
         )}
+        {covered && (
+          <button
+            type="button"
+            className="cover-button"
+            aria-label={video ? 'Show clip' : 'Show image'}
+            onClick={() => {
+              if (swiped.current) swiped.current = false
+              else reveal(r.id)
+            }}
+          />
+        )}
       </div>
       <div className="wall-label">
         <div>
-          <p className="title">{String(params.prompt ?? '') || 'No prompt'}</p>
+          <p className="title">
+            <CoveredText id={`prompt:${r.id}`}>
+              {String(params.prompt ?? '') || 'No prompt'}
+            </CoveredText>
+          </p>
           {params.negative_prompt ? (
-            <p className="avoid">Negative: {String(params.negative_prompt)}</p>
+            <p className="avoid">
+              <CoveredText id={`prompt:${r.id}`} label="Show negative prompt">
+                Negative: {String(params.negative_prompt)}
+              </CoveredText>
+            </p>
           ) : null}
         </div>
         <p className="lines">

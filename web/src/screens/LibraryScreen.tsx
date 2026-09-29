@@ -1,11 +1,11 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useDeferredValue, useState, type CSSProperties } from 'react'
-import { api, isVideo, thumbUrl, type LibraryItem, type SavedPrompt } from '../api'
+import { api, isVideo, type LibraryItem, type SavedPrompt } from '../api'
 import { useAssets } from '../assets'
 import { PromptText } from '../components/PromptSheet'
+import { Tile } from '../components/Tile'
 import { SaveToPhotos, Viewer, type ViewerItem } from '../components/Viewer'
 import { draftFromSpec, draftWithPrompt, draftWithSource, useSourceTarget } from '../draft'
-import { clock } from '../format'
 import { useNow } from '../time'
 
 type View = 'Images' | 'Prompts'
@@ -137,25 +137,23 @@ function Images({ q, onRemix }: { q: string; onRemix: () => void }) {
           <h2>{day.label}</h2>
           <div className="shelf">
             {day.items.map((item) => (
-              <button
+              <Tile
                 key={item.id}
-                type="button"
-                className="tile"
+                id={item.id}
+                blobSha={item.blob_sha}
+                mediaType={item.media_type}
+                duration={item.duration}
                 style={
                   {
                     '--ratio': `${String(item.width ?? 1)} / ${String(item.height ?? 1)}`,
                   } as CSSProperties
                 }
-                aria-label={`Open ${String(item.config.params.prompt ?? 'image')}`}
-                onClick={() => {
+                label={`Open ${String(item.config.params.prompt ?? 'image')}`}
+                coveredLabel={`Show ${isVideo(item.media_type) ? 'clip' : 'image'}`}
+                onOpen={() => {
                   setOpen(item.id)
                 }}
-              >
-                <img src={thumbUrl(item.blob_sha)} alt="" loading="lazy" />
-                {isVideo(item.media_type) && item.duration !== null && (
-                  <span className="tile-duration">{clock(item.duration)}</span>
-                )}
-              </button>
+              />
             ))}
           </div>
         </section>

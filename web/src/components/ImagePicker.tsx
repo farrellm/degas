@@ -1,8 +1,9 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useRef, useState, type CSSProperties } from 'react'
-import { api, blobUrl, isVideo, thumbUrl, type BlobInfo } from '../api'
-import { clock, size } from '../format'
+import { api, blobUrl, isVideo, type BlobInfo } from '../api'
+import { size } from '../format'
 import { Sheet } from './Sheet'
+import { Tile } from './Tile'
 
 const TABS = ['Recent', 'Library', 'Photos', 'Link'] as const
 type Tab = (typeof TABS)[number]
@@ -127,15 +128,18 @@ function Grid({
   return (
     <div className="picker-grid">
       {items.map((it) => (
-        <button
+        <Tile
           key={it.id}
-          type="button"
-          className="tile"
+          id={it.id}
+          blobSha={it.blob_sha}
+          mediaType={it.media_type}
+          duration={it.duration}
           style={
             { '--ratio': `${String(it.width ?? 1)} / ${String(it.height ?? 1)}` } as CSSProperties
           }
-          aria-label={`${isVideo(it.media_type) ? 'Video' : 'Image'}: ${it.label}`}
-          onClick={() => {
+          label={`${isVideo(it.media_type) ? 'Video' : 'Image'}: ${it.label}`}
+          coveredLabel={`Show ${isVideo(it.media_type) ? 'video' : 'image'}`}
+          onOpen={() => {
             onPick({
               sha256: it.blob_sha,
               media_type: it.media_type,
@@ -144,12 +148,7 @@ function Grid({
               duration: it.duration,
             })
           }}
-        >
-          <img src={thumbUrl(it.blob_sha)} alt="" loading="lazy" />
-          {isVideo(it.media_type) && it.duration !== null && (
-            <span className="tile-duration">{clock(it.duration)}</span>
-          )}
-        </button>
+        />
       ))}
     </div>
   )

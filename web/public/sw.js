@@ -2,6 +2,9 @@
 // notifications (design §8.1, §8.3). The API is never cached: it's live GPU state.
 
 const CACHE = 'degas-shell-v1'
+// Settings the page tells the worker about, kept across restarts (the worker has no localStorage).
+const PREFS = 'degas-prefs'
+const DISCRETION = '/prefs/discretion'
 const SHELL = ['/', '/manifest.webmanifest', '/icon.svg', '/apple-touch-icon.png']
 
 self.addEventListener('install', (event) => {
@@ -17,7 +20,9 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches
       .keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+      .then((keys) =>
+        Promise.all(keys.filter((k) => k !== CACHE && k !== PREFS).map((k) => caches.delete(k))),
+      )
       .then(() => self.clients.claim()),
   )
 })
@@ -65,6 +70,25 @@ self.addEventListener('fetch', (event) => {
   )
 })
 
+// Discretion mode (web/src/discretion.ts): notifications leave out the prompt.
+self.addEventListener('message', (event) => {
+  if (!event.data || event.data.type !== 'discretion') return
+  event.waitUntil(
+    caches
+      .open(PREFS)
+      .then((cache) => cache.put(DISCRETION, new Response(event.data.on ? '1' : '0'))),
+  )
+})
+
+function discreet() {
+  return caches
+    .open(PREFS)
+    .then((cache) => cache.match(DISCRETION))
+    .then((hit) => (hit ? hit.text() : '0'))
+    .then((text) => text === '1')
+    .catch(() => false)
+}
+
 self.addEventListener('push', (event) => {
   let data
   try {
@@ -73,12 +97,15 @@ self.addEventListener('push', (event) => {
     data = { title: event.data ? event.data.text() : 'Degas' }
   }
   event.waitUntil(
-    self.registration.showNotification(data.title || 'Degas', {
-      body: data.body || undefined,
-      tag: data.tag || undefined,
-      icon: '/icon-192.png',
-      data: { url: data.url || '/' },
-    }),
+    discreet().then((covered) =>
+      self.registration.showNotification(data.title || 'Degas', {
+        // The body is the prompt (or an error, which can quote it).
+        body: (!covered && data.body) || undefined,
+        tag: data.tag || undefined,
+        icon: '/icon-192.png',
+        data: { url: data.url || '/' },
+      }),
+    ),
   )
 })
 

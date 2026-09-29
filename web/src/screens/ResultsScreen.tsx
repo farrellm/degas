@@ -7,11 +7,13 @@ import {
   type KeyboardEvent,
   type PointerEvent,
 } from 'react'
-import { api, isVideo, thumbUrl, type Asset, type Job, type Result, type Spec } from '../api'
+import { api, isVideo, type Asset, type Job, type Result, type Spec } from '../api'
 import { assetLabel, useAssets } from '../assets'
+import { CoveredText } from '../components/CoveredText'
+import { Tile } from '../components/Tile'
 import { SaveToPhotos, Viewer } from '../components/Viewer'
 import { draftFromSpec, draftWithSource, useSourceTarget } from '../draft'
-import { clock, copyText, duration, itemFraction, phaseText, size } from '../format'
+import { copyText, duration, itemFraction, phaseText, size } from '../format'
 import { hoursLeft, shortTime, timeLeft, useNow } from '../time'
 
 /** One job's worth of results: the contact-sheet row under a prompt caption. */
@@ -464,22 +466,24 @@ function GroupView({
     : [spec ? modelLine(spec, assets) : null, size(w, h), video && length ? duration(length) : null]
         .filter(Boolean)
         .join(', ')
-  const tile = (r: Result, i: number) => (
-    <button
-      key={r.id}
-      type="button"
-      className={r.library_id ? 'tile kept' : 'tile'}
-      onClick={() => {
-        onOpen(r.id)
-      }}
-      aria-label={`Open ${isVideo(r.media_type) ? 'clip' : 'image'} ${String(i + 1)}, seed ${String(r.seed)}${r.library_id ? ', kept' : ''}`}
-    >
-      <img src={thumbUrl(r.blob_sha)} alt="" loading="lazy" />
-      {isVideo(r.media_type) && r.duration !== null && (
-        <span className="tile-duration">{clock(r.duration)}</span>
-      )}
-    </button>
-  )
+  const tile = (r: Result, i: number) => {
+    const what = `${isVideo(r.media_type) ? 'clip' : 'image'} ${String(i + 1)}`
+    return (
+      <Tile
+        key={r.id}
+        id={r.id}
+        blobSha={r.blob_sha}
+        mediaType={r.media_type}
+        duration={r.duration}
+        kept={!!r.library_id}
+        label={`Open ${what}, seed ${String(r.seed)}${r.library_id ? ', kept' : ''}`}
+        coveredLabel={`Show ${what}`}
+        onOpen={() => {
+          onOpen(r.id)
+        }}
+      />
+    )
+  }
 
   const lifted = queued?.lifted ?? null
   const classes = [
@@ -498,7 +502,9 @@ function GroupView({
     >
       <header className={queued ? 'group-caption queued' : 'group-caption'}>
         {queued && <DragHandle queued={queued} />}
-        <p className={prompt ? 'title' : 'title untitled'}>{prompt || 'No prompt'}</p>
+        <p className={prompt ? 'title' : 'title untitled'}>
+          {prompt ? <CoveredText id={`prompt:${group.id}`}>{prompt}</CoveredText> : 'No prompt'}
+        </p>
         <p className="meta">{meta}</p>
         <div className="aside">
           {pending ? (
