@@ -167,7 +167,7 @@ class FamilyDescriptor:
     label: str
     media: Literal["image", "video"]
     variants: list[Variant]          # e.g. wan22: ti2v-5b, t2v-a14b, i2v-a14b
-    modes: list[Mode]                # t2i, i2i, inpaint, outpaint, t2v, i2v
+    modes: list[Mode]                # t2i, i2i, edit, inpaint, outpaint, t2v, i2v
     lora_format: Literal["single", "paired_hi_lo"]
     supports_control: bool
     def param_schema(self, variant, mode) -> JsonSchema   # drives the UI form
@@ -232,6 +232,22 @@ class FamilyRunner:
 - **Parameters:** prompt, negative prompt, resolution preset, frame count, fps, steps, CFG (with separate values for the two experts on A14B), boundary ratio (A14B), seed, and a source image for i2v.
 - **Output:** an MP4 encoded with H.264 in `yuv420p` pixel format, so it plays inline on iOS. A poster frame is extracted, and so is the last frame, which is used for video extension.
 
+**Qwen-Image 2.1 (`qwen21`)**
+
+- **Model.** A 7B single-stream DiT (32 layers, block-causal attention), a 16× RGBA VAE, and `Qwen3-VL-8B-Instruct` as the text encoder. The encoder reads the prompt and the reference images together, so one model does text-to-image and editing with up to 10 reference images. Released 2026-09-20 under the Qwen Research License (non-commercial use only). diffusers' `QwenImage21Pipeline` comes from PR #14804. That PR isn't in a release yet (0.40.0 lacks it), so the bootstrap installs a pinned diffusers commit when the image's diffusers can't import the pipeline (§11).
+- **Checkpoint.** The official diffusers folder `Qwen/Qwen-Image-2.1` under `models/qwen21/` (about 36 GB: transformer 13.6 GB, text encoder 16.7 GB, VAE 1.3 GB, all bf16). ComfyUI's `int8_convrot` files don't load in diffusers.
+- **Variant `base`**, minimum GPU L4. A T4 has no usable bf16 and too little memory. An A100 or H100 holds all of it. On an L4 the runner uses model CPU offload, which needs a high-memory VM: the text encoder runs first, then moves off the GPU for the transformer.
+- **Modes:**
+  - `t2i`: text-to-image.
+  - `edit`: the source is image 1, and `inputs.refs` adds up to 9 more, in order. Order matters, because each image attends only to the ones before it (block-causal), and prompts refer to images by position ("the jacket from image 2"). The source is fitted to the output size like an i2i source. The pipeline sizes each reference to the output's pixel count at its own aspect ratio, so references aren't fitted on the server.
+  - `inpaint`: an edit of the source (with any references) that is pasted back outside the blurred mask, as SDXL does. The model itself doesn't see the mask. Its native editing by painted marks or masks is future work.
+- **Sizes:** multiples of 32. The VAE shrinks 16× and the transformer doesn't patch, so 16 would be enough in principle, but the pipeline rounds down to 32. The 2K presets are Qwen's table (2048², 2400×1792, 2528×1696, 2752×1536 and their portraits); the 1K presets are 1024², 1152×864, 1248×832 and 1376×768, and portraits. The default is 2048², which is what Qwen recommends.
+- **Guidance.** `true_cfg_scale`, default 1 (off). Above 1, the negative prompt is used and each step does twice the work. Past about 2, images over-saturate.
+- **Schedule.** Flow-match Euler with Qwen's exponential dynamic shift, 40 steps by default. *Beta* (`use_beta_sigmas`) is offered because a ComfyUI comparison preferred Euler/Beta at 30 steps. ComfyUI's "simple" isn't Qwen's schedule, though, so the defaults stay until a live A/B (Phase 8).
+- **Grid removal.** The VAE leaves a faint 2 px lattice, most visible on skin and flat areas (Hugging Face discussion #12). *Remove VAE grid* (on by default) runs the notch filter from ComfyUI-DeGrid (Apache-2.0, ported to `degas_worker/degrid.py`) after the decode. The filter detects the lattice's phase and does nothing to an image without one.
+- **LoRAs:** single files, applied with the pipeline's `QwenImageLoraLoaderMixin` (transformer only).
+- **Not in v1:** transparent (RGBA) output, the prompt-rewriting models (`Qwen-Image-2.1-PE-*`), and flex attention with `torch.compile`.
+
 ### 4.4 Preprocessors
 
 Preprocessors run on the GPU, in the worker, as a family-independent registry:
@@ -253,9 +269,11 @@ MyDrive/degas/
     sdxl/          *.safetensors (+ optional *.yaml sidecar)
       inpaint/     inpainting checkpoints (9-channel UNet): the `inpaint` variant
     wan22/         <variant>/…   (diffusers-format directories)
+    qwen21/        Qwen-Image-2.1/ (the official diffusers folder)
   loras/
     sdxl/          *.safetensors (+ *.yaml, preview *.jpg/png)
     wan22/         *.safetensors; A14B pairs named *_high_noise.safetensors / *_low_noise.safetensors or declared in sidecar
+    qwen21/        *.safetensors
   controlnets/
     sdxl/          *.safetensors or diffusers dirs
   preprocessors/   one folder per preprocessor: sam3/ and depth-anything-v2/ (transformers folders), dwpose/ (two ONNX files)
@@ -375,7 +393,7 @@ Saving an image or video stores a config that is self-contained and can be repla
 }
 ```
 
-For a Wan 2.2 A14B LoRA, the entry has the form `{ "high": {path, weight}, "low": {path, weight} }`. If an input image came from a URL, the config also records `inputs.origins: { "<sha256>": "<url>" }` for provenance. Replay always uses the stored blob, so the URL is never fetched again. Video extension records the parent video in `inputs.extends` (the parent's blob hash) and the extracted frame in `inputs.source`.
+For a Wan 2.2 A14B LoRA, the entry has the form `{ "high": {path, weight}, "low": {path, weight} }`. If an input image came from a URL, the config also records `inputs.origins: { "<sha256>": "<url>" }` for provenance. Replay always uses the stored blob, so the URL is never fetched again. Video extension records the parent video in `inputs.extends` (the parent's blob hash) and the extracted frame in `inputs.source`. A Qwen-Image 2.1 edit records its extra reference images, in order, in `inputs.refs` (a list of blob hashes; the source is image 1).
 
 **Video extension output.** An extend job produces the new continuation clip as its result. When it completes, the server uses `ffmpeg` to create a second result: the stitched chain, which is the parent (itself possibly stitched) followed by the continuation, with the duplicated boundary frame dropped. Both results can be saved. The stitched result's config records the ordered list of segment configs, so every segment of the chain can be reproduced.
 
@@ -562,6 +580,8 @@ Phases are numbered from 0.
 6. **i2i, inpaint and outpaint.** ✅ Done. SDXL gains `i2i`, `inpaint` and `outpaint` on regular checkpoints, and an `inpaint` variant for inpainting checkpoints in `models/sdxl/inpaint/` (§4.3). Masks are stored by `POST /blobs/{sha}/mask`, follow their source through re-crops (`POST /blobs/{mask}/remap`) and are fitted with it at submit (§6.5). Outpaint places the source on the Size canvas (`inputs.place`). SAM 3 selection moved up from Phase 7: `POST /api/preprocess` stages the image and asks the worker's new `/preprocess` route, which loads `Sam3TrackerModel` for taps or `Sam3Model` for a description (one at a time) from `preprocessors/sam3/`. Drive indexes a preprocessor folder with a `config.json` as one asset. The mask editor (brush, erase, select, undo, invert, blur preview) and the outpaint placement are in the UI. Live test on a T4 (2026-09-28, a regular checkpoint): inpaint at 1024², 30 steps, strength 0.85, with the mask made by SAM 3 selection and SAM 3 resident next to SDXL; four jobs took 29–34 s each. The first attempts ran out of memory: diffusers 0.40's `from_pipe` defaults to float32 and casts the shared modules in place, which doubled SDXL to 13.1 GiB. SDXL now passes `torch_dtype=torch.float16` (6.6 GiB loaded, 9.7 GiB peak for a 1024² inpaint), and Wan builds its i2v pipeline from the components instead of using `from_pipe`. Still untested live: i2i, outpaint, the `inpaint` variant, and Wan i2v after that change.
 7. **Control.** ✅ Built, not yet tested on a live GPU. Preprocessors (depth, pose, canny), SDXL ControlNet units, and regional ControlNet. A unit is `{controlnet, image, fit, scale, start, end, mask?, preprocessor?}` (§6.4); at submit each control image is fitted to the output size by its own `fit`, and its area mask with it, both recorded in `inputs.transforms`. The Drive index takes a folder under `controlnets/<family>/` with a `config.json` as one asset, and every folder directly under `preprocessors/` as one. A ControlNet's sidecar can say `control: depth|pose|canny`, which the UI uses to pick a model for a trace and to warn about a mismatch. Depth Anything V2 and DWPose run on the worker (DWPose's ONNX pre- and post-processing are adapted from controlnet_aux); canny is OpenCV. `degas_worker/deps.py` installs a missing package the first time it's needed. Untested live: all of it, in particular `from_single_file` for SDXL ControlNets, the ControlNet pipelines built with `from_pipe`, the residual masking under CPU offload, and onnxruntime's CUDA provider on Colab.
 
+8. **Qwen-Image 2.1.** 🚧 In progress. The `qwen21` family (§4.3): `t2i`, `edit` with up to 10 ordered images (the source plus `inputs.refs`), and `inpaint` as an edit pasted back through the mask. The server validates the references, checks they're still stored, and keeps them with the job and any kept item. The runner loads `QwenImage21Pipeline` from the diffusers folder in Drive and offloads to the CPU when the weights don't fit. It maps CFG to `true_cfg_scale` and the schedule to the scheduler's settings, and runs the ported DeGrid filter. The bootstrap installs a pinned diffusers commit with the pipeline when the image lacks it. In the UI, *Edit* is a mode chip, and an *Images* row under Source adds, orders and removes references. Live test to do, on an L4 (high memory) and an A100: cold copy, load, and per-image time at 1K and 2K; a 40-step Default against 30-step Beta comparison to settle the default schedule; the grid filter on skin and hair; and SDXL and Wan on the pinned diffusers.
+
 ## 11. Risks and open questions
 
 | Risk | Impact | Mitigation |
@@ -576,6 +596,7 @@ Phases are numbered from 0.
 | Session bootstrap time | Measured: `colab new` 3.5 s (CPU), SSH 1.5 s, and packages are preinstalled, so bootstrap takes about 10–20 s before model copy | Good enough; the model copy dominates |
 | Web Push on iOS | Needs a home-screen install and iOS 16.4+ | Document it; the in-app SSE path works regardless |
 | diffusers API churn for newer Wan and ControlNet classes | Upgrades break the worker | Pin versions in `requirements-worker.txt`; record versions in each saved config |
+| Qwen-Image 2.1 needs diffusers `main` (not in 0.40.0) | The pinned commit also runs SDXL and Wan, and could break them | Install the pin only when the image's diffusers lacks `QwenImage21Pipeline`; re-test SDXL and Wan on it; move to the first release that has the pipeline |
 
 ## 12. Future work
 

@@ -421,8 +421,7 @@ class Dispatcher:
 def _input_blobs(spec: dict[str, Any]) -> list[str]:
     shas: list[str] = []
     inputs = spec.get("inputs") or {}
-    for key in ("source", "mask"):
-        value = inputs.get(key)
+    for value in [inputs.get("source"), inputs.get("mask"), *(inputs.get("refs") or [])]:
         if isinstance(value, str) and value.startswith("sha256:"):
             shas.append(value.removeprefix("sha256:"))
     for unit in spec.get("control") or []:
