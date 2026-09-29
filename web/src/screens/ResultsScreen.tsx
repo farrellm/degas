@@ -461,11 +461,20 @@ function GroupView({
   const video = results[0] ? isVideo(results[0].media_type) : false
   const clips = results[0]?.segments?.length ?? 0
   const length = results[0]?.duration
-  const meta = chain
-    ? `Extended, ${String(clips)} clips${length ? `, ${duration(length)}` : ''}`
-    : [spec ? modelLine(spec, assets) : null, size(w, h), video && length ? duration(length) : null]
-        .filter(Boolean)
-        .join(', ')
+  const shape = [size(w, h), video && length ? duration(length) : null].filter(Boolean).join(', ')
+  // The model uncovers with the prompt: one tap on either shows the group's words.
+  const meta = chain ? (
+    `Extended, ${String(clips)} clips${length ? `, ${duration(length)}` : ''}`
+  ) : spec ? (
+    <>
+      <CoveredText id={`prompt:${group.id}`} label="Show model">
+        {modelLine(spec, assets)}
+      </CoveredText>
+      , {shape}
+    </>
+  ) : (
+    shape
+  )
   const tile = (r: Result, i: number) => {
     const what = `${isVideo(r.media_type) ? 'clip' : 'image'} ${String(i + 1)}`
     return (
