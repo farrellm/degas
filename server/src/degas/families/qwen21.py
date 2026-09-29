@@ -3,7 +3,6 @@
 from typing import Any, Literal
 
 from degas.families.base import (
-    SHA_REF,
     JsonSchema,
     SizeConstraints,
     SpecError,
@@ -13,6 +12,7 @@ from degas.families.base import (
     validate_inputs,
     validate_model,
     validate_params,
+    validate_refs,
     validate_single_loras,
 )
 
@@ -53,7 +53,13 @@ class Qwen21:
     lora_format: Literal["single", "paired_hi_lo"] = "single"
     supports_control = False
     variants: tuple[Variant, ...] = (
-        Variant(id="base", label="Qwen-Image 2.1", min_gpu="L4", modes=("t2i", "edit", "inpaint")),
+        Variant(
+            id="base",
+            label="Qwen-Image 2.1",
+            min_gpu="L4",
+            modes=("t2i", "edit", "inpaint"),
+            max_refs=MAX_REFS,
+        ),
     )
 
     def size_constraints(self, variant: str) -> SizeConstraints:
@@ -155,7 +161,7 @@ class Qwen21:
         raw = spec.get("inputs")
         inputs = validate_inputs(raw, mode)
         if mode != "t2i":
-            refs = validate_refs((raw or {}).get("refs"))
+            refs = validate_refs((raw or {}).get("refs"), MAX_REFS)
             if refs:
                 inputs["refs"] = refs
         return {
@@ -168,18 +174,3 @@ class Qwen21:
             "inputs": inputs,
             "control": [],
         }
-
-
-def validate_refs(refs: Any) -> list[str]:
-    """The reference images after the source: `["sha256:…", …]`, in the order the prompt
-    numbers them (the source is image 1)."""
-    if refs is None:
-        return []
-    if not isinstance(refs, list):
-        raise SpecError("refs: expected a list")
-    if len(refs) > MAX_REFS:
-        raise SpecError(f"At most {MAX_REFS} images can go with the source")
-    for n, ref in enumerate(refs, 2):
-        if not isinstance(ref, str) or not SHA_REF.match(ref):
-            raise SpecError(f"Image {n}: expected a sha256 reference")
-    return list(refs)

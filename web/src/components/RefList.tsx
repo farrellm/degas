@@ -2,18 +2,17 @@ import { thumbUrl } from '../api'
 import type { Source } from '../draft'
 import { size } from '../format'
 
-// The model reads up to 10 images: the source and 9 more.
-export const MAX_REFS = 9
-
 interface Props {
   refs: Source[]
+  /** How many images the model reads after the source. */
+  max: number
   onChange: (refs: Source[]) => void
   onAdd: () => void
   onCrop: (index: number) => void
 }
 
-/** The images a Qwen edit reads after the source, numbered from 2 in the order it reads them. */
-export function RefList({ refs, onChange, onAdd, onCrop }: Props) {
+/** The images an edit reads after the source, numbered from 2 in the order it reads them. */
+export function RefList({ refs, max, onChange, onAdd, onCrop }: Props) {
   return (
     <div className="ref-group" role="group" aria-labelledby="refs-label">
       <div className="setting">
@@ -24,7 +23,7 @@ export function RefList({ refs, onChange, onAdd, onCrop }: Props) {
           type="button"
           className="row-action"
           aria-label="Add image"
-          disabled={refs.length >= MAX_REFS}
+          disabled={refs.length >= max}
           onClick={onAdd}
         >
           Add

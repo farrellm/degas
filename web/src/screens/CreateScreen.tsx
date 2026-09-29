@@ -126,8 +126,10 @@ function CreateForm({
   const variant = (family && model ? variantFor(model, family) : undefined) ?? family?.variants[0]
   const mode = chosenMode && variant?.modes.includes(chosenMode) ? chosenMode : variant?.modes[0]
   const needsSource = !!mode && SOURCE_MODES.has(mode)
-  // Qwen edits read more images after the source; so does its inpaint, which is an edit.
-  const takesRefs = mode === 'edit' || (mode === 'inpaint' && !!variant?.modes.includes('edit'))
+  // Edits can read more images after the source; so does Qwen's inpaint, which is an edit.
+  const maxRefs = variant?.max_refs ?? 0
+  const takesRefs =
+    maxRefs > 0 && (mode === 'edit' || (mode === 'inpaint' && !!variant?.modes.includes('edit')))
 
   const schema = useQuery({
     queryKey: ['schema', family?.id, variant?.id, mode],
@@ -442,6 +444,7 @@ function CreateForm({
       {takesRefs && (
         <RefList
           refs={refs}
+          max={maxRefs}
           onChange={setRefs}
           onAdd={() => {
             setPicker('ref')
@@ -759,6 +762,7 @@ function CreateForm({
           target={target}
           constraints={variant.size_constraints}
           free={cropping.ref !== undefined}
+          refsKeepSize={variant.ref_max_pixels != null}
           onApply={(image) => {
             const at = cropping.ref
             if (at === undefined) {

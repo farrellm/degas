@@ -52,6 +52,8 @@ interface Props {
    * each reference itself (to the output's pixel count).
    */
   free?: boolean
+  /** The model scales references down only (FLUX.2 [klein]), so a small crop isn't enlarged. */
+  refsKeepSize?: boolean
   onApply: (image: BlobInfo) => void
   onCancel: () => void
 }
@@ -82,7 +84,15 @@ interface CornerDrag {
 }
 
 /** Full-screen crop, rotate and flip on the image well (design §8.2, ux.md Phase 4). */
-export function CropEditor({ sha, target, constraints, free = false, onApply, onCancel }: Props) {
+export function CropEditor({
+  sha,
+  target,
+  constraints,
+  free = false,
+  refsKeepSize = false,
+  onApply,
+  onCancel,
+}: Props) {
   const history = useQuery({
     queryKey: ['transform', sha],
     queryFn: () => api.getTransform(sha),
@@ -181,7 +191,8 @@ export function CropEditor({ sha, target, constraints, free = false, onApply, on
   const crop = view && frame && img ? cropOf(view, frame, img) : null
   const out =
     crop && edit ? (free ? crop : outputSize(crop, edit.aspect, target, constraints)) : null
-  const scale = crop && out ? (free ? modelUpscale(crop, target) : upscale(crop, out)) : 1
+  const scale =
+    crop && out ? (free ? (refsKeepSize ? 1 : modelUpscale(crop, target)) : upscale(crop, out)) : 1
 
   /** Move or zoom the image under the frame. */
   const moveView = (change: (v: View) => View) => {
