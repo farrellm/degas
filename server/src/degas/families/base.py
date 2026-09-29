@@ -81,7 +81,7 @@ LORA_WEIGHT: JsonSchema = {"type": "number", "minimum": -2, "maximum": 2}
 SHA_REF = re.compile(r"^sha256:[0-9a-f]{64}$")
 FIT_MODES = ("crop", "pad", "stretch")
 # Modes that start from a source image.
-SOURCE_MODES = frozenset({"i2i", "i2v", "inpaint", "outpaint"})
+SOURCE_MODES = frozenset({"i2i", "i2v", "edit", "inpaint", "outpaint"})
 
 
 def find_variant(family: FamilyDescriptor, variant: str, mode: str) -> Variant:

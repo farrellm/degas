@@ -1,4 +1,5 @@
-"""Source images and masks for i2i, inpaint, outpaint and i2v: design §6.1 and §6.5.
+"""Source images, references and masks for i2i, edit, inpaint, outpaint and i2v: design §6.1
+and §6.5.
 
 Uploads, URL imports, video frames and transformed images are ordinary blobs,
 held for 24 h by an `input` ref until a job or a kept item takes its own.
@@ -192,6 +193,11 @@ class Inputs:
                 del inputs["mask"]
             elif await self._mask_empty(inputs["mask"]):
                 raise MediaError("The mask is empty. Paint the area to redraw.")
+        # References go as they are: the pipeline sizes each one itself.
+        for n, value in enumerate(inputs.get("refs") or [], 2):
+            sha = unref(value)
+            if self.blobs.is_video(sha) or self.blobs.image_size(sha) is None:
+                raise MediaError(f"Image {n} is no longer stored. Choose it again.")
         for n, unit in enumerate(spec.get("control") or [], 1):
             unit["image"], mask = await self._fit(
                 unit["image"],

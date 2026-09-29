@@ -29,6 +29,12 @@ REMOTE = "/content/degas"
 WORKER_MATCH = "degas_worker.app:app"
 STARTED_MARKER = "@@degas-worker-started"
 RCLONE_URL = "https://downloads.rclone.org/rclone-current-linux-amd64.zip"
+# Qwen-Image 2.1's pipeline (huggingface/diffusers#14804) isn't in a diffusers release yet
+# (design §11). This is the PR's merge commit on main.
+DIFFUSERS_PIN = (
+    "diffusers @ git+https://github.com/huggingface/diffusers"
+    "@6256aa7666cedd47443adc8f82da9a10e110b09c"
+)
 
 # Runs in the Colab kernel so the worker inherits its CUDA environment (Phase 0, finding 6).
 BOOTSTRAP = f"""
@@ -353,6 +359,12 @@ class SessionManager:
             ' sys.exit(tuple(map(int, m.version("torchao").split(".")[:2])) < (0, 16))\''
             " 2>/dev/null || python3 -m pip uninstall -y -q torchao 2>/dev/null; true",
             timeout=120,
+        )
+        # Install the pinned diffusers only when the image's can't make Qwen-Image 2.1.
+        await t.run(
+            "python3 -c 'from diffusers import QwenImage21Pipeline' 2>/dev/null"
+            f" || python3 -m pip install -q '{DIFFUSERS_PIN}'",
+            timeout=600,
         )
 
     async def _start_worker(self) -> None:

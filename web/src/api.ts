@@ -142,8 +142,10 @@ export const isPair = (l: LoraEntry): l is LoraPair => !('path' in l)
 export type Fit = 'crop' | 'pad' | 'stretch'
 
 export interface Inputs {
-  /** `sha256:…` of the source image (i2i, inpaint, outpaint, i2v). */
+  /** `sha256:…` of the source image (i2i, edit, inpaint, outpaint, i2v). */
   source?: string
+  /** Qwen edit and inpaint: `sha256:…` of the images after the source, in reading order. */
+  refs?: string[]
   /** `sha256:…` of the inpaint mask, painted over the source (white is redrawn). */
   mask?: string
   /** Outpaint: where the source sits on the canvas, in canvas pixels. */

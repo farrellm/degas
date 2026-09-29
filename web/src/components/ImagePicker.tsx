@@ -12,7 +12,8 @@ type Picked = BlobInfo
 
 interface Props {
   onUse: (image: BlobInfo) => void
-  onCrop: (image: BlobInfo) => void
+  /** Offers Crop when given. */
+  onCrop?: (image: BlobInfo) => void
   onClose: () => void
 }
 
@@ -76,15 +77,17 @@ export function ImagePicker({ onUse, onCrop, onClose }: Props) {
             >
               Back
             </button>
-            <button
-              type="button"
-              className="btn quiet"
-              onClick={() => {
-                onCrop(picked)
-              }}
-            >
-              Crop
-            </button>
+            {onCrop && (
+              <button
+                type="button"
+                className="btn quiet"
+                onClick={() => {
+                  onCrop(picked)
+                }}
+              >
+                Crop
+              </button>
+            )}
             <button
               type="button"
               className="btn"

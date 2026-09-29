@@ -816,6 +816,88 @@ describe('App', () => {
     expect(screen.queryByRole('dialog', { name: 'Mask' })).not.toBeInTheDocument()
   })
 
+  it('switches to Qwen from the model picker and edits with ordered images', async () => {
+    const submitted: { spec: Record<string, unknown> }[] = []
+    const qwen = {
+      id: 'qwen21',
+      label: 'Qwen-Image 2.1',
+      media: 'image',
+      lora_format: 'single',
+      variants: [
+        {
+          id: 'base',
+          label: 'Qwen-Image 2.1',
+          min_gpu: 'L4',
+          modes: ['t2i', 'edit', 'inpaint'],
+          model_dir: null,
+          size_constraints: {
+            multiple_of: 32,
+            min_pixels: 262144,
+            max_pixels: 4300800,
+            presets: [[1024, 1024]],
+          },
+        },
+      ],
+    }
+    const harbour = { ...RESULT, id: 'r2', blob_sha: 'def', width: 640, height: 480 }
+    harbour.spec = { ...SPEC, params: { ...SPEC.params, prompt: 'a harbour' } }
+    mockApi({
+      'GET /api/families': () => [...FAMILIES, qwen],
+      'GET /api/families/qwen21/schema': () => SCHEMA,
+      'GET /api/assets': () => [
+        ...ASSETS,
+        {
+          path: 'models/qwen21/Qwen-Image-2.1',
+          family: 'qwen21',
+          kind: 'model',
+          size: 36e9,
+          sidecar: null,
+          preview_thumb: null,
+        },
+      ],
+      'GET /api/results': () => ({ results: [RESULT, harbour], cursor: null }),
+      'POST /api/jobs': (init) => {
+        submitted.push(JSON.parse(init?.body as string) as (typeof submitted)[number])
+        return { id: 'j2' }
+      },
+    })
+    const user = userEvent.setup()
+    renderApp()
+    await user.click(await screen.findByRole('button', { name: 'Model Studio XL v10' }))
+    const sheet = screen.getByRole('dialog', { name: 'Model' })
+    const row = within(sheet).getByRole('button', { name: /^Qwen-Image-2\.1/ })
+    expect(row).toHaveTextContent('Qwen-Image 2.1')
+    await user.click(row)
+    expect(await screen.findByRole('button', { name: 'Edit' })).toBeInTheDocument()
+
+    await user.type(screen.getByLabelText('Prompt'), 'the boat from image 2 in the bay')
+    await user.click(screen.getByRole('button', { name: 'Edit' }))
+    await user.click(screen.getByRole('button', { name: /Image 1 Choose an image/ }))
+    let picker = screen.getByRole('dialog', { name: 'Choose image' })
+    await user.click(await within(picker).findByRole('button', { name: 'Image: a lighthouse' }))
+    await user.click(within(picker).getByRole('button', { name: 'Use image' }))
+
+    for (const name of ['Image: a harbour', 'Image: a lighthouse']) {
+      await user.click(screen.getByRole('button', { name: 'Add image' }))
+      picker = screen.getByRole('dialog', { name: 'Choose image' })
+      expect(within(picker).queryByRole('button', { name: 'Crop' })).not.toBeInTheDocument()
+      await user.click(await within(picker).findByRole('button', { name }))
+      await user.click(within(picker).getByRole('button', { name: 'Use image' }))
+    }
+    expect(screen.getByText('640 × 480')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Move image 2 earlier' })).toBeDisabled()
+    await user.click(screen.getByRole('button', { name: 'Move image 3 earlier' }))
+
+    await user.click(screen.getByRole('button', { name: 'Generate' }))
+    expect(await screen.findByText('Queued 1 image.')).toBeInTheDocument()
+    expect(submitted[0]?.spec).toMatchObject({
+      family: 'qwen21',
+      mode: 'edit',
+      model: { path: 'models/qwen21/Qwen-Image-2.1' },
+      inputs: { source: 'sha256:abc', refs: ['sha256:abc', 'sha256:def'] },
+    })
+  })
+
   it('finds a described selection without submitting the Create form', async () => {
     vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null)
     const selects: unknown[] = []

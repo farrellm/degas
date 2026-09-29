@@ -45,6 +45,8 @@ export interface FamilyDraft {
   place?: Place | null
   /** ControlNet units (SDXL). */
   control?: ControlUnit[]
+  /** Qwen edit and inpaint: the images after the source, in the order the model reads them. */
+  refs?: Source[]
 }
 
 export interface Draft {
@@ -103,13 +105,17 @@ function update(family: string, change: (fd: Partial<FamilyDraft>) => Partial<Fa
   store({ ...draft, family, families: { ...draft.families, [family]: fd } })
 }
 
-/** Switch Create to another family, carrying the prompt over if that family has none yet. */
-export function switchFamily(family: string, prompt: string) {
-  update(family, (fd) =>
-    String(fd.params?.prompt ?? '').trim() || !prompt
-      ? fd
-      : { ...fd, params: { ...fd.params, prompt } },
-  )
+/**
+ * Switch Create to another family, carrying the prompt over if that family has none yet,
+ * and choosing `model` if given.
+ */
+export function switchFamily(family: string, prompt: string, model?: string) {
+  update(family, (fd) => {
+    const next = model ? { ...fd, model } : fd
+    return String(next.params?.prompt ?? '').trim() || !prompt
+      ? next
+      : { ...next, params: { ...next.params, prompt } }
+  })
 }
 
 /** The source a spec was made from, at the size the server fitted it to. */
@@ -160,6 +166,8 @@ export function draftFromSpec(spec: Spec, seed: number | null, source?: BlobInfo
         control: (spec.control ?? []).map((c) =>
           unitFromSpec(c, { w: Number(spec.params.width), h: Number(spec.params.height) }),
         ),
+        // The spec doesn't record the references' sizes; the Images row leaves them out.
+        refs: (spec.inputs?.refs ?? []).map((r) => ({ sha: unref(r), width: 0, height: 0 })),
       },
     },
     batchCount: 1,
@@ -205,4 +213,4 @@ export function useSourceTarget(): { family: string; mode: string } | null {
   return null
 }
 
-export const SOURCE_MODES = new Set(['i2i', 'i2v', 'inpaint', 'outpaint'])
+export const SOURCE_MODES = new Set(['i2i', 'i2v', 'edit', 'inpaint', 'outpaint'])

@@ -23,6 +23,7 @@ import { MaskEditor } from '../components/MaskEditor'
 import { MaskThumb } from '../components/MaskThumb'
 import { PlaceEditor } from '../components/PlaceEditor'
 import { PromptSheet } from '../components/PromptSheet'
+import { RefList } from '../components/RefList'
 import { SchemaForm } from '../components/SchemaForm'
 import {
   loadDraft,
@@ -45,6 +46,7 @@ const MODE_LABELS: Record<string, string> = {
   t2v: 'From text',
   i2i: 'From image',
   i2v: 'From image',
+  edit: 'Edit',
   inpaint: 'Inpaint',
   outpaint: 'Outpaint',
 }
@@ -90,11 +92,12 @@ function CreateForm({
   const [painting, setPainting] = useState(false)
   const [chosenPlace, setPlace] = useState<Place | null>(draft.place ?? null)
   const [control, setControl] = useState<ControlUnit[]>(draft.control ?? [])
+  const [refs, setRefs] = useState<Source[]>(draft.refs ?? [])
   const [editingUnit, setEditingUnit] = useState<string | null>(null)
   const [batchCount, setBatchCount] = useState(draft.batchCount)
   const [seedMode, setSeedMode] = useState<SeedMode>(draft.seedMode)
   const [queued, setQueued] = useState<number | null>(null)
-  const [picker, setPicker] = useState<'model' | 'lora' | 'prompts' | 'image' | null>(null)
+  const [picker, setPicker] = useState<'model' | 'lora' | 'prompts' | 'image' | 'ref' | null>(null)
   const [cropping, setCropping] = useState<string | null>(null)
   const [sourceGone, setSourceGone] = useState(false)
   const promptRef = useRef<HTMLTextAreaElement>(null)
@@ -107,6 +110,13 @@ function CreateForm({
   const models = assets.data?.filter(
     (a) => !!family && a.family === family.id && a.kind === 'model' && !!variantFor(a.path, family),
   )
+  // The picker offers every family that makes the same media: choosing another family's model
+  // switches to it.
+  const siblings = families.data?.filter((f) => f.media === family?.media) ?? []
+  const pickable = assets.data?.filter((a) => {
+    const f = siblings.find((s) => s.id === a.family)
+    return a.kind === 'model' && !!f && !!variantFor(a.path, f)
+  })
   // A model remixed from an older image may have left Drive: keep it, flagged, rather
   // than silently swapping in another.
   const model = chosenModel || (models?.[0]?.path ?? '')
@@ -114,6 +124,8 @@ function CreateForm({
   const variant = (family && model ? variantFor(model, family) : undefined) ?? family?.variants[0]
   const mode = chosenMode && variant?.modes.includes(chosenMode) ? chosenMode : variant?.modes[0]
   const needsSource = !!mode && SOURCE_MODES.has(mode)
+  // Qwen edits read more images after the source; so does its inpaint, which is an edit.
+  const takesRefs = mode === 'edit' || (mode === 'inpaint' && !!variant?.modes.includes('edit'))
 
   const schema = useQuery({
     queryKey: ['schema', family?.id, variant?.id, mode],
@@ -144,6 +156,7 @@ function CreateForm({
         mask,
         place: chosenPlace,
         control,
+        refs,
       },
       batchCount,
       seedMode,
@@ -160,6 +173,7 @@ function CreateForm({
     mask,
     chosenPlace,
     control,
+    refs,
     batchCount,
     seedMode,
   ])
@@ -204,6 +218,7 @@ function CreateForm({
                 ...(extendsClip && { extends: extendsClip }),
                 ...(mode === 'inpaint' && mask && { mask: `sha256:${mask.sha}` }),
                 ...(mode === 'outpaint' && place && { place }),
+                ...(takesRefs && refs.length > 0 && { refs: refs.map((r) => `sha256:${r.sha}`) }),
               },
             }),
           ...(withControl && control.length > 0 && { control: control.map(unitSpec) }),
@@ -290,7 +305,7 @@ function CreateForm({
           setPicker('image')
         }}
       >
-        <span className="setting-label">Source</span>{' '}
+        <span className="setting-label">{takesRefs ? 'Image 1' : 'Source'}</span>{' '}
         <span className={source ? 'setting-value' : 'setting-value none'}>
           {source ? (
             <>
@@ -421,6 +436,15 @@ function CreateForm({
       )}
       {mode === 'outpaint' && source && !sourceGone && place && (
         <PlaceEditor source={source} canvas={target} place={place} onChange={setPlace} />
+      )}
+      {takesRefs && (
+        <RefList
+          refs={refs}
+          onChange={setRefs}
+          onAdd={() => {
+            setPicker('ref')
+          }}
+        />
       )}
       <div className={modelMissing ? 'model-row missing' : 'model-row'}>
         <button
@@ -575,13 +599,14 @@ function CreateForm({
         <AssetPicker
           title="Model"
           noun="models"
-          assets={models ?? []}
+          assets={pickable ?? []}
           selected={new Set([model])}
           describe={
-            family.variants.length > 1
+            siblings.length > 1 || family.variants.length > 1
               ? (a) => {
-                  const v = variantFor(a.path, family)
-                  return v?.model_dir ? v.label : null
+                  const f = siblings.find((s) => s.id === a.family)
+                  const v = f && variantFor(a.path, f)
+                  return v?.model_dir ? v.label : siblings.length > 1 ? (f?.label ?? null) : null
                 }
               : undefined
           }
@@ -596,6 +621,11 @@ function CreateForm({
             </p>
           }
           onPick={(a) => {
+            if (a.family && a.family !== family.id) {
+              switchFamily(a.family, String(params.prompt ?? ''), a.path)
+              onFamily(a.family)
+              return
+            }
             const next = variantFor(a.path, family)
             if (next && next.lora_format !== variant?.lora_format) setLoras([])
             setModel(a.path)
@@ -653,6 +683,20 @@ function CreateForm({
           onCrop={(image) => {
             setPicker(null)
             setCropping(image.sha256)
+          }}
+          onClose={() => {
+            setPicker(null)
+          }}
+        />
+      )}
+      {picker === 'ref' && (
+        <ImagePicker
+          onUse={(image) => {
+            setRefs([
+              ...refs,
+              { sha: image.sha256, width: image.width ?? 0, height: image.height ?? 0 },
+            ])
+            setPicker(null)
           }}
           onClose={() => {
             setPicker(null)

@@ -160,6 +160,31 @@ class FakeWan:
         pass
 
 
+class FakeQwen:
+    """Records the sizes of the condition images (source first, then references) and mask."""
+
+    def __init__(self) -> None:
+        self.calls: list[dict[str, Any]] = []
+
+    def run(self, spec: dict[str, Any], seeds: list[int], ctx: RunContext) -> Iterator[Output]:
+        inputs = spec.get("inputs") or {}
+        staged: dict[str, Any] = {"mode": spec["mode"], "images": []}
+        for ref in [inputs.get("source"), *(inputs.get("refs") or [])]:
+            if ref:
+                with Image.open(ctx.blob(ref)) as im:
+                    staged["images"].append(im.size)
+        if inputs.get("mask"):
+            with Image.open(ctx.blob(inputs["mask"])) as im:
+                staged["mask"] = im.size
+        self.calls.append(staged)
+        for item, seed in enumerate(seeds):
+            ctx.progress(item, "denoise", 1, 1)
+            yield Output(item, seed, png(seed), "image/png", "png")
+
+    def unload(self) -> None:
+        pass
+
+
 class FakeSam:
     """Selects a rectangle around each included point; a description selects the left half."""
 
@@ -220,6 +245,7 @@ class Harness:
         self.tunnels: list[FakeTunnel] = []
         self.runner = FakeSdxl()
         self.wan = FakeWan()
+        self.qwen = FakeQwen()
         self.sam = FakeSam()
         self.trace = FakeTrace()
         self.worker_paths = Paths(home=tmp_path / "vm", models=tmp_path / "vm-models")
@@ -238,7 +264,7 @@ class Harness:
         rclone.chmod(rclone.stat().st_mode | stat.S_IEXEC)
         self.worker_app = create_worker_app(
             self.worker_paths,
-            {"sdxl": runner_factory, "wan22": lambda: self.wan},
+            {"sdxl": runner_factory, "wan22": lambda: self.wan, "qwen21": lambda: self.qwen},
             rclone=str(rclone),
             exit_process=exit_process,
             preprocessors={
@@ -365,6 +391,13 @@ WAN_5B = {
     "drive_file_id": "w5",
     "size": 20,
 }
+QWEN = {
+    "path": "models/qwen21/Qwen-Image-2.1",
+    "family": "qwen21",
+    "kind": "model",
+    "drive_file_id": "q21",
+    "size": 10,
+}
 WAN_I2V = {
     "path": "models/wan22/i2v-a14b/Wan2.2-I2V-A14B-Diffusers",
     "family": "wan22",
@@ -386,6 +419,7 @@ def client(harness: Harness) -> Iterator[TestClient]:
                 *CONFIGS,
                 WAN_5B,
                 WAN_I2V,
+                QWEN,
                 INPAINT_MODEL,
                 SAM,
                 DEPTH,

@@ -45,9 +45,10 @@ def test_health(client: TestClient) -> None:
 
 def test_families_and_schema(client: TestClient) -> None:
     families = client.get("/api/families").json()
-    assert [f["id"] for f in families] == ["sdxl", "wan22"]
+    assert [f["id"] for f in families] == ["sdxl", "qwen21", "wan22"]
     assert families[0]["variants"][0]["modes"] == ["t2i", "i2i", "inpaint", "outpaint"]
-    wan = {v["id"]: v for v in families[1]["variants"]}
+    assert families[1]["variants"][0]["modes"] == ["t2i", "edit", "inpaint"]
+    wan = {v["id"]: v for v in families[2]["variants"]}
     assert wan["ti2v-5b"]["modes"] == ["t2v", "i2v"]
     assert wan["ti2v-5b"]["lora_format"] == "single"
     assert wan["i2v-a14b"]["lora_format"] == "paired_hi_lo"

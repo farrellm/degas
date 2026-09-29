@@ -36,7 +36,8 @@ def saved_config(job: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
 
 
 def input_blobs(spec: dict[str, Any]) -> list[str]:
-    """Blob shas a spec uses as inputs: source, mask, control images and their originals."""
+    """Blob shas a spec uses as inputs: source, mask, references, control images and their
+    originals."""
     shas: list[str] = []
 
     def add(value: Any) -> None:
@@ -48,6 +49,8 @@ def input_blobs(spec: dict[str, Any]) -> list[str]:
     inputs = spec.get("inputs") or {}
     for key in ("source", "mask", "extends"):
         add(inputs.get(key))
+    for value in inputs.get("refs") or []:
+        add(value)
     for derived, transform in (inputs.get("transforms") or {}).items():
         add(derived)
         add((transform or {}).get("original"))
