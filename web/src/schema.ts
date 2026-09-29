@@ -33,3 +33,17 @@ export function enumLabel(
   const i = prop?.enum?.indexOf(String(value)) ?? -1
   return prop?.['x-enum-labels']?.[i] ?? String(value)
 }
+
+/**
+ * What "Reset to …" names when a value has moved off its parameter's default: the default's
+ * label, or null while the value is still the default (or there is none).
+ */
+export function resetLabel(prop: ParamProp, value: Params[string] | undefined): string | null {
+  const d = prop.default
+  if (d === undefined || value == null) return null
+  if (typeof d === 'number' && typeof value === 'number') {
+    return Math.abs(d - value) < 1e-9 ? null : String(d)
+  }
+  if (String(d) === String(value)) return null
+  return enumLabel(prop, d)
+}

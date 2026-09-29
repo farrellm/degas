@@ -1,6 +1,7 @@
-import { Fragment, type ReactNode, type Ref } from 'react'
+import { Fragment, type CSSProperties, type ReactNode, type Ref } from 'react'
 import type { ParamProp, ParamSchema, Params, SeedMode } from '../api'
 import { size } from '../format'
+import { resetLabel } from '../schema'
 
 interface Props {
   schema: ParamSchema
@@ -96,6 +97,10 @@ export function SchemaForm({
             width={Number(values.width)}
             height={Number(values.height)}
             presets={presets}
+            defaultSize={[
+              Number(schema.properties.width?.default),
+              Number(schema.properties.height?.default),
+            ]}
             onChange={(w, h) => {
               onChange({ ...values, width: w, height: h })
             }}
@@ -127,14 +132,15 @@ function Field({ name, prop, value, set, seeds }: FieldProps) {
   const id = `param-${name}`
   const widget = prop['x-widget']
   const numeric = prop.type === 'integer' || prop.type === 'number'
+  const reset = () => {
+    if (prop.default !== undefined) set(name, prop.default)
+  }
 
   if (prop.enum) {
     const labels = prop['x-enum-labels'] ?? prop.enum
     return (
       <div className="setting">
-        <label className="setting-label" htmlFor={id}>
-          {label}
-        </label>
+        <FieldLabel id={id} label={label} prop={prop} value={value} reset={reset} />
         <select
           id={id}
           value={String(value ?? '')}
@@ -221,23 +227,27 @@ function Field({ name, prop, value, set, seeds }: FieldProps) {
   }
 
   if (numeric && widget === 'slider') {
+    const at = notch(prop)
     return (
       <div className="setting">
-        <label className="setting-label" htmlFor={id}>
-          {label}
-        </label>
+        <FieldLabel id={id} label={label} prop={prop} value={value} reset={reset} />
         <div className="slider-control">
-          <input
-            id={id}
-            type="range"
-            min={prop.minimum}
-            max={prop.maximum}
-            step={prop['x-step'] ?? prop.multipleOf ?? (prop.type === 'integer' ? 1 : 0.1)}
-            value={Number(value)}
-            onChange={(e) => {
-              set(name, Number(e.target.value))
-            }}
-          />
+          <span
+            className={at === null ? 'slider-track' : 'slider-track notched'}
+            style={at === null ? undefined : ({ '--default': String(at) } as CSSProperties)}
+          >
+            <input
+              id={id}
+              type="range"
+              min={prop.minimum}
+              max={prop.maximum}
+              step={prop['x-step'] ?? prop.multipleOf ?? (prop.type === 'integer' ? 1 : 0.1)}
+              value={Number(value)}
+              onChange={(e) => {
+                set(name, Number(e.target.value))
+              }}
+            />
+          </span>
           <output htmlFor={id}>{String(value)}</output>
         </div>
       </div>
@@ -246,9 +256,7 @@ function Field({ name, prop, value, set, seeds }: FieldProps) {
 
   return (
     <div className="setting">
-      <label className="setting-label" htmlFor={id}>
-        {label}
-      </label>
+      <FieldLabel id={id} label={label} prop={prop} value={value} reset={reset} />
       <input
         id={id}
         type={numeric ? 'number' : 'text'}
@@ -263,6 +271,50 @@ function Field({ name, prop, value, set, seeds }: FieldProps) {
       />
     </div>
   )
+}
+
+/**
+ * A setting's label, with "Reset to 28" under it once the value has moved off the family's
+ * default. It sits in the label column so the row doesn't grow while a slider is dragged.
+ */
+function FieldLabel({
+  id,
+  label,
+  prop,
+  value,
+  reset,
+}: {
+  id: string
+  label: string
+  prop: ParamProp
+  value: FieldProps['value']
+  reset: () => void
+}) {
+  const to = resetLabel(prop, value)
+  return (
+    <div className="setting-label">
+      <label htmlFor={id}>{label}</label>
+      {to !== null && (
+        <button
+          type="button"
+          className="setting-reset"
+          aria-label={`Reset ${label} to ${to}`}
+          onClick={reset}
+        >
+          Reset to {to}
+        </button>
+      )}
+    </div>
+  )
+}
+
+/** Where a slider's default sits along its track, for the notch drawn under it. */
+function notch(prop: ParamProp): number | null {
+  const { minimum: min, maximum: max } = prop
+  if (typeof prop.default !== 'number' || min === undefined || max === undefined || max <= min) {
+    return null
+  }
+  return Math.min(1, Math.max(0, (prop.default - min) / (max - min)))
 }
 
 /**
@@ -337,11 +389,14 @@ function AspectPicker({
   width,
   height,
   presets,
+  defaultSize: [dw, dh],
   onChange,
 }: {
   width: number
   height: number
   presets: [number, number][]
+  /** The family's default size, notched like a slider's default. */
+  defaultSize: [number, number]
   onChange: (w: number, h: number) => void
 }) {
   return (
@@ -353,12 +408,15 @@ function AspectPicker({
       <div className="setting-control aspects">
         {presets.map(([w, h]) => {
           const on = w === width && h === height
+          const fallback = w === dw && h === dh
           return (
             <button
               key={`${String(w)}x${String(h)}`}
               type="button"
-              className={w > h ? 'aspect wide' : 'aspect'}
-              aria-label={`${String(w)}×${String(h)}`}
+              className={['aspect', w > h && 'wide', fallback && 'default']
+                .filter(Boolean)
+                .join(' ')}
+              aria-label={`${String(w)}×${String(h)}${fallback ? ', default' : ''}`}
               aria-pressed={on}
               onClick={() => {
                 onChange(w, h)
