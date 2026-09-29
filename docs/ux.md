@@ -85,6 +85,7 @@ One name per action, used in buttons, confirmations and empty states:
 | Drop a unit | Remove this ControlNet | — |
 | Add a reference image (Qwen edit) | Add image (Images row) | — |
 | Reorder or drop a reference | Earlier / Remove | — |
+| Discretion mode (Phase 9) | Cover images (header switch) | Covered tiles read *Show image 1*; prompts *Show prompt* |
 
 "Keep" and "Save to Photos" are deliberately different words. Keeping is about retention inside Degas; Save to Photos exports to the phone.
 
@@ -236,6 +237,17 @@ The plan:
 - **Size.** The presets come in two tiers, 1K and 2K. 2048² is selected by default. The GPU warning under Model already covers a T4 session.
 - **Nothing is rose that isn't changing:** reference thumbnails are ordinary image thumbnails, not hatched.
 
+### Phase 9: Discretion
+
+Built. For the subway or the couch: a switch in the header, left of the session chip, covers every image and prompt until you touch it. It's an eye, closed and on raised paper while it's on (`aria-pressed`, labelled *Cover images*), and it's remembered on the device. An inline script in `index.html` sets `<html data-discreet>` before the first paint, so a relaunch never flashes an image.
+
+- **Glassine, not hatching.** A covered image lies under glassine, the paper laid over a pastel to protect it: blurred past recognition, desaturated and washed with paper. Hatching still means only "not drawn yet". A covered prompt keeps the shape of its words but not the words.
+- **Where.** Tiles in Results, Library and the image picker's Recent and Library grids, the viewer's image and its wall-label prompts, and the feed's captions. Create's 34 px source, reference, mask and control thumbnails stay covered, as there's no tap to spare on them. The full-screen editors (crop, mask, placement) and the picked preview are clear, because you open them on purpose.
+- **Uncovering.** Tap a covered tile to uncover it, and tap again to open it. Hold it to see it only while your finger is down (a move first means scrolling). In the viewer, each image starts covered unless its tile was uncovered, and a tap uncovers it. Swipes don't count as taps. Tap a prompt to uncover it.
+- **Covering again.** Closing the viewer, changing tabs, and leaving the app cover everything.
+- **App switcher.** When the app loses focus, a plain paper shield with the wordmark covers the screen. It's set on the DOM directly, not through React, so it paints as soon as possible. It drops when the app has focus again. A share sheet or photo picker also raises it, but only hiding the app covers what you'd uncovered. iOS may take its snapshot before the shield paints, so covered is also the resting state: at worst, the snapshot shows what you uncovered just before leaving.
+- **Notifications.** While the mode is on, the service worker drops the body (the prompt, or an error) and keeps the title, *2 images finished*.
+
 ## 5. Component inventory
 
 | Component | Status | Notes |
@@ -257,6 +269,7 @@ The plan:
 | `ControlList`, `ControlThumb` | Phase 7 | Unit rows; the chalk-study thumbnail |
 | `ControlEditor` | Phase 7 | Sheet; hosts the image picker, crop, area and model pickers in its place; `StepRange`; helpers in `control.ts` |
 | `RefList` | Phase 8 | Ordered reference images for Qwen edits; *Crop*, *Earlier* and *Remove* |
+| `Tile`, `CoveredText`, `DiscretionToggle` | Phase 9 | Result/library/picker tile with covering; a covered prompt; the header switch. State, `useCover` and the shield in `discretion.ts` |
 
 ## 6. Quality floor
 

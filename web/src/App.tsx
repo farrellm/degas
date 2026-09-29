@@ -1,9 +1,11 @@
 import { useQuery } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import { api } from './api'
+import { DiscretionToggle } from './components/DiscretionToggle'
 import { NotificationAsk } from './components/NotificationAsk'
 import { SessionChip } from './components/SessionChip'
 import { SessionSheet } from './components/SessionSheet'
+import { coverAll } from './discretion'
 import { useServerEvents } from './events'
 import { CreateScreen } from './screens/CreateScreen'
 import { LibraryScreen } from './screens/LibraryScreen'
@@ -48,11 +50,14 @@ function App() {
     <div className="app">
       <header className="app-header">
         <span className="wordmark">Degas</span>
-        <SessionChip
-          onOpen={() => {
-            setSessionOpen(true)
-          }}
-        />
+        <div className="header-actions">
+          <DiscretionToggle />
+          <SessionChip
+            onOpen={() => {
+              setSessionOpen(true)
+            }}
+          />
+        </div>
       </header>
       {session.error && (
         <p className="server-down" role="alert">
@@ -98,6 +103,7 @@ function App() {
             aria-current={t === tab ? 'page' : undefined}
             onClick={() => {
               setTab(t)
+              coverAll()
             }}
           >
             {t}

@@ -6,6 +6,7 @@ import '@fontsource-variable/newsreader/opsz-italic.css'
 import '@fontsource-variable/schibsted-grotesk'
 import './index.css'
 import App from './App.tsx'
+import { installShield } from './discretion'
 
 const root = document.getElementById('root')
 if (!root) throw new Error('#root element missing')
@@ -21,6 +22,8 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator) {
     console.warn('service worker registration failed', e)
   })
 }
+
+installShield()
 
 createRoot(root).render(
   <StrictMode>

@@ -1,8 +1,10 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { StrictMode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
+import { installShield, setDiscretion } from './discretion'
 
 const FAMILIES = [
   {
@@ -370,10 +372,13 @@ function mockApi(overrides: Record<string, Handler> = {}) {
 
 function renderApp() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  // StrictMode as in main.tsx, so effects that don't survive a remount show up here.
   return render(
-    <QueryClientProvider client={client}>
-      <App />
-    </QueryClientProvider>,
+    <StrictMode>
+      <QueryClientProvider client={client}>
+        <App />
+      </QueryClientProvider>
+    </StrictMode>,
   )
 }
 
@@ -384,6 +389,7 @@ describe('App', () => {
   })
 
   afterEach(() => {
+    setDiscretion(false)
     vi.unstubAllGlobals()
     vi.restoreAllMocks()
   })
@@ -1301,6 +1307,128 @@ describe('App', () => {
     await user.click(await screen.findByRole('button', { name: /No GPU/ }))
     const section = await screen.findByRole('region', { name: 'Notifications' })
     expect(section).toHaveTextContent('add Degas to the Home Screen')
+  })
+
+  it('covers images and prompts until tapped, and remembers the choice', async () => {
+    const second = { ...RESULT, id: 'r2', item_index: 1, blob_sha: 'def', seed: 1235 }
+    mockApi({
+      'GET /api/jobs': () => [{ ...JOB_DONE, seeds: [1234, 1235] }],
+      'GET /api/results': () => ({ results: [RESULT, second], cursor: null }),
+    })
+    const user = userEvent.setup()
+    renderApp()
+    const toggle = screen.getByRole('button', { name: 'Cover images' })
+    await user.click(toggle)
+    expect(toggle).toHaveAttribute('aria-pressed', 'true')
+    expect(document.documentElement).toHaveAttribute('data-discreet')
+    expect(localStorage.getItem('degas.discretion')).toBe('1')
+
+    await user.click(screen.getByRole('button', { name: /Results/ }))
+    const tile = await screen.findByRole('button', { name: 'Show image 1' })
+    expect(tile).toHaveClass('covered')
+    expect(screen.getByRole('button', { name: 'Show image 2' })).toHaveClass('covered')
+    await user.click(screen.getByRole('button', { name: 'Show prompt' }))
+    expect(screen.getByText('a lighthouse')).not.toHaveClass('covered-text')
+
+    // The first tap uncovers; the second opens.
+    await user.click(tile)
+    expect(tile).not.toHaveClass('covered')
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /Open image 1, seed 1234/ }))
+    const viewer = screen.getByRole('dialog', { name: 'Image' })
+    expect(within(viewer).queryByRole('button', { name: 'Show image' })).not.toBeInTheDocument()
+    expect(within(viewer).getByRole('button', { name: 'Show prompt' })).toBeInTheDocument()
+
+    // The next image is still covered.
+    await user.click(within(viewer).getByRole('button', { name: 'Next image' }))
+    await user.click(within(viewer).getByRole('button', { name: 'Show image' }))
+    expect(within(viewer).queryByRole('button', { name: 'Show image' })).not.toBeInTheDocument()
+
+    // Closing the viewer covers everything again.
+    await user.click(within(viewer).getByRole('button', { name: 'Close' }))
+    expect(screen.getByRole('button', { name: 'Show image 1' })).toHaveClass('covered')
+    expect(screen.getByRole('button', { name: 'Show prompt' })).toBeInTheDocument()
+
+    await user.click(toggle)
+    expect(document.documentElement).not.toHaveAttribute('data-discreet')
+    expect(screen.getByRole('button', { name: /Open image 1/ })).not.toHaveClass('covered')
+  })
+
+  it('shows a covered image only while it is held', async () => {
+    mockApi({
+      'GET /api/jobs': () => [{ ...JOB_DONE }],
+      'GET /api/results': () => ({ results: [RESULT], cursor: null }),
+    })
+    setDiscretion(true)
+    const user = userEvent.setup()
+    renderApp()
+    await user.click(screen.getByRole('button', { name: /Results/ }))
+    const tile = await screen.findByRole('button', { name: 'Show image 1' })
+    fireEvent.pointerDown(tile, { button: 0, clientX: 10, clientY: 10 })
+    await waitFor(() => {
+      expect(tile).toHaveClass('peek')
+    })
+    expect(tile).not.toHaveClass('covered')
+    fireEvent.pointerUp(tile)
+    fireEvent.click(tile)
+    expect(tile).toHaveClass('covered')
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+
+    // Moving first is a scroll, not a peek.
+    fireEvent.pointerDown(tile, { button: 0, clientX: 10, clientY: 10 })
+    fireEvent.pointerMove(tile, { clientX: 10, clientY: 60 })
+    await new Promise((r) => setTimeout(r, 300))
+    expect(tile).not.toHaveClass('peek')
+  })
+
+  it('covers the screen and every image when the app is left', async () => {
+    mockApi({
+      'GET /api/jobs': () => [{ ...JOB_DONE }],
+      'GET /api/results': () => ({ results: [RESULT], cursor: null }),
+    })
+    installShield()
+    setDiscretion(true)
+    const user = userEvent.setup()
+    renderApp()
+    await user.click(screen.getByRole('button', { name: /Results/ }))
+    await user.click(await screen.findByRole('button', { name: 'Show image 1' }))
+    expect(screen.getByRole('button', { name: /Open image 1/ })).toBeInTheDocument()
+
+    const root = document.documentElement
+    fireEvent.blur(window)
+    expect(root).toHaveAttribute('data-shield')
+    fireEvent.focus(window)
+    expect(root).not.toHaveAttribute('data-shield')
+    // Losing focus alone (a share sheet) keeps what was uncovered.
+    expect(screen.getByRole('button', { name: /Open image 1/ })).toBeInTheDocument()
+
+    const state = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden')
+    fireEvent(document, new Event('visibilitychange'))
+    expect(root).toHaveAttribute('data-shield')
+    expect(await screen.findByRole('button', { name: 'Show image 1' })).toHaveClass('covered')
+    state.mockReturnValue('visible')
+    fireEvent(document, new Event('visibilitychange'))
+    expect(root).not.toHaveAttribute('data-shield')
+
+    // A tab change covers again too.
+    await user.click(screen.getByRole('button', { name: 'Show image 1' }))
+    await user.click(screen.getByRole('button', { name: 'Create' }))
+    await user.click(screen.getByRole('button', { name: /Results/ }))
+    expect(await screen.findByRole('button', { name: 'Show image 1' })).toHaveClass('covered')
+  })
+
+  it('covers library images', async () => {
+    mockApi({ 'GET /api/library': () => ({ items: [LIBRARY_ITEM], cursor: null }) })
+    setDiscretion(true)
+    const user = userEvent.setup()
+    renderApp()
+    await user.click(await screen.findByRole('button', { name: 'Library' }))
+    const tile = await screen.findByRole('button', { name: 'Show image' })
+    expect(tile).toHaveClass('covered')
+    await user.click(tile)
+    expect(screen.getByRole('button', { name: 'Open a harbour at dusk' })).not.toHaveClass(
+      'covered',
+    )
   })
 
   it('reports an unreachable server', async () => {
