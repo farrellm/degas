@@ -23,9 +23,8 @@ export interface ViewerItem {
 
 const weight = (w: number) => String(Number(w.toFixed(2)))
 
-/** "Studio XL v10, with Film Grain v3 at 0.8" for the wall label. */
-function modelWithLoras(spec: Spec, assets: Asset[] | undefined): string {
-  const model = assetLabel(spec.model.path, assets)
+/** "Film Grain v3 at 0.8 and …" for the wall label's model line, or null without LoRAs. */
+function loraText(spec: Spec, assets: Asset[] | undefined): string | null {
   const loras = (spec.loras ?? []).map((l) => {
     const at = isPair(l)
       ? [l.high && `${weight(l.high.weight)} high`, l.low && `${weight(l.low.weight)} low`]
@@ -34,7 +33,7 @@ function modelWithLoras(spec: Spec, assets: Asset[] | undefined): string {
       : weight(l.weight)
     return `${loraLabel(l, assets)} at ${at}`
   })
-  return loras.length ? `${model}, with ${loras.join(' and ')}` : model
+  return loras.length ? loras.join(' and ') : null
 }
 
 interface Props<T extends ViewerItem> {
@@ -113,6 +112,7 @@ export function Viewer<T extends ViewerItem>({
     .filter(Boolean)
     .join(' ')
   const video = isVideo(r.media_type)
+  const loras = spec ? loraText(spec, assets) : null
   const cfg =
     params.cfg_low == null
       ? String(params.cfg)
@@ -224,7 +224,17 @@ export function Viewer<T extends ViewerItem>({
           ) : null}
         </div>
         <p className="lines">
-          <span>{spec ? modelWithLoras(spec, assets) : 'Unknown model'}</span>
+          <span>
+            {spec ? assetLabel(spec.model.path, assets) : 'Unknown model'}
+            {loras && (
+              <>
+                , with{' '}
+                <CoveredText id={`prompt:${r.id}`} label="Show LoRAs" shown={!covered}>
+                  {loras}
+                </CoveredText>
+              </>
+            )}
+          </span>
           <span>
             {size(r.width, r.height)}, seed {r.seed}
           </span>

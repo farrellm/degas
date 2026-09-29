@@ -1420,6 +1420,42 @@ describe('App', () => {
     expect(await screen.findByRole('button', { name: 'Show image 1' })).toHaveClass('covered')
   })
 
+  it('covers LoRA names and errors', async () => {
+    const withLora = { ...SPEC, loras: [{ path: 'loras/sdxl/film.safetensors', weight: 0.8 }] }
+    const first = { ...RESULT, spec: withLora }
+    const second = { ...first, id: 'r2', item_index: 1, blob_sha: 'def', seed: 1235 }
+    mockApi({
+      'GET /api/jobs': () => [
+        { ...JOB_DONE, spec: withLora, seeds: [1234, 1235] },
+        {
+          ...JOB_DONE,
+          id: 'j2',
+          status: 'error',
+          error: 'Could not load LoRA loras/sdxl/film.safetensors',
+        },
+      ],
+      'GET /api/results': () => ({ results: [first, second], cursor: null }),
+    })
+    setDiscretion(true)
+    const user = userEvent.setup()
+    renderApp()
+    await user.click(screen.getByRole('button', { name: /Results/ }))
+    await user.click(await screen.findByRole('button', { name: 'Show error' }))
+    expect(screen.getByText(/Could not load LoRA/)).not.toHaveClass('covered-text')
+
+    // An uncovered image names its LoRAs; a covered one hides them until it's tapped.
+    await user.click(screen.getByRole('button', { name: 'Show image 1' }))
+    await user.click(screen.getByRole('button', { name: /Open image 1/ }))
+    const viewer = screen.getByRole('dialog', { name: 'Image' })
+    expect(
+      within(viewer).getByText(/Studio XL v10, with Film Grain v3 at 0.8/),
+    ).toBeInTheDocument()
+    await user.click(within(viewer).getByRole('button', { name: 'Next image' }))
+    expect(within(viewer).getByRole('button', { name: 'Show LoRAs' })).toBeInTheDocument()
+    await user.click(within(viewer).getByRole('button', { name: 'Show image' }))
+    expect(within(viewer).queryByRole('button', { name: 'Show LoRAs' })).not.toBeInTheDocument()
+  })
+
   it('covers library images', async () => {
     mockApi({ 'GET /api/library': () => ({ items: [LIBRARY_ITEM], cursor: null }) })
     setDiscretion(true)

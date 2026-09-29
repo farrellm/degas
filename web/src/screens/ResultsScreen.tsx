@@ -529,7 +529,13 @@ function GroupView({
           )}
         </div>
       </header>
-      {job?.status === 'error' && job.error && <p className="group-error">{job.error}</p>}
+      {job?.status === 'error' && job.error && (
+        <p className="group-error">
+          <CoveredText id={`error:${group.id}`} label="Show error">
+            {job.error}
+          </CoveredText>
+        </p>
+      )}
       <div className="contact" style={style}>
         {chain && results.map(tile)}
         {Array.from({ length: Math.max(total, chain ? 0 : results.length) }, (_, i) => {
