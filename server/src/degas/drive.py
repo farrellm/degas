@@ -47,6 +47,9 @@ PREVIEW_TYPES = {
     ".webp": "image/webp",
 }
 MAX_SIDECAR_BYTES = 64 * 1024
+# Part of a parsed sidecar's cache key: bump it when `parse_sidecar` keeps new fields, so the
+# next rescan parses every sidecar again instead of reusing the old result.
+SIDECAR_FORMAT = 2
 MAX_PREVIEW_BYTES = 16 * 1024 * 1024
 
 # Stores a preview image's bytes (with its media type) and returns the blob's sha256.
@@ -378,7 +381,8 @@ class DriveIndexer:
             preview_file = asset.pop("preview_file", None)
             images: dict[str, dict[str, Any]] = asset.pop("folder_images", {})
 
-            asset["sidecar_rev"] = _rev(sidecar_file)
+            rev = _rev(sidecar_file)
+            asset["sidecar_rev"] = rev and f"{SIDECAR_FORMAT}:{rev}"
             if sidecar_file is None:
                 asset["sidecar"] = None
             elif asset["sidecar_rev"] == prev.get("sidecar_rev"):
