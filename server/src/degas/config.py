@@ -41,6 +41,12 @@ class PushConfig(_Section):
     key_file: Path | None = None  # default: <data_dir>/vapid_private.pem (generated)
 
 
+class LoraConfig(_Section):
+    session_name: str = "degas-lora"  # its own Colab session, apart from the app's
+    # A local rclone remote with write access to the same Drive, for `degas lora publish`.
+    rclone_remote: str = "gdrive:"
+
+
 class Config(_Section):
     data_dir: Path = Path("data")
     host: str = "127.0.0.1"
@@ -50,6 +56,7 @@ class Config(_Section):
     colab: ColabConfig = ColabConfig()
     drive: DriveConfig = DriveConfig()
     push: PushConfig = PushConfig()
+    lora: LoraConfig = LoraConfig()
 
     @property
     def ssh_key(self) -> Path:

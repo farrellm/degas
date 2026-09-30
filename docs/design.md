@@ -29,7 +29,7 @@ The initial model families are Stable Diffusion XL (images) and Wan 2.2 (video).
 - Multi-user support, or any auth beyond tailnet membership.
 - Video ControlNet (Wan VACE / Fun-Control). The schema is designed so it can be added later.
 - Regional LoRA.
-- Training LoRAs.
+- Training LoRAs in the app. (`degas lora`, a separate CLI, trains SDXL LoRAs on Colab with kohya sd-scripts: see the README.)
 - Local (non-Colab) inference.
 
 ## 2. Architecture

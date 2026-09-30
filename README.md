@@ -32,6 +32,32 @@ In the app: tap **No GPU** in the header to start a GPU session, write a prompt 
 
 On the iPhone, open the app in Safari, then Share → **Add to Home Screen**. Notifications (jobs finishing, and a warning 2 minutes before an idle session stops) only work from the installed app; turn them on in the GPU session sheet. Set `push.subject` in `degas.toml` to a `mailto:` address you read, because push services use it as a contact.
 
+## Training a character LoRA
+
+`degas lora` trains an SDXL LoRA with [kohya sd-scripts](https://github.com/kohya-ss/sd-scripts) (v0.12.0) on a Colab GPU. It runs in its own Colab session (`lora.session_name`, `degas-lora` by default), so it doesn't disturb the app's. Make a folder with 20–40 photos of the person (vary the angle, expression, framing, lighting and clothes; crop out other people). Give each photo a `<name>.txt` caption. Start with the trigger and class (`photo of ohwx woman, …`), then describe only what changes from photo to photo, like pose, clothes, setting and framing. Don't describe the face, hair or build: what the captions leave out is what the LoRA learns. Then add a `lora.toml`:
+
+```toml
+trigger = "ohwx"
+class_word = "woman"
+base = "models/sdxl/lustifyNSFWCheckpoint_zenithV9.safetensors"  # train on the checkpoint you'll use
+# name = "jane"      # the LoRA's file name; default: the folder's name
+# gpu = "L4"         # T4 works (fp16, slow); A100 is faster
+# [train]            # defaults: rank 32/16, U-Net only, AdamW8bit 1e-4 cosine, ~2000 steps / 10 epochs
+# optimizer = "Prodigy"
+# [samples]
+# prompts = ["photo of {subject}, …"]   # {subject} = "ohwx woman"
+```
+
+```sh
+uv run degas lora check ~/lora/jane    # checks the captions and images, prints the plan
+uv run degas lora train ~/lora/jane    # starts a VM, trains, copies each epoch back, stops the VM
+uv run degas lora attach jane          # follow it again after a disconnect or Ctrl-C
+uv run degas lora stop jane            # stop the VM
+uv run degas lora publish jane --epoch 8   # upload to loras/sdxl/ with a sidecar and preview
+```
+
+Runs live in `data/lora-runs/<name>-<time>/`: `checkpoints/` (one per epoch; the last is `<name>.safetensors`), `samples/` (each epoch's sample prompts, same seeds; `e000000` is before training) and `train.log`. Compare the epochs' samples and publish the latest one that still follows the unusual prompts (the astronaut, the painting) and doesn't leak into the prompt without the trigger. That's often not the last epoch. `publish` uploads with your own rclone remote (`lora.rclone_remote`, `gdrive:`), because Degas's Drive token is read-only, then rescans. Use the LoRA at a weight of about 0.6–0.9.
+
 ## Development
 
 Requires [uv](https://docs.astral.sh/uv/), Node ≥ 24 and pnpm.
