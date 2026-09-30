@@ -52,6 +52,7 @@ class Qwen21:
     media: Literal["image", "video"] = "image"
     lora_format: Literal["single", "paired_hi_lo"] = "single"
     supports_control = False
+    supports_image_prompts = False
     variants: tuple[Variant, ...] = (
         Variant(
             id="base",

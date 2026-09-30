@@ -287,6 +287,8 @@ MISSING = {
     "config": "The pipeline configs aren't in Drive. Put them in degas/{path}/, then rescan.",
     "vae": "The fp16-fix VAE isn't in Drive. Put it in degas/{path}/, then rescan, "
     "or tick Built-in VAE in More settings.",
+    "image_encoder": "Image prompts need the CLIP image encoder in Drive. Put it in "
+    "degas/{path}/, then rescan.",
 }
 
 
@@ -298,7 +300,12 @@ def _resolve_assets(svc: Services, family: str, spec: dict[str, Any]) -> None:
         if asset is None or asset["kind"] != need["kind"] or asset["family"] != family:
             if need["kind"] in MISSING:
                 raise HTTPException(400, MISSING[need["kind"]].format(path=need["path"]))
-            what = {"model": "Model", "lora": "LoRA", "controlnet": "ControlNet"}[need["kind"]]
+            what = {
+                "model": "Model",
+                "lora": "LoRA",
+                "controlnet": "ControlNet",
+                "ip_adapter": "Image prompt model",
+            }[need["kind"]]
             raise HTTPException(400, f"{what} {need['path']} is not in the Drive index")
         sizes[need["path"]] = asset["size"]
     spec["model"]["size"] = sizes[spec["model"]["path"]]
@@ -307,6 +314,8 @@ def _resolve_assets(svc: Services, family: str, spec: dict[str, Any]) -> None:
             part["size"] = sizes[part["path"]]
     for unit in spec.get("control") or []:
         unit["controlnet"]["size"] = sizes[unit["controlnet"]["path"]]
+    for unit in spec.get("image_prompts") or []:
+        unit["adapter"]["size"] = sizes[unit["adapter"]["path"]]
     for kind in MISSING:
         if spec.get(kind):
             spec[kind]["size"] = sizes[spec[kind]["path"]]

@@ -14,6 +14,7 @@ import {
 } from './api'
 import { variantFor } from './assets'
 import { unitFromSpec, type ControlUnit } from './control'
+import { promptFromSpec, type PromptUnit } from './imagePrompt'
 import type { Place } from './place'
 
 // The Create form's draft, kept across visits and reloads.
@@ -49,6 +50,8 @@ export interface FamilyDraft {
   control?: ControlUnit[]
   /** Edit (and Qwen's inpaint): the images after the source, in the order the model reads them. */
   refs?: Source[]
+  /** Image prompts (SDXL). */
+  prompts?: PromptUnit[]
 }
 
 export interface Draft {
@@ -192,6 +195,9 @@ export function draftFromSpec(spec: Spec, seed: number | null, source?: BlobInfo
         ),
         // The spec doesn't record the references' sizes; the Images row leaves them out.
         refs: (spec.inputs?.refs ?? []).map((r) => ({ sha: unref(r), width: 0, height: 0 })),
+        prompts: (spec.image_prompts ?? []).map((p) =>
+          promptFromSpec(p, { w: Number(spec.params.width), h: Number(spec.params.height) }),
+        ),
       },
     },
     batchCount: 1,

@@ -34,6 +34,8 @@ KINDS = {
     "models": "model",
     "loras": "lora",
     "controlnets": "controlnet",
+    "ip_adapters": "ip_adapter",
+    "image_encoders": "image_encoder",
     "vae": "vae",
     "configs": "config",
     "preprocessors": "preprocessor",
@@ -49,7 +51,7 @@ PREVIEW_TYPES = {
 MAX_SIDECAR_BYTES = 64 * 1024
 # Part of a parsed sidecar's cache key: bump it when `parse_sidecar` keeps new fields, so the
 # next rescan parses every sidecar again instead of reusing the old result.
-SIDECAR_FORMAT = 2
+SIDECAR_FORMAT = 3
 MAX_PREVIEW_BYTES = 16 * 1024 * 1024
 
 # Stores a preview image's bytes (with its media type) and returns the blob's sha256.
@@ -301,13 +303,17 @@ class DriveIndexer:
     ) -> None:
         children = await self._children(folder_id)
         # A diffusers-format directory is a single asset (a Wan model, or a pipeline's configs
-        # under `configs/`), and so is a diffusers ControlNet or VAE (`config.json` and its
-        # weights) and every folder directly under `preprocessors/`
+        # under `configs/`), and so is a diffusers ControlNet or VAE or a CLIP image encoder
+        # (`config.json` and its weights), and every folder directly under `preprocessors/`
         # (SAM 3 and Depth Anything are transformers folders; DWPose is two ONNX files).
         names = {c["name"] for c in children}
         if (
             (len(parts) >= 3 and "model_index.json" in names)
-            or (kind in ("controlnet", "vae") and len(parts) >= 3 and "config.json" in names)
+            or (
+                kind in ("controlnet", "vae", "image_encoder")
+                and len(parts) >= 3
+                and "config.json" in names
+            )
             or (kind == "preprocessor" and len(parts) == 2)
         ):
             size = await self._tree_size(children)
@@ -487,4 +493,7 @@ def parse_sidecar(text: str) -> dict[str, Any]:
     control = data.get("control")  # ControlNets: the kind of control image they read
     if control in ("depth", "pose", "canny"):
         out["control"] = control
+    purpose = data.get("purpose")  # IP-Adapters: what they were trained to carry
+    if purpose in ("subject", "face", "composition"):
+        out["purpose"] = purpose
     return out

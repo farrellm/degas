@@ -26,6 +26,8 @@ MAX_FETCH_BYTES = 50 * 1024 * 1024
 MAX_UPLOAD_BYTES = 200 * 1024 * 1024
 FETCH_TIMEOUT_S = 20
 MAX_REDIRECTS = 5
+# Image prompt pictures are fitted to squares no bigger than this (the encoder sees 224 px).
+PROMPT_IMAGE_MAX = 1024
 USER_AGENT = (
     "Mozilla/5.0 (iPhone; CPU iPhone OS 19_0 like Mac OS X) AppleWebKit/605.1.15"
     " (KHTML, like Gecko) Version/19.0 Mobile/15E148 Safari/604.1"
@@ -165,7 +167,8 @@ class Inputs:
 
     async def resolve(self, spec: dict[str, Any]) -> None:
         """Fit the source (and its mask) and every control image (and its area) to the output
-        size, and record every transform in the spec, references' crops included (§6.5).
+        size, image prompts' pictures to squares (and their areas to the output size), and
+        record every transform in the spec, references' crops included (§6.5).
 
         After this the spec has no `fit`, its source is exactly the output size (for an
         outpaint, the size it is placed at), each control image exactly the output size, and
@@ -203,22 +206,68 @@ class Inputs:
             if record and self.blobs.path(record["original"]):
                 transforms[value] = {"original": ref(record["original"]), "ops": record["ops"]}
         for n, unit in enumerate(spec.get("control") or [], 1):
-            unit["image"], mask = await self._fit(
-                unit["image"],
-                unit.get("mask"),
-                output,
-                unit.pop("fit", "crop"),
-                transforms,
-                f"ControlNet {n}'s image is no longer stored. Choose it again.",
-            )
-            if mask is not None:
-                if await self._mask_empty(mask):
-                    raise MediaError(f"ControlNet {n}'s area is empty. Paint it, or remove it.")
-                unit["mask"] = mask
+            await self._fit_control(n, unit, output, transforms)
+        for n, unit in enumerate(spec.get("image_prompts") or [], 1):
+            await self._fit_image_prompt(n, unit, output, transforms)
         if transforms:
             spec.setdefault("inputs", inputs)["transforms"] = transforms
         else:
             inputs.pop("transforms", None)
+
+    async def _fit_control(
+        self,
+        n: int,
+        unit: dict[str, Any],
+        output: tuple[int, int],
+        transforms: dict[str, Any],
+    ) -> None:
+        """Fit a ControlNet unit's image, and the area painted over it, to the output size."""
+        unit["image"], mask = await self._fit(
+            unit["image"],
+            unit.get("mask"),
+            output,
+            unit.pop("fit", "crop"),
+            transforms,
+            f"ControlNet {n}'s image is no longer stored. Choose it again.",
+        )
+        if mask is not None:
+            if await self._mask_empty(mask):
+                raise MediaError(f"ControlNet {n}'s area is empty. Paint it, or remove it.")
+            unit["mask"] = mask
+
+    async def _fit_image_prompt(
+        self,
+        n: int,
+        unit: dict[str, Any],
+        output: tuple[int, int],
+        transforms: dict[str, Any],
+    ) -> None:
+        """Fit an image prompt's pictures to squares and its area to the output size.
+
+        The image encoder sees a 224 px square from the middle of each picture, so fitting
+        here changes nothing it sees, but the transforms record exactly what it was.
+        """
+        fit = unit.pop("fit", "crop")
+        gone = f"A picture in image prompt {n} is no longer stored. Choose it again."
+        fitted: list[str] = []
+        for picture in unit["images"]:
+            sha = unref(picture)
+            size = self.blobs.image_size(sha) if not self.blobs.is_video(sha) else None
+            if size is None:
+                raise MediaError(gone)
+            side = min(max(size) if fit == "pad" else min(size), PROMPT_IMAGE_MAX)
+            square, _ = await self._fit(picture, None, (side, side), fit, transforms, gone)
+            fitted.append(square)
+        unit["images"] = fitted
+        if unit.get("mask"):
+            sha = unref(unit["mask"])
+            size = self.blobs.image_size(sha)
+            if size is None:
+                raise MediaError(f"Image prompt {n}'s area is no longer stored. Paint it again.")
+            fit_ops = media.fit_ops(*size, *output, "crop")
+            unit["mask"] = await self._fit_mask(unit["mask"], size, fit_ops, transforms)
+            if await self._mask_empty(unit["mask"]):
+                raise MediaError(f"Image prompt {n}'s area is empty. Paint it, or remove it.")
 
     async def _fit(
         self,

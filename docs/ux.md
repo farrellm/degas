@@ -86,6 +86,9 @@ One name per action, used in buttons, confirmations and empty states:
 | Drop a unit | Remove this ControlNet | — |
 | Add a reference image (Qwen or FLUX.2 [klein] edit) | Add image (Images row) | — |
 | Reorder or drop a reference | Earlier / Remove | — |
+| Add an image prompt (SDXL) | Add (Image prompts row) | — |
+| Choose what an image prompt carries | Everything / Style / Layout / Style and layout / Face | The line under the chips says what the choice does |
+| Drop an image prompt | Remove this image prompt | — |
 | Put a setting back to the family's default | Reset to 28 (under the label, only when changed) | — |
 | Discretion mode (Phase 9) | Cover images (header switch) | Covered tiles read *Show image 1*; prompts *Show prompt* |
 
@@ -260,6 +263,17 @@ Built. Two new families, found under the Model button like Qwen. They need no ne
 - **FLUX.2 [klein]** has only *Edit*. Its settings are *Steps* (4, and the field says the model is distilled to 4) and the size. The *Images* row takes up to 3 images after the source, since klein reads 4 in all. Its *Add image* is disabled at that limit, as Qwen's is at 9: the limit comes from the variant (`max_refs`). A family whose variant declares no references has no Images row, even in *Edit*.
 - **Crop readout.** Klein scales references down to 1 megapixel and never up, so cropping a reference small doesn't bring the ochre *The model scales it up* warning that Qwen shows.
 
+### Phase 11: Image prompts
+
+Built. SDXL gets pictures that work like the prompt (IP-Adapter; [ip-adapter.md](ip-adapter.md) has the research). No new colour or shape.
+
+- **Name.** *Image prompts*: what IP stands for, and distinct from Qwen's *Images* (referred to by number) and from *ControlNet* (which fixes layout). The row sits under ControlNet in every SDXL mode, and a unit with two pictures shows them as a small pile.
+- **The pictures are cut square**, because the encoder sees a small square from the middle: the tile shows what the model reads. The note under them says so (*fine detail and text don't carry*). *Crop* opens the crop editor at 1:1 with the other shapes still there; a picture's size doesn't matter, so there's no upscale warning, and a non-square crop says *The model sees the middle square.* Non-square pictures get *Show it: The middle square / All of it, letterboxed*.
+- **Chips say what to take**, not which blocks: *Everything*, *Style*, *Layout*, *Style and layout*, *Face*. Each sets the blocks, its default weight (0.6 for Everything and Face, 1 for the rest) and a model of the kind it wants (a plus model; a composition model for Layout; a face model for Face). The Model row stays underneath, and a model that doesn't suit the choice gets an ochre line (*This is a face model; it reads faces, not style.*).
+- **Steps** reuses ControlNet's range, with its own note: *Ending early keeps its influence on the big shapes and leaves the details to the prompt.*
+- **Area** is where in the output the picture applies, painted in the mask editor titled *Area* over Create's source when it has the output's shape, else over a plain canvas of that shape.
+- Thumbnails are ordinary images, never rose or hatched. Discretion covers the 34 px ones in the row; the sheet is opened on purpose and stays clear.
+
 ## 5. Component inventory
 
 | Component | Status | Notes |
@@ -282,6 +296,7 @@ Built. Two new families, found under the Model button like Qwen. They need no ne
 | `ControlList`, `ControlThumb` | Phase 7 | Unit rows; the chalk-study thumbnail |
 | `ControlEditor` | Phase 7 | Sheet; hosts the image picker, crop, area and model pickers in its place; `StepRange`; helpers in `control.ts` |
 | `RefList` | Phase 8 | Ordered reference images for Qwen edits; *Crop*, *Earlier* and *Remove* |
+| `PromptList`, `PromptEditor` | Phase 11 | Image prompt rows and their sheet; helpers in `imagePrompt.ts`; `StepRange` is shared with `ControlEditor`; `CropEditor` has a `square` mode |
 | `Tile`, `CoveredText`, `DiscretionToggle` | Phase 9 | Result/library/picker tile with covering; a covered prompt; the header switch. State, `useCover` and the shield in `discretion.ts` |
 
 ## 6. Quality floor

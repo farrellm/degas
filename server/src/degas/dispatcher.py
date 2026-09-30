@@ -429,4 +429,8 @@ def _input_blobs(spec: dict[str, Any]) -> list[str]:
             value = unit.get(key)
             if isinstance(value, str) and value.startswith("sha256:"):
                 shas.append(value.removeprefix("sha256:"))
+    for unit in spec.get("image_prompts") or []:
+        for value in [*unit.get("images", []), unit.get("mask")]:
+            if isinstance(value, str) and value.startswith("sha256:"):
+                shas.append(value.removeprefix("sha256:"))
     return shas
