@@ -30,6 +30,7 @@ import {
   type PromptUnit,
 } from '../imagePrompt'
 import { CropEditor } from '../components/CropEditor'
+import type { Size } from '../crop'
 import { ImagePicker } from '../components/ImagePicker'
 import { LoraList } from '../components/LoraList'
 import { MaskEditor } from '../components/MaskEditor'
@@ -360,9 +361,11 @@ function CreateForm({
     if (!current?.modes.includes(m) && next) pickModel(next.path)
   }
 
-  const takeSource = (image: BlobInfo, fromCrop: boolean) => {
+  /** `meant` is the size a crop was made for, which a crop kept at its own size isn't. */
+  const takeSource = (image: BlobInfo, fromCrop: boolean, meant?: Size) => {
     const w = image.width ?? target.w
     const h = image.height ?? target.h
+    const out = meant ?? { w, h }
     const previous = source
     setSource({ sha: image.sha256, width: w, height: h })
     setSourceGone(false)
@@ -371,8 +374,8 @@ function CreateForm({
     setMaskNote(null)
     // A crop to another shape sets the size: that's what the crop was for. An outpaint's
     // size is its canvas, which the source sits inside, so it stays.
-    if (fromCrop && mode !== 'outpaint' && (w !== target.w || h !== target.h))
-      setParams({ ...params, width: w, height: h })
+    if (fromCrop && mode !== 'outpaint' && (out.w !== target.w || out.h !== target.h))
+      setParams({ ...params, width: out.w, height: out.h })
     // A new crop of the same image carries the mask with it; another image drops it.
     if (!mask || image.sha256 === mask.source) return
     if (!fromCrop || previous?.sha !== mask.source) {
@@ -908,10 +911,10 @@ function CreateForm({
           constraints={variant.size_constraints}
           free={cropping.ref !== undefined}
           refsKeepSize={variant.ref_max_pixels != null}
-          onApply={(image) => {
+          onApply={(image, out) => {
             const at = cropping.ref
             if (at === undefined) {
-              takeSource(image, true)
+              takeSource(image, true, out)
             } else {
               const cropped = {
                 sha: image.sha256,

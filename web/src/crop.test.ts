@@ -74,7 +74,13 @@ describe('crop geometry', () => {
       { op: 'crop', x: 10, y: 0, w: 600, h: 800 },
       { op: 'resize', w: 480, h: 640 },
     ])
-    expect(parseOps(ops)).toEqual({ rot: 90, flip: true, crop: { x: 10, y: 0, w: 600, h: 800 } })
+    expect(parseOps(ops)).toEqual({
+      rot: 90,
+      flip: true,
+      crop: { x: 10, y: 0, w: 600, h: 800 },
+      resized: true,
+    })
+    expect(parseOps(ops.slice(0, 3)).resized).toBe(false)
   })
 
   it('keeps a free crop at its own size, and says how far the model scales it up', () => {

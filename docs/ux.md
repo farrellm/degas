@@ -175,7 +175,7 @@ The Link tab has a URL field and a *Paste* button. For a video, the picker offer
 └───────────────────────────────┘
 ```
 
-When the crop scales the image up more than 1.5×, the readout turns ochre and says so.
+When the crop scales the image up more than 1.5×, the readout turns ochre and says so. *Resize* (a toggle next to *Flip*, on by default) resizes the crop to the output size; turned off, the crop keeps its own pixels, the readout adds *Kept at its own size; it’s fitted to 1280 × 704 when it’s used.*, and the form's size still follows the crop's shape. Reopening a crop remembers the choice. Reference and image-prompt crops keep their own size already, so they don't show it.
 
 **Video results.** Tiles show the poster frame with the duration in the corner. The viewer plays the clip inline, looped and muted, and tapping it unmutes. The wall label adds a line for frames, fps and duration. *Extend* opens Create in i2v mode with the last frame as the source. A stitched chain appears as its own group captioned *Extended, 3 clips*.
 
