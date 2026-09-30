@@ -21,16 +21,29 @@ from degas_worker import masks
 from degas_worker.degrid import degrid
 from degas_worker.families.base import Output, RunContext
 from degas_worker.families.lora import plan_loras
-from degas_worker.families.offload import place
+from degas_worker.families.offload import loaded_bytes, module_bytes, place
 
 # Keep in sync with the server descriptor (degas/families/qwen21.py).
 SCHEDULES: dict[str, dict[str, Any]] = {"default": {}, "beta": {"use_beta_sigmas": True}}
+
+# The transformer's sequence is the prompt, each condition image's latents (16 px each) and its
+# vision tokens in the prompt (32 px each), then the output's latents. PROMPT_TOKENS covers the
+# text and template.
+LATENT_PX = 16 * 16
+VISION_PX = 32 * 32
+PROMPT_TOKENS = 1024
+# Activation memory per token of the whole sequence during a transformer step (MLP gate and
+# projection, attention inputs, the block-causal mask). Estimated from 2K edits on an A100.
+ACTIVATION_BYTES_PER_TOKEN = 256 * 1024
+# Share of the GPU a step may plan to use; the rest is left for the allocator.
+GPU_BUDGET = 0.9
 
 
 class Qwen21Runner:
     def __init__(self) -> None:
         self.pipe: Any = None
         self.model_path: Path | None = None
+        self.offloaded = False
         self.adapters: dict[str, str] = {}  # LoRA asset path → loaded adapter name
         self._scheduler_config: Any = None
 
@@ -81,6 +94,7 @@ class Qwen21Runner:
             kwargs["true_cfg_scale"] = cfg
         if images:
             kwargs["image"] = images
+            kwargs["use_kv_cache"] = self._kv_cache_fits(len(images), width, height)
         for item, seed in enumerate(seeds):
             ctx.check_cancelled()
             ctx.progress(item, "denoise", 0, steps)
@@ -118,12 +132,45 @@ class Qwen21Runner:
             str(path), torch_dtype=torch.bfloat16, local_files_only=True
         )
         # All of it is about 32 GB, so an H100 keeps it resident and an L4 or A100 offloads.
-        place(pipe)
+        self.offloaded = place(pipe)
+        # Untiled, a 2K decode needs several GB on top of the edit's KV cache, which the pipeline
+        # holds until it returns.
+        pipe.vae.enable_tiling(
+            tile_sample_min_height=512,
+            tile_sample_min_width=512,
+            tile_sample_stride_height=448,
+            tile_sample_stride_width=448,
+        )
         pipe.set_progress_bar_config(disable=True)
         self.pipe = pipe
         self.model_path = path
         self.adapters = {}
         self._scheduler_config = pipe.scheduler.config
+
+    def _kv_cache_fits(self, n_images: int, width: int, height: int) -> bool:
+        """Whether an edit can keep the pipeline's KV cache on the GPU.
+
+        The cache holds every block's keys and values for the prompt and condition images, so
+        later steps only run the output's tokens. That is 512 KB a token, or about 10 GB for one
+        2K image, so a 2K edit with a reference doesn't fit an A100 (40 GB) next to the
+        transformer. Without it each step reruns the whole sequence: slower, but it fits.
+        """
+        # Each condition image is resized to the output's pixel count.
+        pixels = width * height
+        prefix = PROMPT_TOKENS + n_images * (pixels // LATENT_PX + pixels // VISION_PX)
+        tokens = prefix + pixels // LATENT_PX
+        config = self.pipe.transformer.config
+        width_bytes = config.num_attention_heads * config.attention_head_dim * 2  # bf16
+        cache = prefix * 2 * config.num_layers * width_bytes  # keys and values
+        # Offloaded, the transformer and VAE are on the GPU while it denoises.
+        resident = (
+            module_bytes(self.pipe.transformer) + module_bytes(self.pipe.vae)
+            if self.offloaded
+            else loaded_bytes(self.pipe)
+        )
+        _free, total = torch.cuda.mem_get_info()
+        need = resident + cache + tokens * ACTIVATION_BYTES_PER_TOKEN
+        return bool(need <= total * GPU_BUDGET)
 
     def _apply_loras(self, loras: list[tuple[str, Path, float]]) -> None:
         """Load only new adapters, delete ones no longer requested, then set the weights."""
@@ -148,6 +195,7 @@ class Qwen21Runner:
             return
         self.pipe = None
         self.model_path = None
+        self.offloaded = False
         self.adapters = {}
         gc.collect()
         torch.cuda.empty_cache()

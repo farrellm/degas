@@ -9,12 +9,16 @@ import torch
 OFFLOAD_ABOVE = 0.7
 
 
+def module_bytes(module: torch.nn.Module) -> int:
+    return sum(p.numel() * p.element_size() for p in module.parameters())
+
+
 def loaded_bytes(pipe: Any) -> int:
-    total = 0
-    for component in pipe.components.values():
-        if isinstance(component, torch.nn.Module):
-            total += sum(p.numel() * p.element_size() for p in component.parameters())
-    return total
+    return sum(
+        module_bytes(component)
+        for component in pipe.components.values()
+        if isinstance(component, torch.nn.Module)
+    )
 
 
 def place(pipe: Any) -> bool:

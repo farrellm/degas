@@ -41,7 +41,8 @@ BOOTSTRAP = f"""
 import os, subprocess, sys
 subprocess.run(["pkill", "-f", {WORKER_MATCH!r}])
 _env = dict(os.environ, PYTHONPATH="{REMOTE}/worker", DEGAS_WORKER_HOME="{REMOTE}",
-            DEGAS_CACHE_BUDGET_GB="{{budget}}", PATH="{REMOTE}/bin:" + os.environ.get("PATH", ""))
+            DEGAS_CACHE_BUDGET_GB="{{budget}}", PATH="{REMOTE}/bin:" + os.environ.get("PATH", ""),
+            PYTORCH_CUDA_ALLOC_CONF="expandable_segments:True")
 _log = open("{REMOTE}/worker.log", "ab")
 _p = subprocess.Popen(
     [sys.executable, "-m", "uvicorn", {WORKER_MATCH!r}, "--host", "127.0.0.1",
