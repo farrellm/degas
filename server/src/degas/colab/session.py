@@ -60,6 +60,22 @@ class SessionError(RuntimeError):
     pass
 
 
+async def ensure_key(key: Path) -> None:
+    """Degas's own SSH key, generated on first use."""
+    if key.exists():  # noqa: ASYNC240 - a stat, once per session start
+        return
+    key.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    proc = await asyncio.create_subprocess_exec(
+        "ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-C", "degas", "-f", str(key),
+        stdin=asyncio.subprocess.DEVNULL,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.STDOUT,
+    )  # fmt: skip
+    out, _ = await proc.communicate()
+    if proc.returncode != 0:
+        raise SessionError(f"ssh-keygen failed: {out.decode(errors='replace').strip()}")
+
+
 class Intervals:
     """Liveness timings in seconds (overridable in tests)."""
 
@@ -296,24 +312,8 @@ class SessionManager:
             self._task = None
             await self._fail(f"Session start failed: {e}", stop_vm=True)
 
-    async def _ensure_key(self) -> None:
-        """Degas's own SSH key, generated on first use."""
-        key = self.config.ssh_key
-        if key.exists():
-            return
-        key.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-        proc = await asyncio.create_subprocess_exec(
-            "ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-C", "degas", "-f", str(key),
-            stdin=asyncio.subprocess.DEVNULL,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT,
-        )  # fmt: skip
-        out, _ = await proc.communicate()
-        if proc.returncode != 0:
-            raise SessionError(f"ssh-keygen failed: {out.decode(errors='replace').strip()}")
-
     async def _connect(self) -> None:
-        await self._ensure_key()
+        await ensure_key(self.config.ssh_key)
         tunnel = self._tunnel_factory()
         await tunnel.open()
         self.tunnel = tunnel

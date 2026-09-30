@@ -23,6 +23,10 @@ root = "degas"             # folder under My Drive (see docs/design.md §5)
 client_file = "drive_client.json"
 # token_file = "data/drive_token.json"  # written by `degas auth drive`
 
+[lora]
+session_name = "degas-lora"  # `degas lora` trains in its own Colab session
+rclone_remote = "gdrive:"    # local rclone remote that can write to the same Drive (publish)
+
 [push]
 # Contact for the push services (Apple, Google, Mozilla); use a mailto: you read.
 subject = "mailto:degas@localhost"

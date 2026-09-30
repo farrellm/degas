@@ -52,9 +52,16 @@ def control_dir() -> Path:
 
 class SshTunnel:
     def __init__(
-        self, proxy_command: str, key: Path, remote_port: int, log_file: Path | None = None
+        self,
+        proxy_command: str,
+        key: Path,
+        remote_port: int,
+        log_file: Path | None = None,
+        name: str = "degas",
     ) -> None:
         self.proxy_command = proxy_command
+        # Every VM is `root@colab-runtime`, so each Colab session needs its own ControlPath.
+        self.name = name
         self.key = key
         self.remote_port = remote_port
         self.log_file = log_file
@@ -66,7 +73,7 @@ class SshTunnel:
 
     def _opts(self) -> list[str]:
         return [
-            "-o", f"ControlPath={control_dir()}/degas-%C",
+            "-o", f"ControlPath={control_dir()}/{self.name}-%C",
             "-o", f"ProxyCommand={self.proxy_command}",
             "-o", f"IdentityFile={self.key}",
             "-o", "IdentitiesOnly=yes",
@@ -146,3 +153,10 @@ class SshTunnel:
         code, out = await self._exec(argv, timeout=600)
         if code != 0:
             raise TunnelError(f"scp {local} failed (exit {code}): {out.strip()}")
+
+    async def download(self, remote: str, local: Path) -> None:
+        local.parent.mkdir(parents=True, exist_ok=True)
+        argv = ["scp", "-q", *self._opts(), f"{HOST}:{shlex.quote(remote)}", str(local)]
+        code, out = await self._exec(argv, timeout=600)
+        if code != 0:
+            raise TunnelError(f"scp {remote} failed (exit {code}): {out.strip()}")

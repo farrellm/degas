@@ -12,6 +12,7 @@ import uvicorn
 from degas.config import load_config
 from degas.db import Database
 from degas.drive import DriveAuth, DriveIndexer, authorize_interactive
+from degas.lora import cli as lora_cli
 
 
 def main() -> None:
@@ -23,6 +24,7 @@ def main() -> None:
     auth.add_argument("what", choices=["drive"])
     auth.add_argument("--port", type=int, default=0, help="loopback port for the OAuth redirect")
     sub.add_parser("rescan", help="re-index the Drive folder")
+    lora_cli.add_parser(sub)
     args = parser.parse_args()
     config = load_config(args.config)
     logging.basicConfig(
@@ -53,3 +55,5 @@ def main() -> None:
                 db.close()
 
         print(f"Indexed {asyncio.run(rescan())} assets")
+    elif args.command == "lora":
+        lora_cli.run(config, args)
