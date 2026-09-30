@@ -233,6 +233,14 @@ async def test_sidecars_and_previews(auth: DriveAuth) -> None:
         a["path"]: a["preview_thumb"] for a in assets
     }
 
+    # Sidecars parsed by an older `parse_sidecar` are parsed again.
+    downloads.clear()
+    stale = {p: {**a, "sidecar_rev": a["sidecar_rev"] and a["sidecar_rev"].split(":", 1)[1]}
+             for p, a in by_path.items()}  # fmt: skip
+    again = await indexer.scan()
+    await indexer.enrich(again, stale, store)
+    assert sorted(downloads) == ["cn2y", "f2", "l1y"]
+
 
 @pytest.mark.parametrize(
     ("text", "expected"),
