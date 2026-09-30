@@ -1,7 +1,6 @@
 # Install: `make install` (runs `uv run pre-commit install`).
-# Fast, per-file checks run on commit; the full `make check` (mypy, tsc, tests) runs on push.
+# Fast, per-file checks run on commit; the full `make check` (mypy, tsc, tests) runs in GitHub CI.
 # Tool hooks are `language: system` so they use the versions pinned in uv.lock / pnpm-lock.yaml.
-default_install_hook_types: [pre-commit, pre-push]
 default_stages: [pre-commit]
 
 repos:
@@ -48,10 +47,3 @@ repos:
         files: ^web/.*\.(ts|tsx|js)$
         exclude: ^web/(dist|coverage)/
         require_serial: true
-      - id: make-check
-        name: make check (lint, typecheck, tests)
-        entry: make check
-        language: system
-        pass_filenames: false
-        always_run: true
-        stages: [pre-push]
