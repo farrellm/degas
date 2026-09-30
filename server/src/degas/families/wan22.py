@@ -50,6 +50,7 @@ class Wan22:
     lora_format: Literal["single", "paired_hi_lo"] = "paired_hi_lo"
     supports_control = False
     supports_image_prompts = False
+    image_prompt_options = None
     variants: tuple[Variant, ...] = (
         Variant(
             id="ti2v-5b",

@@ -6,9 +6,22 @@ import pytest
 from fastapi.testclient import TestClient
 
 from degas.families.base import SpecError, spec_assets
+from degas.families.flux1 import Flux1
 from degas.families.sdxl import Sdxl
 
-from .conftest import CONFIGS, FACEID, IMAGE_ENCODER, INSIGHTFACE, IP_ADAPTER, MODEL, VAE, Harness
+from .conftest import (
+    CONFIGS,
+    FACEID,
+    FLUX1,
+    FLUX1_BASE,
+    IMAGE_ENCODER,
+    INSIGHTFACE,
+    IP_ADAPTER,
+    MODEL,
+    REDUX,
+    VAE,
+    Harness,
+)
 from .test_api import session_state, wait_for
 from .test_inpaint import mask_png, put_mask, read
 from .test_video import image, results, run, upload
@@ -265,3 +278,77 @@ def test_finding_a_face(client: TestClient, harness: Harness) -> None:
     resp = client.post("/api/preprocess", json={"id": "face", "image": tiny["sha256"]})
     assert resp.status_code == 422
     assert resp.json()["detail"] == "No face found in this picture."
+
+
+# -- FLUX.1 Redux --------------------------------------------------------------------------
+
+FLUX_SPEC: dict[str, Any] = {
+    "family": "flux1",
+    "variant": "dev",
+    "mode": "t2i",
+    "model": {"path": FLUX1["path"]},
+    "params": {"prompt": "a harbour at dawn", "width": 1024, "height": 1024, "seed": 3},
+}
+
+
+def redux(**change: Any) -> dict[str, Any]:
+    return unit(adapter={"path": REDUX["path"]}, weight=1, **change)
+
+
+def test_redux_units_shrink_by_three_unless_told() -> None:
+    spec = Flux1().validate({**FLUX_SPEC, "image_prompts": [redux(), redux(downsample=9)]})
+    first, second = spec["image_prompts"]
+    assert first == {
+        "adapter": {"path": REDUX["path"], "size": None},
+        "images": [SHA],
+        "fit": "crop",
+        "purpose": "all",
+        "weight": 1.0,
+        "start": 0.0,
+        "end": 1.0,
+        "downsample": 3,
+    }
+    assert second["downsample"] == 5  # clamped
+    assert "image_encoder" not in spec  # Redux's encoder is in its folder
+    assert (REDUX["path"], "ip_adapter") in [(a["path"], a["kind"]) for a in spec_assets(spec)]
+
+
+@pytest.mark.parametrize(
+    ("prompt", "message"),
+    [
+        (redux(mask=SHA), "can't limit a picture to an area"),
+        (redux(purpose="style"), "everywhere, at every step"),
+        (redux(end=0.5), "everywhere, at every step"),
+        (unit(), "isn't an image prompt model for this model"),
+    ],
+)
+def test_redux_refuses_what_it_cant_do(prompt: dict[str, Any], message: str) -> None:
+    with pytest.raises(SpecError, match=message):
+        Flux1().validate({**FLUX_SPEC, "image_prompts": [prompt]})
+
+
+def test_sdxl_drops_redux_settings() -> None:
+    spec = Sdxl().validate({**SPEC, "image_prompts": [unit(downsample=2)]})
+    assert "downsample" not in spec["image_prompts"][0]
+
+
+def test_families_describe_their_image_prompts(client: TestClient) -> None:
+    families = {f["id"]: f for f in client.get("/api/families").json()}
+    assert families["flux1"]["image_prompt_options"] == {
+        "purposes": ["all"],
+        "areas": False,
+        "steps": False,
+        "faces": False,
+        "detail": True,
+    }
+    assert families["sdxl"]["image_prompt_options"]["faces"] is True
+    assert families["qwen21"]["image_prompt_options"] is None
+
+
+def test_a_redux_job_stages_its_pictures(client: TestClient) -> None:
+    wide = upload(client, image(900, 600))
+    done = run(client, {**FLUX_SPEC, "image_prompts": [redux(images=[f"sha256:{wide['sha256']}"])]})
+    fitted = done["spec"]["image_prompts"][0]
+    assert fitted["adapter"]["size"] == REDUX["size"]
+    assert read(client, fitted["images"][0].removeprefix("sha256:")).size == (600, 600)
+    assert done["spec"]["config"]["path"] == FLUX1_BASE["path"]

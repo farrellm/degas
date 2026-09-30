@@ -1,4 +1,4 @@
-import { thumbUrl, type Asset } from '../api'
+import { thumbUrl, type Asset, type ImagePromptOptions } from '../api'
 import { assetLabel } from '../assets'
 import { MAX_PROMPTS, promptSummary, type PromptUnit } from '../imagePrompt'
 
@@ -7,12 +7,13 @@ interface Props {
   /** The family's image prompt models in the Drive index. */
   index: Asset[] | undefined
   steps: number
+  options: ImagePromptOptions
   onOpen: (key: string) => void
   onAdd: () => void
 }
 
 /** The Image prompts rows in Create: each unit's pictures, model and summary; tap to edit. */
-export function PromptList({ units, index, steps, onOpen, onAdd }: Props) {
+export function PromptList({ units, index, steps, options, onOpen, onAdd }: Props) {
   return (
     <div className="control-group" role="group" aria-labelledby="prompts-label">
       <div className="setting">
@@ -53,7 +54,7 @@ export function PromptList({ units, index, steps, onOpen, onAdd }: Props) {
               )}
               <span className="control-text">
                 <span className={unit.model ? 'control-name' : 'control-name none'}>{name}</span>
-                <span className="control-meta">{promptSummary(unit, steps)}</span>
+                <span className="control-meta">{promptSummary(unit, steps, options)}</span>
               </span>
             </button>
             {missing && <p className="row-warning">Not found in Drive. Pick another model.</p>}

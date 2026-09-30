@@ -1556,6 +1556,82 @@ describe('App', () => {
     ])
   })
 
+  it('makes an image after a picture with FLUX.1 Redux, loosely by default', async () => {
+    const submitted: { spec: { image_prompts?: unknown } }[] = []
+    mockApi({
+      'GET /api/families': () => [
+        {
+          ...FAMILIES[0],
+          supports_image_prompts: true,
+          image_prompt_options: {
+            purposes: ['all'],
+            areas: false,
+            steps: false,
+            faces: false,
+            detail: true,
+          },
+        },
+      ],
+      'GET /api/assets': () => [
+        ...ASSETS,
+        {
+          path: 'ip_adapters/sdxl/FLUX.1-Redux-dev',
+          family: 'sdxl',
+          kind: 'ip_adapter',
+          size: 9.9e8,
+          sidecar: null,
+          preview_thumb: null,
+        },
+      ],
+      'GET /api/results': () => ({ results: [RESULT], cursor: null }),
+      'POST /api/jobs': (init) => {
+        submitted.push(JSON.parse(init?.body as string) as (typeof submitted)[number])
+        return { id: 'j6' }
+      },
+    })
+    const user = userEvent.setup()
+    renderApp()
+    await user.type(await screen.findByLabelText('Prompt'), 'the same harbour in winter')
+    await user.click(await screen.findByRole('button', { name: 'Add image prompt' }))
+    const sheet = await screen.findByRole('dialog', { name: 'Image prompt' })
+    // Redux has no blocks to choose, no area and no step range: only how closely to follow.
+    expect(within(sheet).queryByRole('button', { name: 'Style' })).not.toBeInTheDocument()
+    expect(within(sheet).queryByRole('group', { name: 'Steps' })).not.toBeInTheDocument()
+    expect(within(sheet).queryByText('Limit to an area')).not.toBeInTheDocument()
+    expect(within(sheet).getByRole('button', { name: 'Loosely' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    expect(within(sheet).getByText('1.00')).toBeInTheDocument()
+    await user.click(within(sheet).getByRole('button', { name: 'Just the gist' }))
+    expect(within(sheet).getByText(/the prompt leads/)).toBeInTheDocument()
+    await user.click(within(sheet).getByRole('button', { name: 'Choose a picture' }))
+    const picker = screen.getByRole('dialog', { name: 'Choose image' })
+    await user.click(await within(picker).findByRole('button', { name: 'Image: a lighthouse' }))
+    await user.click(within(picker).getByRole('button', { name: 'Use image' }))
+    await user.click(
+      within(await screen.findByRole('dialog', { name: 'Image prompt' })).getByRole('button', {
+        name: 'Done',
+      }),
+    )
+
+    expect(screen.getByText('Just the gist, weight 1.00')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Generate' }))
+    expect(await screen.findByText('Queued 1 image.')).toBeInTheDocument()
+    expect(submitted[0]?.spec.image_prompts).toEqual([
+      {
+        adapter: { path: 'ip_adapters/sdxl/FLUX.1-Redux-dev' },
+        images: ['sha256:abc'],
+        fit: 'crop',
+        purpose: 'all',
+        weight: 1,
+        start: 0,
+        end: 1,
+        downsample: 5,
+      },
+    ])
+  })
+
   it('plays a clip and extends it from its last frame', async () => {
     const submitted: { spec: { inputs?: unknown } }[] = []
     mockApi({

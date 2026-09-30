@@ -439,6 +439,13 @@ INSIGHTFACE = {
     "drive_file_id": "if1",
     "size": 10,
 }
+REDUX = {
+    "path": "ip_adapters/flux1/FLUX.1-Redux-dev",
+    "family": "flux1",
+    "kind": "ip_adapter",
+    "drive_file_id": "rx1",
+    "size": 9,
+}
 INPAINT_MODEL = {
     "path": "models/sdxl/inpaint/sdxl-inpaint.safetensors",
     "family": "sdxl",
@@ -516,6 +523,7 @@ def client(harness: Harness) -> Iterator[TestClient]:
                 IMAGE_ENCODER,
                 FACEID,
                 INSIGHTFACE,
+                REDUX,
             ]
         )
         yield c

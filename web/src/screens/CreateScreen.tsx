@@ -21,7 +21,14 @@ import { ControlList } from '../components/ControlList'
 import { newUnit, unitReady, unitSpec, type ControlUnit } from '../control'
 import { PromptEditor } from '../components/PromptEditor'
 import { PromptList } from '../components/PromptList'
-import { modelFor, newPrompt, promptReady, promptSpec, type PromptUnit } from '../imagePrompt'
+import {
+  SDXL_OPTIONS,
+  modelFor,
+  newPrompt,
+  promptReady,
+  promptSpec,
+  type PromptUnit,
+} from '../imagePrompt'
 import { CropEditor } from '../components/CropEditor'
 import { ImagePicker } from '../components/ImagePicker'
 import { LoraList } from '../components/LoraList'
@@ -175,6 +182,7 @@ function CreateForm({
   const withControl = !!family?.supports_control
   const adapters = assets.data?.filter((a) => a.family === family?.id && a.kind === 'ip_adapter')
   const withPrompts = !!family?.supports_image_prompts
+  const promptOptions = family?.image_prompt_options ?? SDXL_OPTIONS
 
   // The form always fits the current variant's schema: defaults, then what was typed.
   const params = schema.data ? initialParams(schema.data, editedParams ?? draft.params) : null
@@ -262,7 +270,10 @@ function CreateForm({
               },
             }),
           ...(withControl && control.length > 0 && { control: control.map(unitSpec) }),
-          ...(withPrompts && prompts.length > 0 && { image_prompts: prompts.map(promptSpec) }),
+          ...(withPrompts &&
+            prompts.length > 0 && {
+              image_prompts: prompts.map((p) => promptSpec(p, promptOptions)),
+            }),
         },
         batchCount,
         randomSeeds ? 'random' : 'increment',
@@ -598,9 +609,13 @@ function CreateForm({
           units={prompts}
           index={adapters}
           steps={Number(params.steps ?? 30)}
+          options={promptOptions}
           onOpen={setEditingPrompt}
           onAdd={() => {
-            const unit = { ...newPrompt(), model: modelFor(adapters ?? [], 'all')?.path ?? '' }
+            const unit = {
+              ...newPrompt(promptOptions),
+              model: modelFor(adapters ?? [], 'all')?.path ?? '',
+            }
             setPrompts([...prompts, unit])
             setEditingPrompt(unit.key)
           }}
@@ -869,6 +884,7 @@ function CreateForm({
           target={target}
           steps={Number(params.steps ?? 30)}
           constraints={variant.size_constraints}
+          options={promptOptions}
           onChange={(update) => {
             setPrompts((units) => units.map((u) => (u.key === editingPrompt ? update(u) : u)))
           }}

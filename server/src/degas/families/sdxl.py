@@ -3,6 +3,8 @@
 from typing import Any, Literal
 
 from degas.families.base import (
+    IP_PURPOSES,
+    ImagePromptOptions,
     JsonSchema,
     SizeConstraints,
     SpecError,
@@ -90,6 +92,9 @@ class Sdxl:
     lora_format: Literal["single", "paired_hi_lo"] = "single"
     supports_control = True
     supports_image_prompts = True
+    image_prompt_options = ImagePromptOptions(
+        purposes=IP_PURPOSES, areas=True, steps=True, faces=True
+    )
     variants: tuple[Variant, ...] = (
         Variant(id="base", label="SDXL", min_gpu="T4", modes=("t2i", "i2i", "inpaint", "outpaint")),
         Variant(
@@ -257,6 +262,7 @@ def is_faceid(adapter: str) -> bool:
 
 def faceid_unit(n: int, unit: dict[str, Any]) -> dict[str, Any]:
     """A FaceID unit gets its structure and LoRA weight; other units don't have them."""
+    unit = {k: v for k, v in unit.items() if k != "downsample"}  # Redux only
     if not is_faceid(unit["adapter"]["path"]):
         return {k: v for k, v in unit.items() if k not in FACE_DEFAULTS}
     if unit["purpose"] != "all":

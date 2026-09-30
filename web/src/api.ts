@@ -27,9 +27,24 @@ export interface Family {
   lora_format: 'single' | 'paired_hi_lo'
   /** Whether jobs take ControlNet units (SDXL). */
   supports_control: boolean
-  /** Whether jobs take image prompts (IP-Adapter, SDXL). */
+  /** Whether jobs take image prompts (IP-Adapter for SDXL, Redux for FLUX.1). */
   supports_image_prompts: boolean
+  /** What those image prompts can do. */
+  image_prompt_options?: ImagePromptOptions | null
   variants: Variant[]
+}
+
+export interface ImagePromptOptions {
+  /** Which UNet blocks a unit can act in. */
+  purposes: Purpose[]
+  /** Limited to an area of the output. */
+  areas: boolean
+  /** Limited to a range of steps. */
+  steps: boolean
+  /** FaceID models. */
+  faces: boolean
+  /** Redux: how closely to follow the picture (`downsample`). */
+  detail: boolean
 }
 
 export interface ParamProp {
@@ -209,6 +224,8 @@ export interface ImagePromptSpec {
   structure?: number
   /** FaceID: the weight of the LoRA the model carries. */
   lora_weight?: number
+  /** Redux: its 27 × 27 grid of tokens is shrunk by this factor (1 to 5). */
+  downsample?: number
 }
 
 export interface Spec {

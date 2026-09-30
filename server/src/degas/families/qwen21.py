@@ -53,6 +53,7 @@ class Qwen21:
     lora_format: Literal["single", "paired_hi_lo"] = "single"
     supports_control = False
     supports_image_prompts = False
+    image_prompt_options = None
     variants: tuple[Variant, ...] = (
         Variant(
             id="base",
