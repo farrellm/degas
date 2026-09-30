@@ -44,6 +44,6 @@ make dev-server  # API on 127.0.0.1:8420
 make dev-web     # Vite dev server, proxies /api to the API
 ```
 
-Git hooks ([pre-commit](https://pre-commit.com), config in `.pre-commit-config.yaml`): on commit, ruff / Prettier / ESLint fix staged files plus generic file checks; on push, `make check`. Bypass once with `--no-verify`.
+Git hooks ([pre-commit](https://pre-commit.com), config in `.pre-commit-config.yaml`): on commit, ruff / Prettier / ESLint fix staged files plus generic file checks. `make check` runs in GitHub CI. Bypass once with `--no-verify`.
 
 Tooling: ruff (lint + format), mypy (strict), pytest · ESLint (typescript-eslint strict, type-checked), Prettier, Vitest + Testing Library.

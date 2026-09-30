@@ -37,7 +37,7 @@ make deploy / make logs   # prod: systemd user unit + `tailscale serve --https=8
 - Tests fake the Colab CLI and tunnel but run the real worker app over ASGI
   (`server/tests/conftest.py`); no GPU needed.
 - `spike/` is a frozen Phase 0 record — excluded from lint; don't edit.
-- Pre-commit: hooks fix staged files on commit; `make check` runs on push.
+- Pre-commit: hooks fix staged files on commit; `make check` runs in GitHub CI only.
 
 ## Workflow
 
