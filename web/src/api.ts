@@ -435,6 +435,12 @@ export const api = {
     ),
   /** Delete finished jobs and their results now; kept images stay in the library. */
   clearResults: () => request<{ results: number; jobs: number }>('DELETE', '/results'),
+  /** Delete one finished job's results: its stitched chain with `chain`, else the rest. */
+  deleteJobResults: (jobId: string, chain: boolean) =>
+    request<{ results: number; jobs: number }>(
+      'DELETE',
+      `/jobs/${jobId}/results${chain ? '?chain=true' : ''}`,
+    ),
   keep: (resultId: string) => request<LibraryItem>('POST', `/results/${resultId}/save`),
   library: (q: string, cursor?: string) =>
     request<{ items: LibraryItem[]; cursor: string | null }>(

@@ -19,6 +19,7 @@ import { hoursLeft, shortTime, timeLeft, useNow } from '../time'
 /** One job's worth of results: the contact-sheet row under a prompt caption. */
 interface Group {
   id: string
+  jobId: string
   spec: Spec | null
   job: Job | undefined
   results: Result[]
@@ -45,6 +46,7 @@ function buildGroups(jobs: Job[], results: Result[]): Group[] {
     if (job.status === 'done' || job.status === 'cancelled') continue
     byId.set(job.id, {
       id: job.id,
+      jobId: job.id,
       spec: job.spec,
       job,
       results: [],
@@ -58,7 +60,15 @@ function buildGroups(jobs: Job[], results: Result[]): Group[] {
     let g = byId.get(id)
     if (!g) {
       const job = jobs.find((j) => j.id === r.job_id)
-      g = { id, spec: r.spec ?? job?.spec ?? null, job, results: [], at: r.created_at, chain }
+      g = {
+        id,
+        jobId: r.job_id,
+        spec: r.spec ?? job?.spec ?? null,
+        job,
+        results: [],
+        at: r.created_at,
+        chain,
+      }
       byId.set(id, g)
     }
     g.results.push(r)
@@ -189,6 +199,18 @@ export function ResultsScreen({
       ]),
   })
 
+  const remove = useMutation({
+    mutationFn: (g: Group) => api.deleteJobResults(g.jobId, g.chain),
+    onSuccess: (_, g) => {
+      if (g.results.some((r) => r.id === open)) setOpen(null)
+    },
+    onSettled: () =>
+      Promise.all([
+        qc.invalidateQueries({ queryKey: ['results'] }),
+        qc.invalidateQueries({ queryKey: ['jobs'] }),
+      ]),
+  })
+
   if (jobs.isPending || results.isPending) return <p className="loading">Loading…</p>
   if (jobs.error ?? results.error) {
     return <p role="alert">{(jobs.error ?? results.error)?.message}</p>
@@ -307,6 +329,10 @@ export function ResultsScreen({
               onCancel={(job) => {
                 cancel.mutate(job)
               }}
+              deleting={remove.isPending && remove.variables.id === g.id}
+              onDelete={() => {
+                remove.mutate(g)
+              }}
             />
           )
         })}
@@ -326,9 +352,9 @@ export function ResultsScreen({
       <p className="visually-hidden" aria-live="polite">
         {announce}
       </p>
-      {(move.error ?? cancel.error ?? restore.error) && (
+      {(move.error ?? cancel.error ?? restore.error ?? remove.error) && (
         <p className="feed-error" role="alert">
-          {(move.error ?? cancel.error ?? restore.error)?.message}
+          {(move.error ?? cancel.error ?? restore.error ?? remove.error)?.message}
         </p>
       )}
       {undoToast}
@@ -433,6 +459,8 @@ function GroupView({
   sectionRef,
   onOpen,
   onCancel,
+  deleting,
+  onDelete,
 }: {
   group: Group
   now: number
@@ -441,8 +469,11 @@ function GroupView({
   sectionRef: (el: HTMLElement | null) => void
   onOpen: (id: string) => void
   onCancel: (job: Job) => void
+  deleting: boolean
+  onDelete: () => void
 }) {
   const { spec, job, results, chain } = group
+  const [confirming, setConfirming] = useState(false)
   const params = spec?.params ?? {}
   const prompt = String(params.prompt ?? '').trim()
   const w = Number(params.width ?? results[0]?.width ?? 1)
@@ -500,6 +531,7 @@ function GroupView({
     lifted !== null && 'lifted',
     queued?.mark === 'before' && 'drop-before',
     queued?.mark === 'after' && 'drop-after',
+    (confirming || deleting) && 'doomed',
   ]
 
   return (
@@ -534,10 +566,50 @@ function GroupView({
               )}
             </>
           ) : (
-            <span className={soon ? 'soon' : undefined}>{expiry ?? shortTime(group.at, now)}</span>
+            <>
+              <span className={soon ? 'soon' : undefined}>
+                {expiry ?? shortTime(group.at, now)}
+              </span>
+              {!confirming && (
+                <button
+                  type="button"
+                  className="btn quiet small"
+                  disabled={deleting}
+                  onClick={() => {
+                    setConfirming(true)
+                  }}
+                >
+                  {deleting ? 'Deleting…' : 'Delete'}
+                </button>
+              )}
+            </>
           )}
         </div>
       </header>
+      {confirming && (
+        <div className="confirm group-confirm" role="group" aria-label="Confirm delete">
+          <p>{deleteQuestion(results)}</p>
+          <button
+            type="button"
+            className="btn danger"
+            onClick={() => {
+              onDelete()
+              setConfirming(false)
+            }}
+          >
+            Delete
+          </button>
+          <button
+            type="button"
+            className="btn quiet"
+            onClick={() => {
+              setConfirming(false)
+            }}
+          >
+            Cancel
+          </button>
+        </div>
+      )}
       {job?.status === 'error' && job.error && (
         <p className="group-error">
           <CoveredText id={`error:${group.id}`} label="Show error">
@@ -556,6 +628,18 @@ function GroupView({
       </div>
     </section>
   )
+}
+
+/** "Delete these 4 images? Kept ones stay in the library." */
+function deleteQuestion(results: Result[]): string {
+  const n = results.length
+  if (n === 0) return 'Delete this failed job?'
+  const noun = results.every((r) => isVideo(r.media_type)) ? 'clip' : 'image'
+  const what = n === 1 ? `this ${noun}` : `these ${String(n)} ${noun}s`
+  const kept = results.filter((r) => r.library_id).length
+  const note =
+    kept === 0 ? '' : kept === n ? ' They stay in the library.' : ' Kept ones stay in the library.'
+  return `Delete ${what}?${note}`
 }
 
 // Hold this long on the handle to lift a group; moving first means scrolling.
