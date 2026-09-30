@@ -9,6 +9,7 @@ from pathlib import Path
 
 import uvicorn
 
+from degas.civitai import cli as civitai_cli
 from degas.config import load_config
 from degas.db import Database
 from degas.drive import DriveAuth, DriveIndexer, authorize_interactive
@@ -25,6 +26,7 @@ def main() -> None:
     auth.add_argument("--port", type=int, default=0, help="loopback port for the OAuth redirect")
     sub.add_parser("rescan", help="re-index the Drive folder")
     lora_cli.add_parser(sub)
+    civitai_cli.add_parser(sub)
     args = parser.parse_args()
     config = load_config(args.config)
     logging.basicConfig(
@@ -57,3 +59,5 @@ def main() -> None:
         print(f"Indexed {asyncio.run(rescan())} assets")
     elif args.command == "lora":
         lora_cli.run(config, args)
+    elif args.command == "civitai":
+        civitai_cli.run(config, args)

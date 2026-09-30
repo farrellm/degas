@@ -43,8 +43,15 @@ class PushConfig(_Section):
 
 class LoraConfig(_Section):
     session_name: str = "degas-lora"  # its own Colab session, apart from the app's
-    # A local rclone remote with write access to the same Drive, for `degas lora publish`.
+    # A local rclone remote with write access to the same Drive, for `degas lora publish`
+    # and Civitai imports.
     rclone_remote: str = "gdrive:"
+
+
+class CivitaiConfig(_Section):
+    # An API token (civitai.com → Account settings → API keys); many downloads need one.
+    token_file: Path = Path("~/.config/civitai/token")
+    api_base: str = "https://civitai.com"
 
 
 class Config(_Section):
@@ -57,6 +64,7 @@ class Config(_Section):
     drive: DriveConfig = DriveConfig()
     push: PushConfig = PushConfig()
     lora: LoraConfig = LoraConfig()
+    civitai: CivitaiConfig = CivitaiConfig()
 
     @property
     def ssh_key(self) -> Path:
@@ -109,5 +117,8 @@ def load_config(path: Path | None = None) -> Config:
                 }
             ),
             "push": config.push.model_copy(update={"key_file": resolve(config.push.key_file)}),
+            "civitai": config.civitai.model_copy(
+                update={"token_file": base / config.civitai.token_file.expanduser()}
+            ),
         }
     )

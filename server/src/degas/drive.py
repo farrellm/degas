@@ -27,7 +27,7 @@ log = logging.getLogger(__name__)
 SCOPE = "https://www.googleapis.com/auth/drive.readonly"
 DRIVE_API = "https://www.googleapis.com/drive/v3"
 FOLDER = "application/vnd.google-apps.folder"
-FILE_FIELDS = "id, name, mimeType, size, modifiedTime, md5Checksum"
+FILE_FIELDS = "id, name, mimeType, size, modifiedTime, md5Checksum, sha256Checksum"
 
 # Top-level folders under the Drive root, and the asset kind of what they hold.
 KINDS = {
@@ -308,7 +308,7 @@ class DriveIndexer:
             or (kind == "preprocessor" and len(parts) == 2)
         ):
             size = await self._tree_size(children)
-            out.append(self._asset(parts, kind, folder_id, size, None, None))
+            out.append(self._asset(parts, kind, folder_id, size, None, None, None))
             return
         # Sidecars and previews sit next to their asset and share its name: foo.yaml, foo.jpg.
         files = {c["name"]: c for c in children if c["mimeType"] != FOLDER}
@@ -327,6 +327,7 @@ class DriveIndexer:
                         int(child["size"]) if "size" in child else None,
                         child.get("modifiedTime"),
                         child.get("md5Checksum"),
+                        child.get("sha256Checksum"),
                     )
                 )
             if len(out) > before and out[-1]["path"] == "/".join(path):
@@ -422,6 +423,7 @@ class DriveIndexer:
         size: int | None,
         mtime: str | None,
         md5: str | None,
+        sha256: str | None,
     ) -> dict[str, Any]:
         family = parts[1] if kind != "preprocessor" and len(parts) > 2 else None
         return {
@@ -432,6 +434,7 @@ class DriveIndexer:
             "size": size,
             "mtime": mtime,
             "md5": md5,
+            "sha256": sha256,
             "sidecar": None,
         }
 
@@ -454,7 +457,7 @@ def parse_sidecar(text: str) -> dict[str, Any]:
     if not isinstance(data, dict):
         raise ValueError("expected a mapping")
     out: dict[str, Any] = {}
-    for key in ("label", "preview", "notes"):
+    for key in ("label", "preview", "notes", "source"):
         value = data.get(key)
         scalar = isinstance(value, str | int | float) and not isinstance(value, bool)
         if scalar and (clean := str(value).strip()):

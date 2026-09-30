@@ -114,6 +114,7 @@ CREATE TABLE IF NOT EXISTS settings (
 MIGRATIONS = (
     ("assets", "sidecar_rev", "TEXT"),
     ("assets", "preview_rev", "TEXT"),
+    ("assets", "sha256", "TEXT"),
     ("jobs", "runtime", "TEXT"),
     ("results", "segments", "TEXT"),
     ("library_items", "duration", "REAL"),
@@ -639,6 +640,7 @@ class Database:
                 a.get("sidecar_rev"),
                 a.get("preview_thumb"),
                 a.get("preview_rev"),
+                a.get("sha256"),
                 ts,
             )
             for a in assets
@@ -648,8 +650,8 @@ class Database:
             self.conn.execute("DELETE FROM assets")
             self.conn.executemany(
                 "INSERT INTO assets (path, family, kind, drive_file_id, size, mtime, md5,"
-                " sidecar, sidecar_rev, preview_thumb, preview_rev, indexed_at)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                " sidecar, sidecar_rev, preview_thumb, preview_rev, sha256, indexed_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 rows,
             )
             self.conn.execute("DELETE FROM blob_refs WHERE ref_type = 'asset'")
