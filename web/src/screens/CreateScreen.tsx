@@ -27,7 +27,6 @@ import {
   newPrompt,
   promptReady,
   promptSpec,
-  restorePrompt,
   type PromptUnit,
 } from '../imagePrompt'
 import { CropEditor } from '../components/CropEditor'
@@ -111,7 +110,7 @@ function CreateForm({
   const [control, setControl] = useState<ControlUnit[]>(draft.control ?? [])
   const [refs, setRefs] = useState<Source[]>(draft.refs ?? [])
   const [editingUnit, setEditingUnit] = useState<string | null>(null)
-  const [prompts, setPrompts] = useState<PromptUnit[]>((draft.prompts ?? []).map(restorePrompt))
+  const [prompts, setPrompts] = useState<PromptUnit[]>(draft.prompts ?? [])
   const [editingPrompt, setEditingPrompt] = useState<string | null>(null)
   const [batchCount, setBatchCount] = useState(draft.batchCount)
   const [seedMode, setSeedMode] = useState<SeedMode>(draft.seedMode)

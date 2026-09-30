@@ -13,8 +13,8 @@ import {
   type Variant,
 } from './api'
 import { variantFor } from './assets'
-import { unitFromSpec, type ControlUnit } from './control'
-import { promptFromSpec, type PromptUnit } from './imagePrompt'
+import { restoreUnit, unitFromSpec, type ControlUnit } from './control'
+import { promptFromSpec, restorePrompt, type PromptUnit } from './imagePrompt'
 import type { Place } from './place'
 
 // The Create form's draft, kept across visits and reloads.
@@ -78,6 +78,11 @@ export function loadDraft(): Draft {
   // Before Phase 4 the draft held one family's settings at the top level.
   if (!raw.families && (raw.model !== undefined || raw.params || raw.loras)) {
     families[family] = { model: raw.model, loras: raw.loras, params: raw.params }
+  }
+  // Fill in what a unit saved before a field was added lacks, so the editors can rely on it.
+  for (const fd of Object.values(families)) {
+    if (fd.control) fd.control = fd.control.map(restoreUnit)
+    if (fd.prompts) fd.prompts = fd.prompts.map(restorePrompt)
   }
   return {
     family,
