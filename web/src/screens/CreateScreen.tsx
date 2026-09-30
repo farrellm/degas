@@ -35,13 +35,12 @@ import {
   type MaskRef,
   type Source,
 } from '../draft'
-import { size } from '../format'
+import { belowGpu, needsGpu, size } from '../format'
 import { defaultPlace, validPlace, type Place } from '../place'
 import { insertWord } from '../prompt'
 import { initialParams } from '../schema'
 
 const MAX_BATCH = 8
-const GPUS = ['T4', 'L4', 'A100', 'H100']
 
 const MODE_LABELS: Record<string, string> = {
   t2i: 'From text',
@@ -276,8 +275,7 @@ function CreateForm({
   const noun = (n: number) => (video ? (n === 1 ? 'clip' : 'clips') : n === 1 ? 'image' : 'images')
   const target = { w: Number(params.width), h: Number(params.height) }
   const sessionGpu = isActive(session.data) ? session.data?.session?.gpu : undefined
-  const underpowered =
-    !!sessionGpu && !!variant && GPUS.indexOf(sessionGpu) < GPUS.indexOf(variant.min_gpu)
+  const underpowered = !!sessionGpu && !!variant && belowGpu(sessionGpu, variant.min_gpu)
   const misfit =
     !!source && Math.abs(source.width / source.height / (target.w / target.h) - 1) > 0.01
   const media = [...new Set(families.data.map((f) => f.media))]
@@ -674,15 +672,12 @@ function CreateForm({
           noun="models"
           assets={pickable ?? []}
           selected={new Set([model])}
-          describe={
-            siblings.length > 1 || family.variants.length > 1
-              ? (a) => {
-                  const f = siblings.find((s) => s.id === a.family)
-                  const v = f && variantFor(a.path, f)
-                  return v?.model_dir ? v.label : siblings.length > 1 ? (f?.label ?? null) : null
-                }
-              : undefined
-          }
+          describe={(a) => {
+            const f = siblings.find((s) => s.id === a.family)
+            const v = f && variantFor(a.path, f)
+            const name = v?.model_dir ? v.label : siblings.length > 1 ? (f?.label ?? null) : null
+            return [name, v && needsGpu(v.min_gpu)].filter(Boolean).join(', ') || null
+          }}
           empty={
             <p>
               No models found for “{MODE_LABELS[mode ?? ''] ?? mode}”. Put{' '}

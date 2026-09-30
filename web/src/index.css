@@ -1473,6 +1473,10 @@ code {
   color: var(--danger);
 }
 
+.sheet-section .warn {
+  color: var(--warn);
+}
+
 .sheet-actions {
   display: flex;
   flex-wrap: wrap;
@@ -1508,6 +1512,12 @@ code {
 .gpu-choice .vram {
   color: var(--ink-muted);
   font-size: 0.75rem;
+}
+
+/* Below the Create model's minimum GPU: still a choice, but a lesser one. */
+.gpu-choice button.short .name,
+.gpu-choice button.short .vram {
+  opacity: 0.5;
 }
 
 .switch {
