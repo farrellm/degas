@@ -468,7 +468,7 @@ A transform is **non-destructive**:
 - **Preset aspect:** choose from 1:1, 4:3, 3:2, 16:9, their portrait versions, or the family's buckets.
 - **Free:** any rectangle. The final size snaps to `multiple_of`.
 
-**Resize** is set in one of three ways: to the target resolution (default), to a preset, or to an explicit width × height with the aspect ratio locked. The editor shows the final pixel size, and warns when the image is being upscaled by more than 1.5×.
+**Resize** is set in one of three ways: to the target resolution (default), to a preset, or to an explicit width × height with the aspect ratio locked. The editor shows the final pixel size, and warns when the image is being upscaled by more than 1.5×. Resizing is optional: with *Resize* off the transform ends at the crop, and auto-fit resizes it to the output size at submit.
 
 **Auto-fit.** If the user skips the editor and the source image's aspect ratio doesn't match the target size, the job spec gets a `fit` mode:
 

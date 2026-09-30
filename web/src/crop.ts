@@ -200,16 +200,23 @@ export function buildOps(rot: Rotation, flip: boolean, crop: Rect, image: Size, 
 }
 
 /** Read back what `buildOps` wrote (to reopen the editor on a derived image). */
-export function parseOps(ops: Op[]): { rot: Rotation; flip: boolean; crop: Rect | null } {
+export function parseOps(ops: Op[]): {
+  rot: Rotation
+  flip: boolean
+  crop: Rect | null
+  resized: boolean
+} {
   let rot: Rotation = 0
   let flip = false
   let crop: Rect | null = null
+  let resized = false
   for (const op of ops) {
     if (op.op === 'rotate') rot = op.deg
     else if (op.op === 'flip_h') flip = true
     else if (op.op === 'crop') crop = { x: op.x, y: op.y, w: op.w, h: op.h }
+    else if (op.op === 'resize') resized = true
   }
-  return { rot, flip, crop }
+  return { rot, flip, crop, resized }
 }
 
 /** The crop flipped left-to-right within the image. */

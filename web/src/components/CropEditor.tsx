@@ -59,7 +59,8 @@ interface Props {
    * a small square from the middle. Its size doesn't matter, so there's no upscale warning.
    */
   square?: boolean
-  onApply: (image: BlobInfo) => void
+  /** With the size it's meant for: the resize's, even when the crop was kept at its own. */
+  onApply: (image: BlobInfo, out: Size) => void
   onCancel: () => void
 }
 
@@ -77,6 +78,8 @@ interface Edit {
   flip: boolean
   aspect: Aspect
   crop: Rect
+  /** Resize to the output size now; if not, the crop keeps its pixels and is fitted at submit. */
+  resize: boolean
 }
 
 /** While a corner of a free crop is dragged, the frame moves and the image stays put. */
@@ -115,8 +118,11 @@ export function CropEditor({
   const pointers = useRef(new Map<number, { x: number; y: number }>())
 
   const apply = useMutation({
-    mutationFn: (ops: Parameters<typeof api.transform>[1]) => api.transform(original ?? sha, ops),
-    onSuccess: onApply,
+    mutationFn: ({ ops }: { ops: Parameters<typeof api.transform>[1]; out: Size }) =>
+      api.transform(original ?? sha, ops),
+    onSuccess: (image, { out }) => {
+      onApply(image, out)
+    },
   })
 
   useEffect(() => {
@@ -162,13 +168,13 @@ export function CropEditor({
   // Until edited: the earlier crop of a derived image, else where a crop starts.
   let edit = edited
   if (!edit && natural && history.data) {
-    const { rot, flip, crop } = parseOps(history.data.ops)
+    const { rot, flip, crop, resized } = parseOps(history.data.ops)
     const img = rotated(natural, rot)
     if (crop) {
       const match = !free && Math.abs(crop.w / crop.h / targetRatio - 1) < 0.01
-      edit = { rot, flip, aspect: match ? 'match' : 'free', crop }
+      edit = { rot, flip, aspect: match ? 'match' : 'free', crop, resize: resized }
     } else {
-      edit = { rot, flip, ...initial(img) }
+      edit = { rot, flip, resize: true, ...initial(img) }
     }
   }
 
@@ -247,7 +253,7 @@ export function CropEditor({
 
   const reset = () => {
     if (!natural) return
-    setEdit({ rot: 0, flip: false, ...initial(natural) })
+    setEdit({ rot: 0, flip: false, resize: true, ...initial(natural) })
   }
 
   const point = (e: ReactPointerEvent) => {
@@ -376,7 +382,8 @@ export function CropEditor({
           disabled={!edit || !crop || !out || !img || apply.isPending}
           onClick={() => {
             if (edit && crop && out && img) {
-              apply.mutate(buildOps(edit.rot, edit.flip, crop, img, out))
+              const to = edit.resize ? out : crop
+              apply.mutate({ ops: buildOps(edit.rot, edit.flip, crop, img, to), out })
             }
           }}
         >
@@ -464,13 +471,38 @@ export function CropEditor({
             </svg>
             Flip
           </button>
+          {!free && (
+            <button
+              type="button"
+              className="tool"
+              aria-pressed={edit?.resize ?? true}
+              disabled={!edit}
+              onClick={() => {
+                if (edit) setEdit({ ...edit, resize: !edit.resize })
+              }}
+            >
+              <svg viewBox="0 0 20 20" aria-hidden>
+                <path d="M3 8V3h5" />
+                <path d="M17 12v5h-5" />
+                <path d="M3 3l14 14" />
+              </svg>
+              Resize
+            </button>
+          )}
           <button type="button" className="tool" disabled={!edit} onClick={reset}>
             Reset
           </button>
         </div>
-        {out && natural && (
+        {out && crop && natural && edit && (
           <p className={scale > UPSCALE_WARN ? 'readout warn' : 'readout'} aria-live="polite">
-            {size(out.w, out.h)} from {size(natural.w, natural.h)}
+            {edit.resize ? size(out.w, out.h) : size(crop.w, crop.h)} from{' '}
+            {size(natural.w, natural.h)}
+            {!edit.resize && !free && (out.w !== crop.w || out.h !== crop.h) && (
+              <>
+                <br />
+                Kept at its own size; it’s fitted to {size(out.w, out.h)} when it’s used.
+              </>
+            )}
             {square && Math.abs(out.w / out.h - 1) > 0.01 && (
               <>
                 <br />

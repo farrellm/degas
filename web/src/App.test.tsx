@@ -913,6 +913,46 @@ describe('App', () => {
     })
   })
 
+  it('keeps a crop at its own size when Resize is off', async () => {
+    const transforms: { ops: { op: string }[] }[] = []
+    mockApi({
+      ...VIDEO_ROUTES,
+      'GET /api/results': () => ({ results: [RESULT], cursor: null }),
+      'GET /api/blobs/abc/transform': () => ({ original: 'abc', ops: [] }),
+      'POST /api/blobs/abc/transform': (init) => {
+        transforms.push(JSON.parse(init?.body as string) as (typeof transforms)[number])
+        return { sha256: 'd1', media_type: 'image/png', width: 832, height: 458 }
+      },
+    })
+    const user = userEvent.setup()
+    renderApp()
+    await user.click(await screen.findByRole('button', { name: 'Video' }))
+    await user.click(await screen.findByRole('button', { name: 'From image' }))
+    await user.click(screen.getByRole('button', { name: /Source Choose an image/ }))
+    const picker = screen.getByRole('dialog', { name: 'Choose image' })
+    await user.click(await within(picker).findByRole('button', { name: 'Image: a lighthouse' }))
+    await user.click(within(picker).getByRole('button', { name: 'Crop' }))
+
+    const editor = await screen.findByRole('dialog', { name: 'Crop' })
+    const img = editor.querySelector('img')
+    if (!img) throw new Error('no image in the editor')
+    Object.defineProperty(img, 'naturalWidth', { value: 832 })
+    Object.defineProperty(img, 'naturalHeight', { value: 1216 })
+    fireEvent.load(img)
+    const resize = await within(editor).findByRole('button', { name: 'Resize' })
+    expect(resize).toHaveAttribute('aria-pressed', 'true')
+    await user.click(resize)
+    expect(resize).toHaveAttribute('aria-pressed', 'false')
+    expect(within(editor).getByText(/fitted to 1280 × 704 when it’s used/)).toBeInTheDocument()
+    await user.click(within(editor).getByRole('button', { name: 'Apply' }))
+
+    expect(await screen.findByRole('button', { name: 'Source 832 × 458' })).toBeInTheDocument()
+    expect(transforms[0]?.ops.map((o) => o.op)).toEqual(['crop'])
+    // The form keeps the size the crop was made for, not the crop's own.
+    const sizeRow = screen.getByRole('group', { name: 'Size' })
+    expect(within(sizeRow).getByText('1280 × 704')).toBeInTheDocument()
+  })
+
   it('outpaints around a placed image, and needs a mask to inpaint', async () => {
     vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null)
     const submitted: { spec: { mode: string; inputs?: unknown } }[] = []
