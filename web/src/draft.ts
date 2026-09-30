@@ -10,7 +10,9 @@ import {
   type SavedPrompt,
   type SeedMode,
   type Spec,
+  type Variant,
 } from './api'
+import { variantFor } from './assets'
 import { unitFromSpec, type ControlUnit } from './control'
 import type { Place } from './place'
 
@@ -233,6 +235,23 @@ export function useSourceTarget(): { family: string; mode: string } | null {
     if (mode) return { family: f.id, mode }
   }
   return null
+}
+
+/**
+ * The model variant Create has open, the way Create resolves it: the chosen model's, else
+ * the first that does the chosen mode, else the family's first. Undefined until families load.
+ */
+export function useDraftVariant(): Variant | undefined {
+  const families = useQuery({ queryKey: ['families'], queryFn: api.families })
+  const draft = loadDraft()
+  const family = families.data?.find((f) => f.id === draft.family) ?? families.data?.[0]
+  if (!family) return undefined
+  const { model, mode } = draft.families[family.id] ?? {}
+  return (
+    (model ? variantFor(model, family) : undefined) ??
+    family.variants.find((v) => !!mode && v.modes.includes(mode)) ??
+    family.variants[0]
+  )
 }
 
 export const SOURCE_MODES = new Set(['i2i', 'i2v', 'edit', 'inpaint', 'outpaint'])

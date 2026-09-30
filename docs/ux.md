@@ -54,7 +54,7 @@ Scale: 13 / 15 / 16 / 20 / 26 px (`--step--1` … `--step-2`). Labels are senten
 └───────────────────────────────┘
 ```
 
-- **Session chip** (replaces the Session tab). It shows *No GPU*, *L4 starting*, *L4 12:40* (idle countdown) or *L4* while a job runs, with a coloured state dot. Tapping it opens the **GPU session sheet**: start (GPU choice, high memory), status, VRAM, stop, keep running, restart worker, and Drive status and rescan.
+- **Session chip** (replaces the Session tab). It shows *No GPU*, *L4 starting*, *L4 12:40* (idle countdown) or *L4* while a job runs, with a coloured state dot. Tapping it opens the **GPU session sheet**: start (GPU choice, high memory), status, VRAM, stop, keep running, restart worker, and Drive status and rescan. When the model open in Create needs more than a T4, GPUs below its minimum are dimmed but still selectable, and a line under the choice says *Wan 2.2 T2V A14B needs an A100 or better.* The choice defaults to the last GPU used, raised to the minimum when that one is too small. Choosing a smaller one turns the line into a warning: *Wan 2.2 T2V A14B needs an A100; an L4 may run it slowly.*
 - **Results** merges the old Queue and Results tabs into one contact-sheet feed. Each job is a group with its prompt as an italic caption, the model and size underneath, and its images in a grid (three columns for portrait and square, two for landscape). Running and queued jobs come first, with sketch tiles for images that aren't finished. The corner of each group shows *Cancel* while it's pending, then the time the images have left.
 - **Create** stays put after Generate. A confirmation line in the generate bar says *Queued 2 images* and links to Results. When no GPU is running, the same line says jobs will wait and offers *Start a session*. Each slider has a small `--ink-muted` tick under its track at the family's default, and the default size preset has the same tick under its box. When a slider, number or select differs from its default, *Reset to 28* appears under its label. It sits in the label column, so the row doesn't grow while you drag. Seed, prompts and checkboxes don't get one.
 - **Viewer** is full screen on the image well, with swipe, arrow keys and ‹ › to move through the feed. Under the image is a **wall label**: the prompt as the title, then the model, the size and seed, and the sampling settings on separate lines. Actions: *Save to Photos* and *Reuse settings*, which loads the spec and its seed into Create.
@@ -96,7 +96,7 @@ Each phase lists the screens it adds or changes, then any new components. Wirefr
 
 ### Phase 2: Assets and LoRA
 
-**Model picker sheet.** The Model row opens a sheet instead of a native select once sidecars exist. Each row shows the sidecar label (falling back to the file name), the size, and whether the file is already on the GPU. The cold copy costs about 90 s, so that last fact matters when choosing.
+**Model picker sheet.** The Model row opens a sheet instead of a native select once sidecars exist. Each row shows the sidecar label (falling back to the file name), the variant's minimum GPU when it's above a T4 (*needs an L4*), the size, and whether the file is already on the GPU. The cold copy costs about 90 s, so that last fact matters when choosing.
 
 ```
 ┌ Model ─────────────────── Done ┐

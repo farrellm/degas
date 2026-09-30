@@ -2,8 +2,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { api, isActive, type SessionSnapshot } from '../api'
 import { assetLabel, bytes, useAssets } from '../assets'
-import { loadDraft } from '../draft'
-import { GiB, GPU_VRAM } from '../format'
+import { loadDraft, useDraftVariant } from '../draft'
+import { belowGpu, GiB, GPU_VRAM, GPUS } from '../format'
 import { disablePush, enablePush, isInstalled, pushState, type PushState } from '../push'
 import { ago, countdown, useNow } from '../time'
 import { Sheet } from './Sheet'
@@ -40,7 +40,15 @@ export function SessionSheet({ onClose }: { onClose: () => void }) {
 function SessionBody({ snap }: { snap: SessionSnapshot }) {
   const qc = useQueryClient()
   const now = useNow(1000)
-  const [gpu, setGpu] = useState(lastGpu)
+  const variant = useDraftVariant()
+  // The model open in Create sets a floor: GPUs below it are dimmed, and the default rises to it.
+  const min = variant && GPUS.indexOf(variant.min_gpu) > 0 ? variant.min_gpu : null
+  const [chosen, setGpu] = useState<string | null>(null)
+  const last = lastGpu()
+  const gpu =
+    chosen ??
+    (min && belowGpu(last, min) ? (snap.gpus.find((g) => !belowGpu(g, min)) ?? last) : last)
+  const short = !!min && belowGpu(gpu, min)
   // Wan A14B needs more than the standard 12 GB of system RAM (design §3.1).
   const [highMem, setHighMem] = useState(wantsHighMem)
   const onSettled = () => qc.invalidateQueries({ queryKey: ['session'] })
@@ -77,6 +85,8 @@ function SessionBody({ snap }: { snap: SessionSnapshot }) {
               key={g}
               type="button"
               aria-pressed={g === gpu}
+              aria-describedby={min && belowGpu(g, min) ? 'gpu-floor' : undefined}
+              className={min && belowGpu(g, min) ? 'short' : undefined}
               onClick={() => {
                 setGpu(g)
               }}
@@ -86,6 +96,13 @@ function SessionBody({ snap }: { snap: SessionSnapshot }) {
             </button>
           ))}
         </div>
+        {min && variant && (
+          <p id="gpu-floor" className={short ? 'warn' : undefined}>
+            {short
+              ? `${variant.label} needs an ${min}; ${gpu === 'T4' ? 'a' : 'an'} ${gpu} may run it slowly.`
+              : `${variant.label} needs an ${min} or better.`}
+          </p>
+        )}
         <label className="switch">
           <span>
             High memory
