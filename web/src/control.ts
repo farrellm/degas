@@ -48,6 +48,12 @@ export function newUnit(): ControlUnit {
   }
 }
 
+/** A unit from a saved draft, which may predate fields added since. */
+export const restoreUnit = (saved: Partial<ControlUnit>): ControlUnit => ({
+  ...newUnit(),
+  ...saved,
+})
+
 /**
  * The steps (1-based, inclusive) a unit guides out of `steps`. diffusers runs a unit on step
  * i (0-based) when i / n ≥ start and (i + 1) / n ≤ end; null when that's no step at all.
