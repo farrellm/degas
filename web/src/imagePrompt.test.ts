@@ -9,6 +9,7 @@ import {
   promptFromSpec,
   promptSpec,
   promptSummary,
+  restorePrompt,
   weightFor,
 } from './imagePrompt'
 
@@ -107,5 +108,28 @@ describe('FaceID image prompts', () => {
     expect(promptSpec({ ...unit, model: plusFace.path })).not.toHaveProperty('lora_weight')
     const back = promptFromSpec(promptSpec(unit), { w: 1024, h: 1024 })
     expect(back).toMatchObject({ take: 'face', loraWeight: 0.5, structure: 1 })
+  })
+})
+
+describe('restorePrompt', () => {
+  it('fills in fields a draft saved before FaceID and Redux lacks', () => {
+    const {
+      structure: _s,
+      loraWeight: _l,
+      downsample: _d,
+      ...old
+    } = {
+      ...newPrompt(),
+      model: 'ip_adapters/sdxl/ip-adapter-faceid-plusv2_sdxl.bin',
+      take: 'face' as const,
+      weight: 0.8,
+    }
+    expect(restorePrompt(old)).toMatchObject({
+      key: old.key,
+      weight: 0.8,
+      structure: 1,
+      loraWeight: 0.6,
+      downsample: 3,
+    })
   })
 })

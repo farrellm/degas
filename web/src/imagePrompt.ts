@@ -205,6 +205,12 @@ export function newPrompt(options: ImagePromptOptions = SDXL_OPTIONS): PromptUni
   }
 }
 
+/** A unit from a saved draft, which may predate fields added since (FaceID's, Redux's). */
+export const restorePrompt = (saved: Partial<PromptUnit>): PromptUnit => ({
+  ...newPrompt(),
+  ...saved,
+})
+
 /** The unit's row in Create: what it takes, its weight, and its steps when not all. */
 export function promptSummary(
   unit: PromptUnit,
