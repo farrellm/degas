@@ -405,6 +405,12 @@ export const api = {
     ),
   assets: () => request<Asset[]>('GET', '/assets'),
   rescan: () => request<{ count: number; indexed_at: string }>('POST', '/assets/rescan'),
+  /** Move LoRA files (both halves of a pair together) to Drive's trash. */
+  deleteLoras: (paths: string[]) =>
+    request<{ deleted: string[] }>(
+      'DELETE',
+      `/assets?${paths.map((p) => `path=${encodeURIComponent(p)}`).join('&')}`,
+    ),
   drive: () => request<DriveStatus>('GET', '/drive'),
   civitaiPlan: (url: string) => request<CivitaiPlan>('POST', '/civitai/plan', { url }),
   civitaiImport: (url: string) => request<CivitaiImport>('POST', '/civitai/import', { url }),

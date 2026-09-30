@@ -21,11 +21,11 @@ from degas.colab.worker_client import WorkerClient
 from degas.config import Config
 from degas.db import Database
 from degas.dispatcher import Dispatcher
-from degas.drive import DriveAuth, DriveIndexer
+from degas.drive import DriveAuth, DriveIndexer, companions
 from degas.events import EventBus
 from degas.families import FAMILIES
 from degas.inputs import Inputs
-from degas.library import sweep
+from degas.library import release, sweep
 from degas.notices import RESULTS_URL, SESSION_URL, idle_notice, job_notice
 from degas.push import Push, Sender
 from degas.rclone import AsyncRclone, Remote
@@ -80,6 +80,21 @@ class Services:
             count = self.db.replace_assets(assets)
         self.bus.publish({"type": "assets", "count": count})
         return count
+
+    async def delete_loras(self, paths: list[str]) -> None:
+        """Move LoRAs (with their sidecars and previews) to Drive's trash and drop them from
+        the index. Every path must be an indexed LoRA."""
+        importer = self.imports.importer
+        async with self._rescan_lock:
+            for path in paths:
+                folder, file = path.rsplit("/", 1)
+                target = f"{importer.base}/{folder}"
+                names = (await importer.remote.run("lsf", "--files-only", target)).splitlines()
+                for name in [file, *companions(file, names)]:
+                    if name in names:
+                        await importer.remote.run("deletefile", f"{target}/{name}")
+                release(self.db, self.blobs, self.db.delete_assets([path]))
+        self.bus.publish({"type": "assets", "count": len(self.db.list_assets())})
 
     def sweep(self) -> dict[str, int]:
         counts = sweep(self.db, self.blobs)

@@ -21,6 +21,7 @@ from degas.library import input_blobs, release, saved_config
 from degas.media import MediaError
 from degas.preprocess import PreprocessError
 from degas.preprocess import run as run_preprocess
+from degas.rclone import RcloneError
 from degas.services import Services
 
 router = APIRouter(prefix="/api")
@@ -179,6 +180,22 @@ async def rescan(svc: Svc) -> dict[str, Any]:
     except DriveError as e:
         raise HTTPException(502, str(e)) from None
     return {"count": count, "indexed_at": svc.db.get_setting("drive.indexed_at")}
+
+
+@router.delete("/assets")
+async def delete_assets(svc: Svc, path: Annotated[list[str], Query()]) -> dict[str, Any]:
+    """Move LoRAs to Drive's trash (both halves of a pair in one call)."""
+    for p in path:
+        asset = svc.db.get_asset(p)
+        if asset is None:
+            raise HTTPException(404, f"{p} isn't in the Drive index")
+        if asset["kind"] != "lora":
+            raise HTTPException(400, "Only LoRAs can be deleted from Degas")
+    try:
+        await svc.delete_loras(path)
+    except RcloneError as e:
+        raise HTTPException(502, str(e)) from None
+    return {"deleted": path}
 
 
 @router.post("/civitai/plan")

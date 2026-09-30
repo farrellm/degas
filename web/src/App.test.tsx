@@ -514,6 +514,41 @@ describe('App', () => {
     expect(screen.queryByRole('slider', { name: 'Film Grain v3 weight' })).not.toBeInTheDocument()
   })
 
+  it('deletes a LoRA from Drive and drops it from the form', async () => {
+    let assets = ASSETS
+    const deleted: string[] = []
+    mockApi({
+      'GET /api/assets': () => assets,
+      'DELETE /api/assets': () => {
+        const url = new URL(vi.mocked(fetch).mock.calls.at(-1)?.[0] as string, 'http://x')
+        deleted.push(...url.searchParams.getAll('path'))
+        assets = assets.filter((a) => !deleted.includes(a.path))
+        return { deleted }
+      },
+    })
+    const user = userEvent.setup()
+    renderApp()
+    await user.click(await screen.findByRole('button', { name: 'Add LoRA' }))
+    let sheet = screen.getByRole('dialog', { name: 'Add LoRA' })
+    await user.click(within(sheet).getByRole('button', { name: /Film Grain v3/ }))
+    expect(screen.getByRole('slider', { name: 'Film Grain v3 weight' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Add LoRA' }))
+    sheet = screen.getByRole('dialog', { name: 'Add LoRA' })
+    await user.click(within(sheet).getByRole('button', { name: 'Delete LoRAs' }))
+    sheet = screen.getByRole('dialog', { name: 'Delete LoRAs' })
+    expect(within(sheet).queryByRole('button', { name: 'Import from Civitai' })).toBeNull()
+    await user.click(within(sheet).getByRole('button', { name: /Film Grain v3/ }))
+    const confirm = within(sheet).getByRole('group', { name: 'Confirm delete' })
+    expect(confirm).toHaveTextContent('Delete Film Grain v3? Its files go to Drive’s trash.')
+    await user.click(within(confirm).getByRole('button', { name: 'Delete' }))
+
+    await within(sheet).findByText('Deleted Film Grain v3.')
+    expect(deleted).toEqual(['loras/sdxl/film.safetensors'])
+    expect(within(sheet).queryByRole('button', { name: /Film Grain v3/ })).toBeNull()
+    expect(screen.queryByRole('slider', { name: 'Film Grain v3 weight' })).not.toBeInTheDocument()
+  })
+
   it('imports a LoRA from Civitai and adds it to the form', async () => {
     let source: FakeEventSource | undefined
     vi.stubGlobal(
