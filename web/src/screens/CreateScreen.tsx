@@ -319,8 +319,11 @@ function CreateForm({
     )
   }
 
+  // Changing the model keeps the prompt and images, even over ones the other family had.
   const carry = (m: string, next?: Asset) => ({
     prompt: String(params.prompt ?? ''),
+    ...('negative_prompt' in params && { negative: String(params.negative_prompt ?? '') }),
+    keep: true,
     model: next?.path,
     mode: m,
     source: sourceGone ? null : source,
