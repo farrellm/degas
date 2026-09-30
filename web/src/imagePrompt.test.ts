@@ -9,6 +9,7 @@ import {
   promptFromSpec,
   promptSpec,
   promptSummary,
+  weightFor,
 } from './imagePrompt'
 
 const asset = (name: string, purpose?: AdapterKind): Asset => ({
@@ -84,5 +85,27 @@ describe('image prompts', () => {
       pictures: [{ sha: 'a' }],
       area: { sha: 'm', over: { width: 1024, height: 768 } },
     })
+  })
+})
+
+describe('FaceID image prompts', () => {
+  const faceid = asset('ip-adapter-faceid-plusv2_sdxl.bin')
+  const plusFace = asset('ip-adapter-plus-face_sdxl_vit-h.safetensors')
+
+  it('prefers FaceID for a face, and starts it stronger', () => {
+    expect(adapterKind(faceid)).toBe('faceid')
+    expect(modelFor([plusFace, faceid], 'face')).toBe(faceid)
+    expect(modelFor([plusFace], 'face')).toBe(plusFace)
+    expect(weightFor('face', faceid.path)).toBe(0.8)
+    expect(weightFor('face', plusFace.path)).toBe(0.6)
+    expect(mismatch(faceid, faceid.path, 'face')).toBeNull()
+  })
+
+  it('sends its face settings only for a FaceID model', () => {
+    const unit = { ...newPrompt(), model: faceid.path, take: 'face' as const, loraWeight: 0.5 }
+    expect(promptSpec(unit)).toMatchObject({ purpose: 'all', structure: 1, lora_weight: 0.5 })
+    expect(promptSpec({ ...unit, model: plusFace.path })).not.toHaveProperty('lora_weight')
+    const back = promptFromSpec(promptSpec(unit), { w: 1024, h: 1024 })
+    expect(back).toMatchObject({ take: 'face', loraWeight: 0.5, structure: 1 })
   })
 })

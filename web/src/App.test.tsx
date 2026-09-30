@@ -1480,6 +1480,82 @@ describe('App', () => {
     ])
   })
 
+  it('reads who a face is with FaceID, showing the face the GPU found', async () => {
+    const faces: unknown[] = []
+    const submitted: { spec: { image_prompts?: unknown } }[] = []
+    const adapter = (name: string) => ({
+      path: `ip_adapters/sdxl/${name}`,
+      family: 'sdxl',
+      kind: 'ip_adapter',
+      size: 1.5e9,
+      sidecar: null,
+      preview_thumb: null,
+    })
+    mockApi({
+      'GET /api/families': () => [{ ...FAMILIES[0], supports_image_prompts: true }],
+      'GET /api/assets': () => [
+        ...ASSETS,
+        adapter('ip-adapter-plus_sdxl_vit-h.safetensors'),
+        adapter('ip-adapter-plus-face_sdxl_vit-h.safetensors'),
+        adapter('ip-adapter-faceid-plusv2_sdxl.bin'),
+      ],
+      'GET /api/session': () => RUNNING,
+      'GET /api/results': () => ({ results: [RESULT], cursor: null }),
+      'POST /api/preprocess': (init) => {
+        faces.push(JSON.parse(init?.body as string))
+        return {
+          image: { sha256: 'crop', media_type: 'image/png', width: 224, height: 224 },
+          faces: 2,
+        }
+      },
+      'POST /api/jobs': (init) => {
+        submitted.push(JSON.parse(init?.body as string) as (typeof submitted)[number])
+        return { id: 'j5' }
+      },
+    })
+    const user = userEvent.setup()
+    renderApp()
+    await user.type(await screen.findByLabelText('Prompt'), 'a portrait in oils')
+    await user.click(await screen.findByRole('button', { name: 'Add image prompt' }))
+    const sheet = await screen.findByRole('dialog', { name: 'Image prompt' })
+    await user.click(within(sheet).getByRole('button', { name: 'Face' }))
+    // Face prefers FaceID over the CLIP face model, and starts it at 0.8.
+    expect(
+      within(sheet).getByRole('button', { name: /Model ip-adapter-faceid/ }),
+    ).toBeInTheDocument()
+    expect(within(sheet).getByText('0.80')).toBeInTheDocument()
+    expect(within(sheet).getByText(/needn’t be cropped/)).toBeInTheDocument()
+    fireEvent.change(within(sheet).getByLabelText('Face LoRA'), { target: { value: '0.5' } })
+
+    await user.click(within(sheet).getByRole('button', { name: 'Choose a picture' }))
+    const picker = screen.getByRole('dialog', { name: 'Choose image' })
+    await user.click(await within(picker).findByRole('button', { name: 'Image: a lighthouse' }))
+    await user.click(within(picker).getByRole('button', { name: 'Use image' }))
+    const unit = await screen.findByRole('dialog', { name: 'Image prompt' })
+    expect(
+      await within(unit).findByRole('img', { name: 'The face in picture 1' }),
+    ).toBeInTheDocument()
+    expect(within(unit).getByText('The biggest of 2 faces')).toBeInTheDocument()
+    expect(faces).toEqual([{ id: 'face', image: 'abc', params: {} }])
+    await user.click(within(unit).getByRole('button', { name: 'Done' }))
+
+    await user.click(screen.getByRole('button', { name: 'Generate' }))
+    expect(await screen.findByText('Queued 1 image.')).toBeInTheDocument()
+    expect(submitted[0]?.spec.image_prompts).toEqual([
+      {
+        adapter: { path: 'ip_adapters/sdxl/ip-adapter-faceid-plusv2_sdxl.bin' },
+        images: ['sha256:abc'],
+        fit: 'crop',
+        purpose: 'all',
+        weight: 0.8,
+        start: 0,
+        end: 1,
+        structure: 1,
+        lora_weight: 0.5,
+      },
+    ])
+  })
+
   it('plays a clip and extends it from its last frame', async () => {
     const submitted: { spec: { inputs?: unknown } }[] = []
     mockApi({

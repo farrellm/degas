@@ -39,6 +39,10 @@ MAX_IMAGE_PROMPTS = 2
 
 # The CLIP image encoders IP-Adapters read their pictures with (transformers folders). Every
 # useful SDXL adapter uses ViT-H; only h94's first one, `ip-adapter_sdxl`, uses ViT-bigG.
+# InsightFace's detector and recognizer, which FaceID models read faces with.
+FACE_DETECTOR = "preprocessors/insightface"
+FACE_DEFAULTS = {"structure": 1.0, "lora_weight": 0.6}
+
 ENCODERS = {
     "vit-h": "image_encoders/sdxl/clip-vit-h-14",
     "vit-bigg": "image_encoders/sdxl/clip-vit-bigg-14",
@@ -228,8 +232,10 @@ class Sdxl:
         }
         prompts = validate_image_prompts(spec.get("image_prompts"), self.id, MAX_IMAGE_PROMPTS)
         if prompts:
-            out["image_prompts"] = prompts
+            out["image_prompts"] = [faceid_unit(n, u) for n, u in enumerate(prompts, 1)]
             out["image_encoder"] = {"path": image_encoder(prompts), "size": None}
+            if any(is_faceid(u["adapter"]["path"]) for u in prompts):
+                out["face_detector"] = {"path": FACE_DETECTOR, "size": None}
         if not params["vae_fp32"]:
             out["vae"] = {"path": FP16_VAE, "size": None}
         return out
@@ -242,6 +248,20 @@ def encoder_of(adapter: str) -> str:
     """The image encoder an IP-Adapter file was trained with, from its name."""
     stem = adapter.rsplit("/", 1)[-1].rsplit(".", 1)[0].lower()
     return "vit-bigg" if stem == "ip-adapter_sdxl" or "bigg" in stem else "vit-h"
+
+
+def is_faceid(adapter: str) -> bool:
+    """Whether an IP-Adapter reads InsightFace identities (FaceID) rather than CLIP pictures."""
+    return "faceid" in adapter.rsplit("/", 1)[-1].lower()
+
+
+def faceid_unit(n: int, unit: dict[str, Any]) -> dict[str, Any]:
+    """A FaceID unit gets its structure and LoRA weight; other units don't have them."""
+    if not is_faceid(unit["adapter"]["path"]):
+        return {k: v for k, v in unit.items() if k not in FACE_DEFAULTS}
+    if unit["purpose"] != "all":
+        raise SpecError(f"Image prompt {n}: a FaceID model reads a face, so it acts everywhere")
+    return {**FACE_DEFAULTS, **unit}
 
 
 def image_encoder(prompts: list[dict[str, Any]]) -> str:

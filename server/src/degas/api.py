@@ -289,6 +289,8 @@ MISSING = {
     "or tick Built-in VAE in More settings.",
     "image_encoder": "Image prompts need the CLIP image encoder in Drive. Put it in "
     "degas/{path}/, then rescan.",
+    "face_detector": "FaceID needs InsightFace in Drive: det_10g.onnx and w600k_r50.onnx "
+    "from buffalo_l in degas/{path}/. Then rescan.",
 }
 
 
@@ -297,9 +299,11 @@ def _resolve_assets(svc: Services, family: str, spec: dict[str, Any]) -> None:
     sizes: dict[str, int | None] = {}
     for need in spec_assets(spec):
         asset = svc.db.get_asset(need["path"])
-        if asset is None or asset["kind"] != need["kind"] or asset["family"] != family:
-            if need["kind"] in MISSING:
-                raise HTTPException(400, MISSING[need["kind"]].format(path=need["path"]))
+        owner = None if need["kind"] == "preprocessor" else family  # preprocessors are shared
+        if asset is None or asset["kind"] != need["kind"] or asset["family"] != owner:
+            key = "face_detector" if need["kind"] == "preprocessor" else need["kind"]
+            if key in MISSING:
+                raise HTTPException(400, MISSING[key].format(path=need["path"]))
             what = {
                 "model": "Model",
                 "lora": "LoRA",

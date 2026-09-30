@@ -41,6 +41,7 @@ from diffusers import (
     UniPCMultistepScheduler,
 )
 from diffusers.image_processor import IPAdapterMaskProcessor
+from diffusers.models.embeddings import IPAdapterFaceIDPlusImageProjection
 from PIL import Image
 from transformers import CLIPImageProcessor, CLIPVisionModelWithProjection
 
@@ -91,6 +92,7 @@ class SdxlRunner:
         self.controlnets: dict[str, Any] = {}  # ControlNet asset path → loaded model
         self.ip_adapters: tuple[str, ...] = ()  # IP-Adapter asset paths, one per unit
         self.encoder_path: Path | None = None  # their image encoder
+        self.faces: Any = None  # InsightFace, for FaceID units
         self._scheduler_config: Any = None
 
     def run(self, spec: dict[str, Any], seeds: list[int], ctx: RunContext) -> Iterator[Output]:
@@ -172,11 +174,18 @@ class SdxlRunner:
         ]
         encoder = spec.get("image_encoder") if prompts else None
         encoder_path = ctx.fetch_asset(encoder["path"], encoder.get("size")) if encoder else None
+        detector = spec.get("face_detector") if prompts else None
+        detector_path = (
+            ctx.fetch_asset(detector["path"], detector.get("size")) if detector else None
+        )
         ctx.check_cancelled()
         ctx.progress(0, "load", 0, 1)
         self._load(path, config, vae_path, inpaint=spec.get("variant") == "inpaint")
         self._apply_loras(loras)
         self._load_image_prompts(adapters, encoder_path)
+        # Loading a FaceID model activates its own LoRA alone, so the weights go on last.
+        self._activate_loras(loras, ip_adapter.face_loras(prompts))
+        self._load_faces(detector_path)
         self._load_controlnets(nets)
         pipe = self._pipe_for(mode, [p for p, _ in nets])
         ctx.progress(0, "load", 1, 1)
@@ -277,23 +286,66 @@ class SdxlRunner:
                 areas.append(None)
         return images, areas
 
-    @staticmethod
     def _image_prompt_embeds(
-        pipe: Any, prompts: list[dict[str, Any]], ctx: RunContext, cfg: bool
+        self, pipe: Any, prompts: list[dict[str, Any]], ctx: RunContext, cfg: bool
     ) -> list[Any]:
         """Each unit's pictures encoded once for the whole batch (diffusers would encode them
-        again for every image)."""
+        again for every image).
+
+        A FaceID unit reads each picture's main face: its InsightFace identity goes in as the
+        unit's embeddings, and CLIP reads the aligned face crop, which FaceID Plus takes as
+        its projection's `clip_embeds`.
+        """
         pictures: list[list[Image.Image]] = []
-        for unit in prompts:
+        identities: dict[int, Any] = {}
+        for n, unit in enumerate(prompts):
             unit_pictures = []
             for ref in unit["images"]:
                 with Image.open(ctx.blob(ref)) as im:
                     unit_pictures.append(im.convert("RGB"))
+            if ip_adapter.is_faceid(unit["adapter"]["path"]):
+                identities[n], unit_pictures = self._faces_of(unit_pictures, n + 1)
             pictures.append(unit_pictures)
+        device = pipe._execution_device
         with torch.no_grad():
-            return list(
-                pipe.prepare_ip_adapter_image_embeds(pictures, None, pipe._execution_device, 1, cfg)
-            )
+            embeds = list(pipe.prepare_ip_adapter_image_embeds(pictures, None, device, 1, cfg))
+        layers = pipe.unet.encoder_hid_proj.image_projection_layers
+        for n, ids in identities.items():
+            unit = prompts[n]
+            layer = layers[n]
+            if isinstance(layer, IPAdapterFaceIDPlusImageProjection):
+                layer.clip_embeds = embeds[n].to(device, torch.float16)
+                layer.shortcut = ip_adapter.has_shortcut(unit["adapter"]["path"])
+                layer.shortcut_scale = float(unit.get("structure", 1.0))
+            found = torch.from_numpy(ids)[None].to(device, torch.float16)  # 1, pictures, 512
+            embeds[n] = torch.cat([torch.zeros_like(found), found]) if cfg else found
+        return embeds
+
+    def _faces_of(self, pictures: list[Image.Image], unit: int) -> tuple[Any, list[Image.Image]]:
+        """Each picture's main face: its identities (pictures by 512) and aligned crops."""
+        from degas_worker.preprocess.face import align, main_face  # noqa: PLC0415 - cv2
+
+        if self.faces is None:
+            raise ValueError("FaceID needs InsightFace in preprocessors/insightface/")
+        ids, crops = [], []
+        for k, picture in enumerate(pictures, 1):
+            rgb = np.asarray(picture)
+            face = main_face(self.faces, rgb)
+            if face is None:
+                raise ValueError(f"Image prompt {unit}: no face found in picture {k}")
+            ids.append(self.faces.identity(rgb, face))
+            crops.append(Image.fromarray(align(rgb, face, 224)))
+        return np.stack(ids).astype(np.float32), crops
+
+    def _load_faces(self, detector: Path | None) -> None:
+        """Keep InsightFace loaded while FaceID units want it."""
+        if detector is None:
+            self.faces = None
+            return
+        if self.faces is None or self.faces.model_dir != detector:
+            from degas_worker.preprocess.face import FaceAnalyzer  # noqa: PLC0415 - cv2
+
+            self.faces = FaceAnalyzer(detector)
 
     @staticmethod
     def _image_prompt_areas(
@@ -336,6 +388,12 @@ class SdxlRunner:
         if wanted == self.ip_adapters and encoder == self.encoder_path:
             return
         if self.ip_adapters:
+            # FaceID models brought their own LoRAs, which outlive `unload_ip_adapter`.
+            faceid = [
+                n for n in getattr(self.pipe.unet, "peft_config", {}) if n.startswith("faceid_")
+            ]
+            if faceid:
+                self.pipe.delete_adapters(faceid)
             self.pipe.unload_ip_adapter()
             self.ip_adapters = ()
             self.encoder_path = None
@@ -466,7 +524,8 @@ class SdxlRunner:
         return self.derived[key]
 
     def _apply_loras(self, loras: list[tuple[str, Path, float]]) -> None:
-        """Load only new adapters, delete ones no longer requested, then set the weights."""
+        """Load only new adapters and delete ones no longer requested (`_activate_loras`
+        weights them)."""
         plan = plan_loras(self.adapters, [(path, weight) for path, _, weight in loras])
         if plan.remove:
             self.pipe.delete_adapters(plan.remove)
@@ -480,8 +539,15 @@ class SdxlRunner:
                     self.pipe.delete_adapters([name])
                 raise ValueError(f"Could not load LoRA {path}: {e}") from e
             self.adapters[path] = name
-        if plan.names:
-            self.pipe.set_adapters(plan.names, adapter_weights=plan.weights)
+
+    def _activate_loras(
+        self, loras: list[tuple[str, Path, float]], faceid: list[tuple[str, float]]
+    ) -> None:
+        """Weight the requested LoRAs, and FaceID models' own LoRAs, together."""
+        names = [self.adapters[path] for path, _, _ in loras] + [n for n, _ in faceid]
+        weights = [w for _, _, w in loras] + [w for _, w in faceid]
+        if names:
+            self.pipe.set_adapters(names, adapter_weights=weights)
 
     def _load_lora(self, file: Path, name: str) -> None:
         """`load_lora_weights`, but with the text encoder keys matched to transformers 5's
@@ -528,6 +594,7 @@ class SdxlRunner:
         self.controlnets = {}
         self.ip_adapters = ()
         self.encoder_path = None
+        self.faces = None
         gc.collect()
         torch.cuda.empty_cache()
 

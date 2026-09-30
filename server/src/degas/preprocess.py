@@ -1,5 +1,5 @@
-"""Preprocessors run on the worker (design §4.4): SAM 3 selection for masks, and the depth,
-pose and edge traces that ControlNet units read."""
+"""Preprocessors run on the worker (design §4.4): SAM 3 selection for masks, the depth,
+pose and edge traces that ControlNet units read, and the face a FaceID image prompt reads."""
 
 import base64
 import binascii
@@ -15,6 +15,8 @@ from degas.services import Services
 SAM_ASSET = "preprocessors/sam3"
 DEPTH_ASSET = "preprocessors/depth-anything-v2"
 POSE_ASSET = "preprocessors/dwpose"
+FACE_ASSET = "preprocessors/insightface"
+NO_FACE = "No face found in this picture"
 MAX_POINTS = 16
 MAX_TEXT = 200
 
@@ -72,7 +74,7 @@ class Kind:
     name: str  # what the UI calls it, in errors
     use: str  # "Start a session to …"
     check: Callable[[dict[str, Any]], dict[str, Any]]
-    output: Literal["masks", "image"]
+    output: Literal["masks", "image", "face"]
     asset: str | None = None  # the model folder in Drive, if it needs one
     model: str = ""  # the model's name, for "… isn't in Drive"
 
@@ -82,13 +84,15 @@ KINDS: dict[str, Kind] = {
     "depth": Kind("Depth", "trace depth", no_params, "image", DEPTH_ASSET, "Depth Anything V2"),
     "pose": Kind("Pose", "trace poses", no_params, "image", POSE_ASSET, "DWPose"),
     "canny": Kind("Edges", "trace edges", canny_params, "image"),
+    "face": Kind("Face", "find faces", no_params, "face", FACE_ASSET, "InsightFace"),
 }
 
 
 async def run(svc: Services, kind: str, image: str, params: dict[str, Any]) -> dict[str, Any]:
     """Run a preprocessor on an image blob; returns its outputs as stored blobs.
 
-    SAM answers `{candidates: [mask], chosen}`; the traces answer `{image}`.
+    SAM answers `{candidates: [mask], chosen}`; the traces answer `{image}`; a face answers
+    `{image, faces}`, the aligned crop of the picture's main face and how many it has.
     """
     pre = KINDS.get(kind)
     if pre is None:
@@ -116,7 +120,22 @@ async def run(svc: Services, kind: str, image: str, params: dict[str, Any]) -> d
             await worker.put_blob(sha, path.read_bytes())
         out = await worker.preprocess(request)
     except WorkerError as e:
+        if kind == "face" and NO_FACE in str(e):
+            raise PreprocessError(422, f"{NO_FACE}.") from None
         raise PreprocessError(502, f"{pre.name} failed on the GPU: {e}") from None
+    return await _answer(svc, pre, out, sha, size)
+
+
+async def _answer(
+    svc: Services, pre: Kind, out: dict[str, Any], sha: str, size: tuple[int, int]
+) -> dict[str, Any]:
+    """Store what the worker answered as blobs."""
+    if pre.output == "face":
+        try:
+            data = base64.b64decode(out["image"], validate=True)
+            return {"image": await svc.inputs.store(data, "image/png"), "faces": out.get("faces")}
+        except (binascii.Error, KeyError, TypeError, MediaError) as e:
+            raise PreprocessError(502, f"The GPU returned an unreadable face: {e}") from None
     if pre.output == "image":
         try:
             data = base64.b64decode(out["image"], validate=True)

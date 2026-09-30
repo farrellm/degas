@@ -1,17 +1,20 @@
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { api, thumbUrl, type Asset, type BlobInfo, type Fit, type Variant } from '../api'
 import { assetLabel } from '../assets'
 import type { Source } from '../draft'
 import { size } from '../format'
 import {
+  FACEID_NOTE,
   MAX_PICTURES,
   TAKES,
   adapterKind,
   anyOblong,
+  isFaceid,
   mismatch,
   modelFor,
   takeInfo,
+  weightFor,
   type PromptUnit,
   type Take,
 } from '../imagePrompt'
@@ -31,6 +34,7 @@ const FITS: { id: Fit; label: string }[] = [
 const KIND_LABELS = {
   subject: 'Reads the whole picture',
   face: 'Reads faces',
+  faceid: 'Reads who a face is (FaceID)',
   composition: 'Reads layout',
 } as const
 
@@ -98,6 +102,9 @@ export function PromptEditor({
   // The picture being cropped, and its place in the row (one past the end adds it).
   const [cropping, setCropping] = useState<{ sha: string; at: number } | null>(null)
   const [areaOver, setAreaOver] = useState<Source | null>(null)
+  const session = useQuery({ queryKey: ['session'], queryFn: api.session })
+  const gpuReady = ['ready', 'busy'].includes(session.data?.session?.state ?? '')
+  const faceid = isFaceid(unit.model)
 
   // The area is painted over a picture of the output's shape: the one it was painted over,
   // Create's source when it has that shape, else a blank canvas.
@@ -127,12 +134,8 @@ export function PromptEditor({
     onChange((u) => {
       const current = adapters.find((a) => a.path === u.model)
       const keep = !!u.model && !!current && !mismatch(current, u.model, take)
-      return {
-        ...u,
-        take,
-        weight: takeInfo(take).weight,
-        model: keep ? u.model : (modelFor(adapters, take)?.path ?? u.model),
-      }
+      const model = keep ? u.model : (modelFor(adapters, take)?.path ?? u.model)
+      return { ...u, take, model, weight: weightFor(take, model) }
     })
   }
 
@@ -237,7 +240,11 @@ export function PromptEditor({
             return (
               <figure key={`${picture.sha}-${n}`} className="prompt-picture">
                 {/* Square, because the model sees the middle square. */}
-                <img src={thumbUrl(picture.sha)} alt={`Picture ${n}`} />
+                {faceid ? (
+                  <FaceTile sha={picture.sha} n={n} gpuReady={gpuReady} />
+                ) : (
+                  <img src={thumbUrl(picture.sha)} alt={`Picture ${n}`} />
+                )}
                 <figcaption className="row-buttons">
                   <button
                     type="button"
@@ -278,12 +285,17 @@ export function PromptEditor({
             </button>
           )}
         </div>
+        {faceid && unit.pictures.length > 0 && !gpuReady && (
+          <p className="row-note">The face in each picture is found on the GPU when it runs.</p>
+        )}
         <p className="row-note">
-          {unit.pictures.length === 0
-            ? 'The image will take after this picture, the way it takes after the prompt.'
-            : unit.pictures.length > 1
-              ? 'The model reads them together.'
-              : 'The model sees the middle square, at low resolution: fine detail and text don’t carry.'}
+          {faceid && unit.pictures.length > 0
+            ? 'The model reads who the face is, not the rest of the picture.'
+            : unit.pictures.length === 0
+              ? 'The image will take after this picture, the way it takes after the prompt.'
+              : unit.pictures.length > 1
+                ? 'The model reads them together.'
+                : 'The model sees the middle square, at low resolution: fine detail and text don’t carry.'}
         </p>
 
         <div className="control-traces" role="group" aria-label="Take from it">
@@ -300,7 +312,9 @@ export function PromptEditor({
             </button>
           ))}
         </div>
-        <p className="row-note">{takeInfo(unit.take).note}</p>
+        <p className="row-note">
+          {unit.take === 'face' && faceid ? FACEID_NOTE : takeInfo(unit.take).note}
+        </p>
 
         <div className={modelMissing ? 'model-row missing' : 'model-row'}>
           <button
@@ -339,6 +353,33 @@ export function PromptEditor({
             <output htmlFor="prompt-weight">{unit.weight.toFixed(2)}</output>
           </div>
         </div>
+
+        {faceid && (
+          <>
+            <Slider
+              id="prompt-structure"
+              label="Face structure"
+              min={0}
+              max={2}
+              value={unit.structure}
+              note="How much of the face’s shape comes from the picture, on top of who it is."
+              onChange={(structure) => {
+                onChange((u) => ({ ...u, structure }))
+              }}
+            />
+            <Slider
+              id="prompt-lora"
+              label="Face LoRA"
+              min={0}
+              max={1.5}
+              value={unit.loraWeight}
+              note="The LoRA trained with the model. Lower lets the checkpoint’s own look through."
+              onChange={(loraWeight) => {
+                onChange((u) => ({ ...u, loraWeight }))
+              }}
+            />
+          </>
+        )}
 
         <StepRange
           steps={steps}
@@ -425,5 +466,89 @@ export function PromptEditor({
         </div>
       </div>
     </Sheet>
+  )
+}
+
+/**
+ * A FaceID picture: once the GPU has found its face, the aligned crop the model reads, which
+ * shows whether it found the right one.
+ */
+function FaceTile({ sha, n, gpuReady }: { sha: string; n: string; gpuReady: boolean }) {
+  const face = useQuery({
+    queryKey: ['face', sha],
+    queryFn: () => api.findFace(sha),
+    enabled: gpuReady,
+    retry: false,
+    staleTime: Infinity,
+  })
+  if (face.data) {
+    const others = face.data.faces - 1
+    return (
+      <>
+        <img src={thumbUrl(face.data.image.sha256)} alt={`The face in picture ${n}`} />
+        {others > 0 && (
+          <span className="prompt-picture-note">
+            The biggest of {String(face.data.faces)} faces
+          </span>
+        )}
+      </>
+    )
+  }
+  return (
+    <>
+      <img
+        src={thumbUrl(sha)}
+        alt={`Picture ${n}`}
+        className={face.isFetching ? 'finding' : undefined}
+      />
+      {face.error && (
+        <span className="prompt-picture-note warn" role="alert">
+          {face.error.message}
+        </span>
+      )}
+    </>
+  )
+}
+
+function Slider({
+  id,
+  label,
+  min,
+  max,
+  value,
+  note,
+  onChange,
+}: {
+  id: string
+  label: string
+  min: number
+  max: number
+  value: number
+  note: string
+  onChange: (value: number) => void
+}) {
+  return (
+    <>
+      <div className="setting">
+        <label className="setting-label" htmlFor={id}>
+          {label}
+        </label>
+        <div className="slider-control">
+          <input
+            id={id}
+            type="range"
+            min={min}
+            max={max}
+            step={0.05}
+            value={value}
+            onChange={(e) => {
+              onChange(Number(e.target.value))
+            }}
+          />
+          <output htmlFor={id}>{value.toFixed(2)}</output>
+        </div>
+      </div>
+      <p className="row-note slider-note">{note}</p>
+    </>
   )
 }

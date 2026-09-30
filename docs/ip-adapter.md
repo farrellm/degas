@@ -1,8 +1,8 @@
 # IP-Adapter: research and plan
 
-Status: Plan A built (Phase 11, 2026-09-30), not yet tested on a live GPU; Plans B and C not
-started. What shipped is in [design.md](design.md) (§4.3, §5, §6.4, §10) and [ux.md](ux.md)
-(Phase 11). Where the build differs from the plan below, §4.7 says how.
+Status: Plans A and B built (Phases 11 and 12, 2026-09-30), not yet tested on a live GPU; Plan C
+not started. What shipped is in [design.md](design.md) (§4.3, §5, §6.4, §10) and [ux.md](ux.md)
+(Phases 11 and 12). Where the build differs from the plan below, §4.7 and §5.1 say how.
 
 ## 1. What it is
 
@@ -364,6 +364,31 @@ block choice in words, and *Model* stays available for anyone who wants the file
   ordinary unit itself and passes the whole list as `ip_adapter_image_embeds`.
 - Defaults from §2.2: weight 0.8, LoRA 0.6. The *Face* chip picks FaceID when it's in Drive, else
   plus-face.
+
+### 5.1 As built
+
+- **The LoRA is inside the `.bin`.** diffusers' `load_ip_adapter` reads the FaceID model's LoRA
+  from its own weights (the `_lora.safetensors` file is the same LoRA for A1111 and ComfyUI) and
+  loads it as a PEFT adapter named `faceid_<i>`, i being the model's place in the list it loaded.
+  It then calls `set_adapters([faceid_i], [1.0])`, which switches the job's own LoRAs off. So the
+  runner loads LoRAs, then image prompts, then weights both together (`_activate_loras`), and
+  deletes the `faceid_*` adapters before `unload_ip_adapter`, which leaves them behind. There's no
+  LoRA row entry: the unit's *Face LoRA* slider (`lora_weight`, 0.6) weights it.
+- **Faces are found at job time.** The spec records the pictures, not embeddings: the runner
+  runs InsightFace on each picture and uses its biggest face. The detector is an asset of the job
+  (`face_detector: preprocessors/insightface`), prefetched like the encoder. A picture with no face
+  fails the job with *Image prompt 1: no face found in picture 2*.
+- **The editor still checks.** With a ready session, each picture in a FaceID unit is sent to
+  `/preprocess` `face`, and its tile shows the aligned 224 px crop the model reads (*The biggest of
+  3 faces* when there are several), or *No face found in this picture.* Without a session, it says
+  the face is found when the job runs. No outline is drawn: the crop shows which face it took.
+- **Alignment** is a least-squares similarity fit (the same as Umeyama's, which `norm_crop`
+  uses) in plain Python (`degas_worker/faces.py`), then `cv2.warpAffine`; NMS is plain Python too,
+  so both are tested without numpy.
+- **Mixing** works as planned: `prepare_ip_adapter_image_embeds` encodes every unit (a FaceID
+  unit's aligned crops, for its `clip_embeds`), then the FaceID slots are replaced by the ArcFace
+  identities. `shortcut` is on for v2 files (by name); *Face structure* sets `shortcut_scale`.
+- A FaceID unit's purpose must be *Everything*; the other chips don't apply to identity.
 
 ## 6. Plan C: FLUX.1 Redux (later)
 

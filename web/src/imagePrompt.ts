@@ -29,6 +29,9 @@ export interface PromptUnit {
   start: number
   end: number
   fit: Fit
+  /** FaceID: how much of CLIP's reading of the face Plus v2 adds, and its LoRA's weight. */
+  structure: number
+  loraWeight: number
 }
 
 export const MAX_PROMPTS = 2
@@ -69,6 +72,13 @@ export const TAKES: TakeInfo[] = [
   { id: 'face', label: 'Face', note: 'A likeness of the face. Crop close to it.', weight: 0.6 },
 ]
 
+/** FaceID finds the face itself and reads who it is, so the note says so. */
+export const FACEID_NOTE =
+  'Who the person is. The model finds the face itself, so the picture needn’t be cropped.'
+
+// FaceID starts a little stronger than a CLIP face model (docs/ip-adapter.md §2.2).
+const FACEID_WEIGHT = 0.8
+
 export const takeInfo = (id: Take): TakeInfo => TAKES.find((t) => t.id === id) ?? EVERYTHING
 
 export const purposeOf = (take: Take): Purpose => (take === 'face' ? 'all' : take)
@@ -77,6 +87,7 @@ export const purposeOf = (take: Take): Purpose => (take === 'face' ? 'all' : tak
 export function adapterKind(asset: Asset | undefined, path = asset?.path ?? ''): AdapterKind {
   if (asset?.sidecar?.purpose) return asset.sidecar.purpose
   const name = (path.split('/').pop() ?? '').toLowerCase()
+  if (name.includes('faceid')) return 'faceid'
   if (name.includes('face')) return 'face'
   if (name.includes('composition')) return 'composition'
   return 'subject'
@@ -88,16 +99,28 @@ const WANTS: Record<Take, AdapterKind[]> = {
   style: ['subject'],
   layout: ['composition', 'subject'],
   style_layout: ['subject'],
-  face: ['face'],
+  face: ['faceid', 'face'],
 }
 
-/** The model a choice picks: the first of the kind it wants, preferring a "plus" model,
- * which reads the picture's detail rather than a summary of it. */
+/** Whether a model reads InsightFace identities; by file name, as the server decides. */
+export const isFaceid = (path: string) =>
+  (path.split('/').pop() ?? '').toLowerCase().includes('faceid')
+
+// Plus models read the picture's detail rather than a summary of it; v2 is FaceID's newest.
+const rank = (a: Asset) => {
+  const name = (a.path.split('/').pop() ?? '').toLowerCase()
+  return name.includes('plusv2') ? 2 : name.includes('plus') ? 1 : 0
+}
+
+/** A choice's starting weight, which is higher for a FaceID model. */
+export const weightFor = (take: Take, model: string) =>
+  take === 'face' && isFaceid(model) ? FACEID_WEIGHT : takeInfo(take).weight
+
+/** The model a choice picks: the best of the first kind it wants that's in Drive. */
 export function modelFor(assets: Asset[], take: Take): Asset | undefined {
   for (const kind of WANTS[take]) {
-    const found = assets.filter((a) => adapterKind(a) === kind)
-    const plus = found.find((a) => /plus/i.test(a.path.split('/').pop() ?? ''))
-    if (plus ?? found[0]) return plus ?? found[0]
+    const found = assets.filter((a) => adapterKind(a) === kind).sort((a, b) => rank(b) - rank(a))
+    if (found[0]) return found[0]
   }
   return undefined
 }
@@ -105,9 +128,9 @@ export function modelFor(assets: Asset[], take: Take): Asset | undefined {
 /** A warning when the model doesn't suit the choice, else null. */
 export function mismatch(model: Asset | undefined, path: string, take: Take): string | null {
   const kind = adapterKind(model, path)
-  if (take === 'face' && kind !== 'face')
-    return 'This isn’t a face model; Face works best with one.'
-  if (take !== 'face' && kind === 'face')
+  const face = kind === 'face' || kind === 'faceid'
+  if (take === 'face' && !face) return 'This isn’t a face model; Face works best with one.'
+  if (take !== 'face' && face)
     return `This is a face model; it reads faces, not ${takeInfo(take).label.toLowerCase()}.`
   if (kind === 'composition' && take !== 'layout')
     return 'This is a composition model; it carries layout, not looks.'
@@ -125,6 +148,8 @@ export function newPrompt(): PromptUnit {
     start: 0,
     end: 1,
     fit: 'crop',
+    structure: 1,
+    loraWeight: 0.6,
   }
 }
 
@@ -162,6 +187,7 @@ export function promptSpec(unit: PromptUnit): ImagePromptSpec {
     start: unit.start,
     end: unit.end,
     ...(unit.area && { mask: `sha256:${unit.area.sha}` }),
+    ...(isFaceid(unit.model) && { structure: unit.structure, lora_weight: unit.loraWeight }),
   }
 }
 
@@ -171,7 +197,8 @@ export function promptSpec(unit: PromptUnit): ImagePromptSpec {
  * everything-unit with a face model was chosen as Face.
  */
 export function promptFromSpec(p: ImagePromptSpec, output: { w: number; h: number }): PromptUnit {
-  const face = p.purpose === 'all' && adapterKind(undefined, p.adapter.path) === 'face'
+  const kind = adapterKind(undefined, p.adapter.path)
+  const face = p.purpose === 'all' && (kind === 'face' || kind === 'faceid')
   const mask = p.mask ? unref(p.mask) : null
   return {
     ...newPrompt(),
@@ -183,5 +210,7 @@ export function promptFromSpec(p: ImagePromptSpec, output: { w: number; h: numbe
     start: p.start,
     end: p.end,
     fit: p.fit ?? 'crop',
+    structure: p.structure ?? 1,
+    loraWeight: p.lora_weight ?? 0.6,
   }
 }

@@ -2,7 +2,15 @@ from typing import Any
 
 import pytest
 
-from degas_worker.families.ip_adapter import active, block_scale, changed, scales
+from degas_worker.families.ip_adapter import (
+    active,
+    block_scale,
+    changed,
+    face_loras,
+    has_shortcut,
+    is_faceid,
+    scales,
+)
 
 
 def unit(
@@ -47,3 +55,17 @@ def test_scales_are_zero_outside_a_units_steps() -> None:
 def test_scales_are_set_again_only_where_a_unit_starts_or_stops() -> None:
     units = [unit(end=0.5)]
     assert [changed(units, i, 4) for i in range(5)] == [None, None, [0.0], None, None]
+
+
+def test_faceid_models_are_told_by_name() -> None:
+    assert is_faceid("ip_adapters/sdxl/ip-adapter-faceid-plusv2_sdxl.bin")
+    assert not is_faceid("ip_adapters/sdxl/ip-adapter-plus-face_sdxl_vit-h.safetensors")
+    assert has_shortcut("ip_adapters/sdxl/ip-adapter-faceid-plusv2_sdxl.bin")
+    assert not has_shortcut("ip_adapters/sdxl/ip-adapter-faceid-plus_sd15.bin")
+
+
+def test_faceid_loras_are_named_by_their_units_place() -> None:
+    faceid = {**unit(), "adapter": {"path": "ip_adapters/sdxl/ip-adapter-faceid-plusv2_sdxl.bin"}}
+    assert face_loras([unit(), {**faceid, "lora_weight": 0.5}]) == [("faceid_1", 0.5)]
+    assert face_loras([faceid]) == [("faceid_0", 0.6)]
+    assert face_loras([unit()]) == []
