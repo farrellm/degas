@@ -9,6 +9,9 @@ from fastapi.sse import EventSourceResponse
 from pydantic import BaseModel, Field
 
 from degas import __version__
+from degas.civitai.client import CivitaiError
+from degas.civitai.importer import ImportBusyError
+from degas.civitai.plan import PlanError
 from degas.colab.session import SessionError
 from degas.drive import DriveError
 from degas.families import FAMILIES
@@ -67,6 +70,17 @@ Tags = Annotated[list[Annotated[str, Field(min_length=1, max_length=40)]], Field
 
 class FromUrl(BaseModel):
     url: Annotated[str, Field(min_length=1, max_length=20_000_000)]
+
+
+class CivitaiImport(BaseModel):
+    url: Annotated[str, Field(min_length=1, max_length=2000)]
+    family: str | None = None
+    name: Annotated[str, Field(max_length=120)] | None = None
+    weight: Annotated[float, Field(ge=0, le=2)] | None = None
+    force: bool = False
+
+    def options(self) -> dict[str, Any]:
+        return self.model_dump(exclude={"url"})
 
 
 class Transform(BaseModel):
@@ -165,6 +179,32 @@ async def rescan(svc: Svc) -> dict[str, Any]:
     except DriveError as e:
         raise HTTPException(502, str(e)) from None
     return {"count": count, "indexed_at": svc.db.get_setting("drive.indexed_at")}
+
+
+@router.post("/civitai/plan")
+async def civitai_plan(body: CivitaiImport, svc: Svc) -> dict[str, Any]:
+    """What importing a link would do, without doing it."""
+    try:
+        plan = await svc.imports.plan(body.url, **body.options())
+    except (CivitaiError, PlanError) as e:
+        raise HTTPException(422, str(e)) from None
+    return plan.to_dict()
+
+
+@router.post("/civitai/import", status_code=202)
+async def civitai_import(body: CivitaiImport, svc: Svc) -> dict[str, Any]:
+    """Start copying a LoRA from Civitai into Drive; `import` events follow it."""
+    try:
+        return await svc.imports.start(body.url, **body.options())
+    except ImportBusyError as e:
+        raise HTTPException(409, str(e)) from None
+    except (CivitaiError, PlanError) as e:
+        raise HTTPException(422, str(e)) from None
+
+
+@router.get("/civitai/import")
+async def civitai_import_state(svc: Svc) -> dict[str, Any] | None:
+    return svc.imports.current
 
 
 @router.get("/drive")

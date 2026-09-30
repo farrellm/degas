@@ -319,7 +319,10 @@ variants: [t2v-a14b, i2v-a14b]      # wan22 only
 pair: { high: foo_high_noise.safetensors, low: foo_low_noise.safetensors }
 preview: foo.jpg
 notes: "Works best with CFG 3–4"
+source: "https://civitai.com/models/122359?modelVersionId=135867"   # where it came from
 ```
+
+**Civitai imports** (`degas/civitai/`; `degas civitai import <link>`, or *Import from Civitai* in the LoRA picker). The version's `baseModel` picks the family: SDXL 1.0 and its fine-tunes (Pony, Illustrious, NoobAI) → `sdxl`, Flux.1 D/S/Krea → `flux1`, Flux.2 Klein 9B → `klein`, Qwen 2/2.1 → `qwen21`, and the Wan Video 2.2 bases → `wan22` with `variants` set. Anything else is refused unless a family is given. A Wan A14B file is named `<name>_high_noise` or `_low_noise` from `high`/`low` in its file or version name, so halves imported from two versions still pair up. The file streams from Civitai into `rclone rcat` on the server's writable remote (`lora.rclone_remote`), with its SHA-256 checked against Civitai's and its md5 against Drive's. A mismatch deletes it. Then a sidecar (label, trigger words, weight 0.8, the base model in `notes`, `source`) and a 768 px preview from the first example image (a still, for a video) are written, and Drive is rescanned. A file whose SHA-256 is already in the index, or whose name is taken, is refused unless forced. `degas civitai backfill` writes sidecars for LoRAs already in Drive, looked up by SHA-256.
 
 **Drive access.** Degas does not use `drivemount`, because it needs interactive consent on every new VM (Phase 0). Instead:
 
@@ -365,7 +368,7 @@ Direct links to video files (MP4/WebM) are accepted as a video source. The frame
 - **`prompts`**: id, name, prompt, negative_prompt, family (nullable), tags, created_at.
 - **`blob_refs`**: blob_sha, ref_type (`result|library|job|draft|derived`), ref_id, expires_at (nullable). Used for reference counting and retention.
 - **`blob_transforms`**: derived_sha, original_sha, ops (JSON). A derived blob holds a reference to its original (see §6.5).
-- **`assets`**: family, kind (`model|lora|controlnet|vae|config|preprocessor`), path, drive_file_id, size, mtime, md5, sidecar (JSON), preview_thumb, indexed_at.
+- **`assets`**: family, kind (`model|lora|controlnet|vae|config|preprocessor`), path, drive_file_id, size, mtime, md5, sha256 (Drive's, for Civitai lookups), sidecar (JSON), preview_thumb, indexed_at.
 - **`push_subscriptions`**: endpoint, keys, created_at.
 - **`settings`**: key, value. Holds idle timeout, default GPU, retention, and similar settings.
 
@@ -479,6 +482,9 @@ All endpoints are under `/api`. JSON unless noted.
 | GET | `/families/{id}/schema?variant=&mode=` | Param JSON Schema for form |
 | GET | `/assets?family=&kind=` | Cached Drive asset index |
 | POST | `/assets/rescan` | Re-index Drive via the Drive API (no session needed) |
+| POST | `/civitai/plan` `{url}` | What importing a Civitai LoRA would do: family, Drive paths, sidecar (§5) |
+| POST | `/civitai/import` `{url}` | Start the import (202); `import` SSE events follow it; 409 while one runs |
+| GET | `/civitai/import` | The latest import's state |
 | GET | `/session` | Current session state, idle countdown |
 | POST | `/session` | Start `{gpu, high_mem}` |
 | DELETE | `/session` | Stop |

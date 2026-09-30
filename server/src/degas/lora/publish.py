@@ -5,31 +5,13 @@ write to the same Drive (`lora.rclone_remote`, `gdrive:` by default).
 """
 
 import hashlib
-import io
-import subprocess
 from collections.abc import Callable
 from pathlib import Path
 
 import yaml
-from PIL import Image
 
 from degas.lora.run import RunDir, RunError, RunState, checkpoint_for, samples_for
-
-PREVIEW_SIDE = 768
-
-Rclone = Callable[..., str]
-
-
-def rclone(*args: str, stdin: bytes | None = None) -> str:
-    proc = subprocess.run(  # noqa: S603 - fixed argv
-        ["rclone", *args],  # noqa: S607 - the user's rclone, from PATH
-        input=stdin,
-        capture_output=True,
-        check=False,
-    )
-    if proc.returncode != 0:
-        raise RunError(f"rclone {args[0]} failed: {proc.stderr.decode(errors='replace').strip()}")
-    return proc.stdout.decode()
+from degas.rclone import Rclone, preview_jpeg, rclone
 
 
 def sidecar(state: RunState, epoch: int, label: str | None, weight: float) -> str:
@@ -41,15 +23,6 @@ def sidecar(state: RunState, epoch: int, label: str | None, weight: float) -> st
         "notes": f"Trained on {Path(s.base).name}, run {state.run}, epoch {epoch}/{s.train.epochs}",
     }
     return yaml.safe_dump(data, sort_keys=False, allow_unicode=True)
-
-
-def preview_jpeg(sample: Path) -> bytes:
-    with Image.open(sample) as im:
-        rgb = im.convert("RGB")
-        rgb.thumbnail((PREVIEW_SIDE, PREVIEW_SIDE), Image.Resampling.LANCZOS)
-        buf = io.BytesIO()
-        rgb.save(buf, format="JPEG", quality=90)
-        return buf.getvalue()
 
 
 def publish(

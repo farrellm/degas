@@ -131,12 +131,16 @@ export function loraChoices(index: Asset[] | undefined, variant: Variant | undef
   return { rows, entryFor }
 }
 
-/** The index entries behind a LoRA in the form (both halves of a pair). */
-export function loraAssets(entry: LoraEntry, index: Asset[] | undefined): (Asset | undefined)[] {
-  const paths = isPair(entry)
+/** The files behind a LoRA in the form (both halves of a pair). */
+export function loraPaths(entry: LoraEntry): string[] {
+  return isPair(entry)
     ? [entry.high?.path, entry.low?.path].filter((p): p is string => !!p)
     : [entry.path]
-  return paths.map((p) => index?.find((a) => a.path === p))
+}
+
+/** The index entries behind a LoRA in the form (both halves of a pair). */
+export function loraAssets(entry: LoraEntry, index: Asset[] | undefined): (Asset | undefined)[] {
+  return loraPaths(entry).map((p) => index?.find((a) => a.path === p))
 }
 
 /** A LoRA's display name: the sidecar label, else its file (or its pair's shared) name. */

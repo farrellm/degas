@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { StrictMode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -512,6 +512,90 @@ describe('App', () => {
 
     await user.click(screen.getByRole('button', { name: 'Remove Film Grain v3' }))
     expect(screen.queryByRole('slider', { name: 'Film Grain v3 weight' })).not.toBeInTheDocument()
+  })
+
+  it('imports a LoRA from Civitai and adds it to the form', async () => {
+    let source: FakeEventSource | undefined
+    vi.stubGlobal(
+      'EventSource',
+      class extends FakeEventSource {
+        constructor() {
+          super()
+          // eslint-disable-next-line @typescript-eslint/no-this-alias -- the test drives it
+          source = this
+        }
+      },
+    )
+    const imported = {
+      path: 'loras/sdxl/detail_tweaker_xl_v1.0.safetensors',
+      family: 'sdxl',
+      kind: 'lora',
+      size: 228_000_000,
+      sidecar: { label: 'Detail Tweaker XL', default_weight: 0.8 },
+      preview_thumb: null,
+    }
+    let assets: unknown[] = ASSETS
+    const job = {
+      id: 'i1',
+      label: 'Detail Tweaker XL',
+      family: 'sdxl',
+      paths: [imported.path],
+      state: 'copying',
+      done: 0,
+      total: 228_000_000,
+      error: null,
+      warnings: [],
+    }
+    const posted: unknown[] = []
+    mockApi({
+      'GET /api/assets': () => assets,
+      'GET /api/civitai/import': () => null,
+      'POST /api/civitai/plan': () => ({
+        model_name: 'Detail Tweaker XL',
+        version_name: 'v1.0',
+        base_model: 'SDXL 1.0',
+        family: 'sdxl',
+        label: 'Detail Tweaker XL',
+        trigger_words: [],
+        weight: 0.8,
+        files: [
+          { civitai_name: 'x.safetensors', path: imported.path, size: 228_000_000, half: null },
+        ],
+        warnings: [],
+      }),
+      'POST /api/civitai/import': (init) => {
+        posted.push(JSON.parse(init?.body as string))
+        return job
+      },
+    })
+    const user = userEvent.setup()
+    renderApp()
+    await user.click(await screen.findByRole('button', { name: 'Add LoRA' }))
+    const sheet = screen.getByRole('dialog', { name: 'Add LoRA' })
+    await user.click(within(sheet).getByRole('button', { name: 'Import from Civitai' }))
+    await user.type(
+      within(sheet).getByLabelText('Civitai link'),
+      'https://civitai.com/models/122359',
+    )
+    await user.click(within(sheet).getByRole('button', { name: 'Check link' }))
+    expect(await within(sheet).findByText('v1.0, SDXL 1.0, 228 MB')).toBeInTheDocument()
+    await user.click(within(sheet).getByRole('button', { name: 'Import' }))
+    expect(posted).toEqual([{ url: 'https://civitai.com/models/122359' }])
+    expect(await within(sheet).findByText('Copying to Drive, 0% of 228 MB')).toBeInTheDocument()
+
+    const send = (data: unknown) => {
+      act(() => {
+        source?.onmessage?.(new MessageEvent('message', { data: JSON.stringify(data) }))
+      })
+    }
+    send({ type: 'import', import: { ...job, done: 114_000_000 } })
+    expect(await within(sheet).findByText('Copying to Drive, 50% of 228 MB')).toBeInTheDocument()
+    assets = [...ASSETS, imported]
+    send({ type: 'import', import: { ...job, state: 'done', done: job.total } })
+    expect(
+      await within(sheet).findByText('Imported Detail Tweaker XL and added it.'),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('slider', { name: 'Detail Tweaker XL weight' })).toHaveValue('0.8')
   })
 
   it('flags a LoRA from an old draft that is no longer in Drive', async () => {

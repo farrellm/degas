@@ -66,6 +66,8 @@ export interface Sidecar {
   pair?: { high: string; low: string }
   /** ControlNets: the kind of control image the model reads. */
   control?: TraceId
+  /** Where it came from, e.g. its Civitai page. */
+  source?: string
 }
 
 export interface Asset {
@@ -289,6 +291,32 @@ export interface Result {
   spec: Spec | null
 }
 
+/** What importing a Civitai link would do. */
+export interface CivitaiPlan {
+  model_name: string
+  version_name: string
+  base_model: string
+  family: string
+  label: string
+  trigger_words: string[]
+  weight: number
+  files: { civitai_name: string; path: string; size: number; half: 'high' | 'low' | null }[]
+  warnings: string[]
+}
+
+/** The latest Civitai import; `import` events follow it. */
+export interface CivitaiImport {
+  id: string
+  label: string
+  family: string
+  paths: string[]
+  state: 'copying' | 'finishing' | 'done' | 'failed'
+  done: number
+  total: number
+  error: string | null
+  warnings: string[]
+}
+
 export class ApiError extends Error {
   status: number
   constructor(status: number, message: string) {
@@ -330,6 +358,9 @@ export const api = {
   assets: () => request<Asset[]>('GET', '/assets'),
   rescan: () => request<{ count: number; indexed_at: string }>('POST', '/assets/rescan'),
   drive: () => request<DriveStatus>('GET', '/drive'),
+  civitaiPlan: (url: string) => request<CivitaiPlan>('POST', '/civitai/plan', { url }),
+  civitaiImport: (url: string) => request<CivitaiImport>('POST', '/civitai/import', { url }),
+  civitaiImportState: () => request<CivitaiImport | null>('GET', '/civitai/import'),
   session: () => request<SessionSnapshot>('GET', '/session'),
   startSession: (gpu: string, highMem: boolean) =>
     request<SessionSnapshot>('POST', '/session', { gpu, high_mem: highMem }),

@@ -9,7 +9,11 @@ from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import Any
 
+import httpx2
+
 from degas.blobs import BlobStore
+from degas.civitai.client import Civitai
+from degas.civitai.importer import Importer, Imports
 from degas.colab.cli import Colab, ColabCli
 from degas.colab.session import SessionManager
 from degas.colab.tunnel import SshTunnel, Tunnel
@@ -19,10 +23,12 @@ from degas.db import Database
 from degas.dispatcher import Dispatcher
 from degas.drive import DriveAuth, DriveIndexer
 from degas.events import EventBus
+from degas.families import FAMILIES
 from degas.inputs import Inputs
 from degas.library import sweep
 from degas.notices import RESULTS_URL, SESSION_URL, idle_notice, job_notice
 from degas.push import Push, Sender
+from degas.rclone import AsyncRclone, Remote
 
 log = logging.getLogger(__name__)
 
@@ -42,6 +48,7 @@ class Services:
     dispatcher: Dispatcher
     inputs: Inputs
     push: Push
+    imports: Imports = field(init=False)
     _tasks: list[asyncio.Task[None]] = field(default_factory=list)
     _rescan_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     rng: random.Random = field(default_factory=random.SystemRandom)
@@ -59,6 +66,7 @@ class Services:
                 await task
         self._tasks.clear()
         await self.push.drain()
+        await self.imports.aclose()
         await self.sessions.aclose()
         await self.indexer.aclose()
         await self.drive.aclose()
@@ -105,6 +113,8 @@ def build_services(
     drive: DriveAuth | None = None,
     indexer: DriveIndexer | None = None,
     push_sender: Sender | None = None,
+    civitai_http: httpx2.AsyncClient | None = None,
+    remote: Remote | None = None,
 ) -> Services:
     config.data_dir.mkdir(parents=True, exist_ok=True)
     db = Database(config.data_dir / "degas.sqlite")
@@ -155,4 +165,13 @@ def build_services(
 
     dispatcher.on_finish.append(job_finished)
     sessions.on_idle_warning.append(idle_warning)
-    return Services(config, db, blobs, bus, drive, indexer, sessions, dispatcher, inputs, push)
+    svc = Services(config, db, blobs, bus, drive, indexer, sessions, dispatcher, inputs, push)
+    importer = Importer(
+        Civitai(config.civitai.token_file, config.civitai.api_base, civitai_http),
+        remote or AsyncRclone(),
+        config.lora.rclone_remote,
+        config.drive.root,
+        set(FAMILIES),
+    )
+    svc.imports = Imports(importer, lambda: db.list_assets(kind="lora"), bus.publish, svc.rescan)
+    return svc

@@ -19,6 +19,8 @@ interface Props {
   /** A first fact for each row's meta line (e.g. the model's variant). */
   describe?: (asset: Asset) => string | null
   empty: ReactNode
+  /** Above the rescan footer (the LoRA picker's Import from Civitai). */
+  footer?: ReactNode
   onPick: (asset: Asset) => void
   onClose: () => void
 }
@@ -32,6 +34,7 @@ export function AssetPicker({
   thumbs = false,
   describe,
   empty,
+  footer,
   onPick,
   onClose,
 }: Props) {
@@ -107,6 +110,7 @@ export function AssetPicker({
           })}
         </ul>
       )}
+      {footer}
       <RescanFooter />
     </Sheet>
   )

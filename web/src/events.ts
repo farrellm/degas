@@ -1,6 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { useEffect } from 'react'
-import type { Job, Progress, SessionSnapshot } from './api'
+import type { CivitaiImport, Job, Progress, SessionSnapshot } from './api'
 
 type ServerEvent =
   | { type: 'hello' }
@@ -12,6 +12,7 @@ type ServerEvent =
   | { type: 'library' }
   | { type: 'prompts' }
   | { type: 'swept' }
+  | { type: 'import'; import: CivitaiImport }
 
 /** Follow `/api/events` and keep the query cache in sync with the server. */
 export function useServerEvents() {
@@ -67,6 +68,9 @@ export function useServerEvents() {
         case 'assets':
           void qc.invalidateQueries({ queryKey: ['assets'] })
           void qc.invalidateQueries({ queryKey: ['drive'] })
+          break
+        case 'import':
+          qc.setQueryData<CivitaiImport>(['civitai-import'], event.import)
           break
       }
     }

@@ -58,6 +58,18 @@ uv run degas lora publish jane --epoch 8   # upload to loras/sdxl/ with a sideca
 
 Runs live in `data/lora-runs/<name>-<time>/`: `checkpoints/` (one per epoch; the last is `<name>.safetensors`), `samples/` (each epoch's sample prompts, same seeds; `e000000` is before training) and `train.log`. Compare the epochs' samples and publish the latest one that still follows the unusual prompts (the astronaut, the painting) and doesn't leak into the prompt without the trigger. That's often not the last epoch. `publish` uploads with your own rclone remote (`lora.rclone_remote`, `gdrive:`), because Degas's Drive token is read-only, then rescans. Use the LoRA at a weight of about 0.6–0.9.
 
+## Importing LoRAs from Civitai
+
+Paste a Civitai link into **Import from Civitai** at the foot of the LoRA picker, or:
+
+```sh
+uv run degas civitai import https://civitai.com/models/122359 --dry-run   # show the plan
+uv run degas civitai import https://civitai.com/models/122359             # copy it into Drive
+uv run degas civitai backfill            # sidecars for LoRAs already in Drive, found by hash
+```
+
+The base model on Civitai picks the folder (`loras/sdxl/`, `loras/flux1/`, `loras/wan22/` …); `--family` overrides it, and `--name` and `--weight` set the file name and the sidecar's weight. The file streams from Civitai to Drive through your rclone remote (`lora.rclone_remote`, as for `degas lora publish`) and is checked against Civitai's SHA-256. It gets a sidecar with the trigger words and the base model, and a preview from the first example image. Wan 2.2 A14B LoRAs often put the high- and low-noise halves in separate versions: import both links and they pair up. Many downloads need an API key (civitai.com → Account settings → API keys) in `~/.config/civitai/token` (`civitai.token_file`).
+
 ## Development
 
 Requires [uv](https://docs.astral.sh/uv/), Node ≥ 24 and pnpm.

@@ -74,6 +74,7 @@ One name per action, used in buttons, confirmations and empty states:
 | GPU | Start L4 session / Stop session / Keep running | Starting L4 / Ready on NVIDIA L4 / Generating on … |
 | Worker | Restart worker | — |
 | Drive | Rescan Drive | Models indexed 3 h ago. |
+| Copy a LoRA from Civitai into Drive | Import from Civitai / Check link / Import | Copying to Drive, 45% of 228 MB · Imported Detail Tweaker XL and added it. |
 | Open the mask editor | Paint the area to redraw / Edit mask | — |
 | Close the mask editor | Done | — |
 | Use a SAM selection | Add / Subtract / Replace | Shown as an outline. |
@@ -118,6 +119,8 @@ Each phase lists the screens it adds or changes, then any new components. Wirefr
 │   Film Grain v3   ──●──  0.80 ✕ │
 │   filmgrain                     │  ← trigger-word chip
 ```
+
+**Import from Civitai.** At the foot of the LoRA picker, above the rescan footer, a quiet *Import from Civitai* button opens a link field with *Paste* and *Check link*. Checking shows what it is before anything is copied: the name, then the version, base model, *high- and low-noise pair* for a Wan A14B version, and size, then the trigger words and the Drive folder. If it's for another family, that line says so (*for FLUX.1 [dev], so it won't be listed for this model*). Warnings are ochre, such as a Wan version with only one half. *Import* starts the copy on the server, and a progress bar reads *Copying to Drive, 45% of 228 MB*, then *Adding its preview and rescanning Drive…*. Closing the sheet doesn't stop it, and the bar is there when you reopen it. When it finishes, the LoRA is added to the form and the line reads *Imported Detail Tweaker XL and added it.* Errors (not a LoRA, a base model Degas doesn't run, already in Drive) appear under the field. The sheet is inside Create's form, so this is a plain group, not a nested form.
 
 **Copy progress.** The sketch tile already shows *Copying model 45%*. The session sheet gains an *On the GPU* section listing cached files and disk used out of the 150 GB budget.
 
@@ -266,7 +269,8 @@ Built. Two new families, found under the Model button like Qwen. They need no ne
 | `SchemaForm` | Phase 1 | Prompt block + settings rows; `leadingRows` slot for non-schema rows; default ticks and *Reset to …* (`resetLabel` in `schema.ts`) |
 | Sketch tile | Phase 1 | `.tile.sketch` with `--p` in 0..1; `.waiting` and `.indeterminate` variants |
 | Viewer + wall label | Phase 1 | Shared by Results and Library |
-| `AssetPicker` | Phase 2 | Models and LoRAs (ControlNets in Phase 7); search from 7 rows |
+| `AssetPicker` | Phase 2 | Models and LoRAs (ControlNets in Phase 7); search from 7 rows; a `footer` slot |
+| `CivitaiImport` | Civitai import | The LoRA picker's footer: link, plan, progress (`import` events) |
 | `LoraList` | Phase 2 | Single weight 0–2; paired high/low weights in Phase 4 |
 | `Viewer`, `SaveToPhotos` | Phase 3 | Shared by Results and Library; actions and extra wall-label rows are slots |
 | `PromptSheet` | Phase 3 | Saved prompts from the prompt block |

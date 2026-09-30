@@ -21,6 +21,7 @@ from degas.lora import dataset as ds
 from degas.lora.publish import publish
 from degas.lora.run import BusyError, RunDir, RunError, RunState, Trainer, new_run_id
 from degas.lora.settings import LoraSettings, load_settings
+from degas.rclone import RcloneError
 
 
 def add_parser(sub: Any) -> None:
@@ -247,5 +248,5 @@ def run(config: Config, args: argparse.Namespace) -> None:
                 _list(config)
             case "publish":
                 _publish(config, args)
-    except (RunError, ColabError) as e:
+    except (RunError, ColabError, RcloneError) as e:
         sys.exit(str(e))

@@ -13,8 +13,9 @@ import {
   type Params,
   type SeedMode,
 } from '../api'
-import { assetLabel, loraChoices, useAssets, variantFor } from '../assets'
+import { assetLabel, loraChoices, loraPaths, useAssets, variantFor } from '../assets'
 import { AssetPicker } from '../components/AssetPicker'
+import { CivitaiImport } from '../components/CivitaiImport'
 import { ControlEditor } from '../components/ControlEditor'
 import { ControlList } from '../components/ControlList'
 import { newUnit, unitReady, unitSpec, type ControlUnit } from '../control'
@@ -286,6 +287,14 @@ function CreateForm({
     // Before the prompt has been touched there's no cursor to honour: append.
     const at = promptFocused.current && el ? el.selectionEnd : text.length
     setParams({ ...params, prompt: insertWord(text, at, word) })
+  }
+
+  // Adding a LoRA that's already in the form does nothing.
+  const addLora = (entry: LoraEntry) => {
+    const key = JSON.stringify(stripWeights(entry))
+    setLoras((ls) =>
+      ls.some((l) => JSON.stringify(stripWeights(l)) === key) ? ls : [...ls, entry],
+    )
   }
 
   const carry = (m: string, next?: Asset) => ({
@@ -727,12 +736,27 @@ function CreateForm({
                 ' A14B LoRAs come in pairs named …_high_noise and …_low_noise.'}
             </p>
           }
+          footer={
+            family && (
+              <CivitaiImport
+                family={family.id}
+                onImported={(paths, index) => {
+                  const fresh = loraChoices(
+                    index.filter((a) => a.family === family.id && a.kind === 'lora'),
+                    variant,
+                  )
+                  const row = fresh.rows.find((r) =>
+                    loraPaths(fresh.entryFor(r)).some((p) => paths.includes(p)),
+                  )
+                  if (!row) return false
+                  addLora(fresh.entryFor(row))
+                  return true
+                }}
+              />
+            )
+          }
           onPick={(a) => {
-            const entry = choices.entryFor(a)
-            const key = JSON.stringify(stripWeights(entry))
-            if (!loras.some((l) => JSON.stringify(stripWeights(l)) === key)) {
-              setLoras([...loras, entry])
-            }
+            addLora(choices.entryFor(a))
             setPicker(null)
           }}
           onClose={() => {
