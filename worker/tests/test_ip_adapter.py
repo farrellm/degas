@@ -9,6 +9,7 @@ from degas_worker.families.ip_adapter import (
     face_loras,
     has_shortcut,
     is_faceid,
+    redux_grid,
     scales,
 )
 
@@ -69,3 +70,9 @@ def test_faceid_loras_are_named_by_their_units_place() -> None:
     assert face_loras([unit(), {**faceid, "lora_weight": 0.5}]) == [("faceid_1", 0.5)]
     assert face_loras([faceid]) == [("faceid_0", 0.6)]
     assert face_loras([unit()]) == []
+
+
+def test_redux_grids_shrink_like_comfyui() -> None:
+    assert [redux_grid(f) for f in range(1, 6)] == [27, 13, 9, 6, 5]
+    with pytest.raises(ValueError, match="1 to 5"):
+        redux_grid(6)

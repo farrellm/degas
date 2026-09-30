@@ -90,3 +90,17 @@ def face_loras(units: list[dict[str, Any]]) -> list[tuple[str, float]]:
         for i, u in enumerate(units)
         if is_faceid(u["adapter"]["path"])
     ]
+
+
+# -- Redux (FLUX.1) --------------------------------------------------------------------------
+
+# Redux turns a picture into a 27 x 27 grid of tokens (SigLIP at 384 px, 14 px patches).
+REDUX_GRID = 27
+
+
+def redux_grid(downsample: int) -> int:
+    """The side of the token grid after shrinking it by `downsample`, as ComfyUI's Redux
+    Advanced node does: 27, 13, 9, 6 or 5 tokens a side."""
+    if not 1 <= downsample <= 5:
+        raise ValueError(f"Redux downsampling must be 1 to 5, not {downsample}")
+    return REDUX_GRID // downsample

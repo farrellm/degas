@@ -3,6 +3,7 @@ import {
   type AdapterKind,
   type Asset,
   type Fit,
+  type ImagePromptOptions,
   type ImagePromptSpec,
   type Purpose,
 } from './api'
@@ -32,6 +33,8 @@ export interface PromptUnit {
   /** FaceID: how much of CLIP's reading of the face Plus v2 adds, and its LoRA's weight. */
   structure: number
   loraWeight: number
+  /** Redux: how much its token grid is shrunk, so the prompt keeps a say (1 to 5). */
+  downsample: number
 }
 
 export const MAX_PROMPTS = 2
@@ -71,6 +74,53 @@ export const TAKES: TakeInfo[] = [
   },
   { id: 'face', label: 'Face', note: 'A likeness of the face. Crop close to it.', weight: 0.6 },
 ]
+
+/** SDXL's options, for a family that doesn't say. */
+export const SDXL_OPTIONS: ImagePromptOptions = {
+  purposes: ['all', 'style', 'layout', 'style_layout'],
+  areas: true,
+  steps: true,
+  faces: true,
+  detail: false,
+}
+
+/** The chips a family's image prompts offer; none when there's only one choice. */
+export function takesFor(options: ImagePromptOptions): TakeInfo[] {
+  const takes = TAKES.filter((t) =>
+    t.id === 'face' ? options.faces : options.purposes.includes(t.id),
+  )
+  return takes.length > 1 ? takes : []
+}
+
+interface Detail {
+  downsample: number
+  label: string
+  note: string
+}
+
+/** Redux: how closely to follow the picture. Its 27 × 27 tokens are shrunk by `downsample`
+ * (to 27, 13, 9 or 5 a side), as ComfyUI's Redux Advanced does. */
+export const DETAILS: Detail[] = [
+  {
+    downsample: 1,
+    label: 'Closely',
+    note: 'Close variations of the picture; the prompt has little say.',
+  },
+  { downsample: 2, label: 'Somewhat', note: 'Near the picture, with some room for the prompt.' },
+  {
+    downsample: 3,
+    label: 'Loosely',
+    note: 'Its look and subject, leaving the prompt room to change them.',
+  },
+  { downsample: 5, label: 'Just the gist', note: 'Its overall colour and feel; the prompt leads.' },
+]
+
+export const detailInfo = (downsample: number): Detail =>
+  DETAILS.find((d) => d.downsample === downsample) ?? {
+    downsample,
+    label: `Shrunk ${String(downsample)}×`,
+    note: '',
+  }
 
 /** FaceID finds the face itself and reads who it is, so the note says so. */
 export const FACEID_NOTE =
@@ -137,29 +187,33 @@ export function mismatch(model: Asset | undefined, path: string, take: Take): st
   return null
 }
 
-export function newPrompt(): PromptUnit {
+/** A new unit; Redux (a family with `detail`) starts at full weight. */
+export function newPrompt(options: ImagePromptOptions = SDXL_OPTIONS): PromptUnit {
   return {
     key: Math.random().toString(36).slice(2),
     model: '',
     take: 'all',
     pictures: [],
     area: null,
-    weight: takeInfo('all').weight,
+    weight: options.detail ? 1 : takeInfo('all').weight,
     start: 0,
     end: 1,
     fit: 'crop',
     structure: 1,
     loraWeight: 0.6,
+    downsample: 3,
   }
 }
 
 /** The unit's row in Create: what it takes, its weight, and its steps when not all. */
-export function promptSummary(unit: PromptUnit, steps: number): string {
+export function promptSummary(
+  unit: PromptUnit,
+  steps: number,
+  options: ImagePromptOptions = SDXL_OPTIONS,
+): string {
   const n = unit.pictures.length
-  const parts = [
-    n === 0 ? 'No picture yet' : takeInfo(unit.take).label,
-    `weight ${unit.weight.toFixed(2)}`,
-  ]
+  const what = options.detail ? detailInfo(unit.downsample).label : takeInfo(unit.take).label
+  const parts = [n === 0 ? 'No picture yet' : what, `weight ${unit.weight.toFixed(2)}`]
   if (n > 1) parts.push(`${String(n)} pictures`)
   const span = stepSpan(unit.start, unit.end, steps)
   if (span && (span.first !== 1 || span.last !== steps))
@@ -177,7 +231,10 @@ export const promptReady = (unit: PromptUnit) =>
 export const anyOblong = (unit: PromptUnit) =>
   unit.pictures.some((p) => p.height > 0 && Math.abs(p.width / p.height - 1) > 0.01)
 
-export function promptSpec(unit: PromptUnit): ImagePromptSpec {
+export function promptSpec(
+  unit: PromptUnit,
+  options: ImagePromptOptions = SDXL_OPTIONS,
+): ImagePromptSpec {
   return {
     adapter: { path: unit.model },
     images: unit.pictures.map((p) => `sha256:${p.sha}`),
@@ -188,6 +245,7 @@ export function promptSpec(unit: PromptUnit): ImagePromptSpec {
     end: unit.end,
     ...(unit.area && { mask: `sha256:${unit.area.sha}` }),
     ...(isFaceid(unit.model) && { structure: unit.structure, lora_weight: unit.loraWeight }),
+    ...(options.detail && { downsample: unit.downsample }),
   }
 }
 
@@ -212,5 +270,6 @@ export function promptFromSpec(p: ImagePromptSpec, output: { w: number; h: numbe
     fit: p.fit ?? 'crop',
     structure: p.structure ?? 1,
     loraWeight: p.lora_weight ?? 0.6,
+    downsample: p.downsample ?? 3,
   }
 }

@@ -5,6 +5,11 @@ rest of the pipeline (T5, CLIP, VAE, scheduler) comes from the FLUX.1-dev diffus
 spec names as its `config`. A checkpoint stored in fp8 (`flux1-dev-fp8`) stays fp8 on the GPU
 through layerwise casting: each layer is cast up to bf16 as it runs, so a 12 GB transformer
 doesn't become 24 GB, and casting fp8 weights up and back loses nothing.
+
+Image prompts use FLUX.1 Redux: SigLIP reads each picture and Redux's embedder turns it into a
+27 x 27 grid of tokens in T5's space. As ComfyUI does, they're appended after the prompt's own
+tokens (rather than diffusers' prior pipeline, which sums a copy of the prompt per picture),
+each grid shrunk by its unit's `downsample` so the prompt keeps a say, and scaled by its weight.
 """
 
 import contextlib
@@ -15,8 +20,13 @@ from pathlib import Path
 from typing import Any
 
 import torch
+import torch.nn.functional as F  # noqa: N812 - the usual name
 from diffusers import FluxPipeline, FluxTransformer2DModel
+from diffusers.pipelines.flux.modeling_flux import ReduxImageEncoder
+from PIL import Image
+from transformers import SiglipImageProcessor, SiglipVisionModel
 
+from degas_worker.families import ip_adapter
 from degas_worker.families.base import Output, RunContext
 from degas_worker.families.lora import plan_loras, strip_text_model
 from degas_worker.families.offload import OFFLOAD_ABOVE, place
@@ -31,6 +41,8 @@ class Flux1Runner:
         self.model_path: Path | None = None
         self.float8 = False  # the transformer is stored in fp8
         self.adapters: dict[str, str] = {}  # LoRA asset path → loaded adapter name
+        self.offloaded = False
+        self.redux: tuple[Path, Any, Any, Any] | None = None  # folder, SigLIP, processor, embedder
 
     def run(self, spec: dict[str, Any], seeds: list[int], ctx: RunContext) -> Iterator[Output]:
         if spec.get("mode", "t2i") != "t2i":
@@ -44,16 +56,21 @@ class Flux1Runner:
             (lora["path"], ctx.fetch_asset(lora["path"], lora.get("size")), float(lora["weight"]))
             for lora in spec.get("loras") or []
         ]
+        prompts = spec.get("image_prompts") or []
+        folders = {ctx.fetch_asset(u["adapter"]["path"], u["adapter"].get("size")) for u in prompts}
+        if len(folders) > 1:
+            raise ValueError("FLUX.1 image prompts must all use the same Redux model")
         ctx.check_cancelled()
         ctx.progress(0, "load", 0, 1)
         self._load(path, base)
         self._apply_loras(loras)
+        self._load_redux(folders.pop() if folders else None)
         ctx.progress(0, "load", 1, 1)
 
         params = spec["params"]
         steps = int(params["steps"])
         kwargs: dict[str, Any] = {
-            "prompt": params["prompt"],
+            **self._prompt(params["prompt"], prompts, ctx),
             "width": int(params["width"]),
             "height": int(params["height"]),
             "num_inference_steps": steps,
@@ -82,6 +99,70 @@ class Flux1Runner:
             yield Output(
                 item=item, seed=seed, data=buf.getvalue(), media_type="image/png", ext="png"
             )
+
+    def _prompt(
+        self, prompt: str, prompts: list[dict[str, Any]], ctx: RunContext
+    ) -> dict[str, Any]:
+        """The prompt, or with image prompts, its embeddings followed by the pictures' tokens."""
+        if not prompts:
+            return {"prompt": prompt}
+        pipe = self.pipe
+        device = pipe._execution_device
+        with torch.no_grad():
+            text, pooled, _ids = pipe.encode_prompt(
+                prompt=prompt, prompt_2=None, device=device, max_sequence_length=512
+            )
+            parts = [text]
+            for unit in prompts:
+                grid = ip_adapter.redux_grid(int(unit.get("downsample", 3)))
+                for ref in unit["images"]:
+                    with Image.open(ctx.blob(ref)) as im:
+                        tokens = self._redux_tokens(im.convert("RGB"), device)
+                    parts.append(_shrink(tokens, grid).to(text.dtype) * float(unit["weight"]))
+        pipe.maybe_free_model_hooks()  # the text encoders go back to the CPU if offloaded
+        return {"prompt_embeds": torch.cat(parts, dim=1), "pooled_prompt_embeds": pooled}
+
+    def _redux_tokens(self, picture: Image.Image, device: Any) -> Any:
+        """A picture's Redux tokens: 1 x 729 x 4096."""
+        assert self.redux is not None
+        _folder, encoder, processor, embedder = self.redux
+        if self.offloaded:
+            encoder.to(device)
+            embedder.to(device)
+        try:
+            pixels = processor.preprocess(images=picture, do_resize=True, return_tensors="pt")
+            pixels = pixels.to(device=device, dtype=torch.bfloat16)
+            hidden = encoder(**pixels).last_hidden_state
+            return embedder(hidden).image_embeds
+        finally:
+            if self.offloaded:
+                encoder.to("cpu")
+                embedder.to("cpu")
+
+    def _load_redux(self, folder: Path | None) -> None:
+        """Keep Redux (SigLIP and the embedder, about 0.5 GB) loaded while jobs use it."""
+        if folder is None:
+            if self.redux is not None:
+                self.redux = None
+                gc.collect()
+                torch.cuda.empty_cache()
+            return
+        if self.redux is not None and self.redux[0] == folder:
+            return
+        try:
+            encoder = SiglipVisionModel.from_pretrained(
+                str(folder / "image_encoder"), dtype=torch.bfloat16, local_files_only=True
+            )
+            processor = SiglipImageProcessor.from_pretrained(
+                str(folder / "feature_extractor"), local_files_only=True
+            )
+            embedder = ReduxImageEncoder.from_pretrained(
+                str(folder / "image_embedder"), torch_dtype=torch.bfloat16, local_files_only=True
+            )
+        except Exception as e:
+            raise ValueError(f"Could not load FLUX.1 Redux from {folder.name}: {e}") from e
+        where = "cpu" if self.offloaded else "cuda"
+        self.redux = (folder, encoder.to(where).eval(), processor, embedder.to(where).eval())
 
     def _load(self, path: Path, base: Path | None) -> None:
         if self.pipe is not None and self.model_path == path:
@@ -119,7 +200,7 @@ class Flux1Runner:
             pipe.transformer.enable_layerwise_casting(
                 storage_dtype=storage, compute_dtype=torch.bfloat16
             )
-        place(pipe)
+        self.offloaded = place(pipe)
         pipe.set_progress_bar_config(disable=True)
         self.pipe = pipe
         self.model_path = path
@@ -174,8 +255,20 @@ class Flux1Runner:
         self.pipe = None
         self.model_path = None
         self.adapters = {}
+        self.redux = None
         gc.collect()
         torch.cuda.empty_cache()
+
+
+def _shrink(tokens: Any, grid: int) -> Any:
+    """Average a picture's 27 x 27 Redux tokens down to `grid` x `grid`."""
+    if grid == ip_adapter.REDUX_GRID:
+        return tokens
+    side = ip_adapter.REDUX_GRID
+    batch, _n, dim = tokens.shape
+    square = tokens.view(batch, side, side, dim).permute(0, 3, 1, 2)
+    small = F.interpolate(square.float(), size=(grid, grid), mode="area")
+    return small.permute(0, 2, 3, 1).reshape(batch, grid * grid, dim)
 
 
 @contextlib.contextmanager

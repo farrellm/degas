@@ -1,8 +1,8 @@
 # IP-Adapter: research and plan
 
-Status: Plans A and B built (Phases 11 and 12, 2026-09-30), not yet tested on a live GPU; Plan C
-not started. What shipped is in [design.md](design.md) (§4.3, §5, §6.4, §10) and [ux.md](ux.md)
-(Phases 11 and 12). Where the build differs from the plan below, §4.7 and §5.1 say how.
+Status: Plans A, B and C built (Phases 11 to 13, 2026-09-30), not yet tested on a live GPU. What
+shipped is in [design.md](design.md) (§4.3, §5, §6.4, §10) and [ux.md](ux.md) (Phases 11 to 13).
+Where the build differs from the plan below, §4.7, §5.1 and §6.1 say how.
 
 ## 1. What it is
 
@@ -397,6 +397,28 @@ embedder, `models/flux1/FLUX.1-Redux-dev/`) turns up to a few images into text e
 replace T5's, with `prompt_embeds_scale` and `pooled_prompt_embeds_scale` to weight each image and
 the prompt. In the UI it would be an *Images* row on FLUX.1 (*Make variations of these*), not the
 SDXL unit editor. XLabs' adapter isn't worth building: it doubles step cost for a weaker result.
+
+### 6.1 As built
+
+- **Appended, not summed.** diffusers' `FluxPriorReduxPipeline` makes, for each picture,
+  `[T5(prompt), picture tokens]` scaled by its weight, and sums them; without its own text
+  encoders the prompt is zeros. ComfyUI instead appends each picture's tokens after the prompt's,
+  and the runner does that: the loaded `FluxPipeline.encode_prompt` gives the prompt's T5 and CLIP
+  embeddings once, Redux's SigLIP and embedder (loaded from the folder's `image_encoder/`,
+  `feature_extractor/` and `image_embedder/`) give each picture 729 tokens, and the pipeline gets
+  `prompt_embeds` = prompt then pictures, with the prompt's pooled CLIP embedding.
+- **How closely** (`downsample`, 1 to 5, default 3): each picture's 27 × 27 grid is averaged down
+  to 27, 13, 9, 6 or 5 a side before it's appended, as ComfyUI's Redux Advanced node does; at full
+  size Redux drowns the prompt. The chips are *Closely* (1), *Somewhat* (2), *Loosely* (3) and
+  *Just the gist* (5). The weight (default 1) multiplies the tokens (ComfyUI's "multiply"
+  strength; its attention-bias strength would need an attention processor).
+- **The same row, fewer controls.** FLUX.1 uses SDXL's *Image prompts* row and sheet. Each
+  family's descriptor sends `image_prompt_options` (purposes, areas, steps, faces, detail), and
+  the sheet shows what they allow: for FLUX.1, only pictures, *How closely*, the model and the
+  weight. The server refuses areas, step ranges and other purposes on FLUX.1.
+- The Redux folder is `ip_adapters/flux1/FLUX.1-Redux-dev/` (gated on Hugging Face, FLUX.1 [dev]
+  Non-Commercial License), indexed as one asset. SigLIP squashes pictures to 384 px squares, so
+  the server's square fit applies here too.
 
 ## 7. Risks
 

@@ -89,6 +89,7 @@ One name per action, used in buttons, confirmations and empty states:
 | Add an image prompt (SDXL) | Add (Image prompts row) | — |
 | Choose what an image prompt carries | Everything / Style / Layout / Style and layout / Face | The line under the chips says what the choice does |
 | Drop an image prompt | Remove this image prompt | — |
+| FLUX.1 Redux: how closely to follow the picture | Closely / Somewhat / Loosely / Just the gist | The line under the chips says what the choice does |
 | FaceID: find the face (automatic with a ready session) | — | The tile shows the face found; *The biggest of 3 faces*; *No face found in this picture.* |
 | Put a setting back to the family's default | Reset to 28 (under the label, only when changed) | — |
 | Discretion mode (Phase 9) | Cover images (header switch) | Covered tiles read *Show image 1*; prompts *Show prompt* |
@@ -283,6 +284,14 @@ Built. *Face* prefers a FaceID model when Drive has one, which reads who the per
 - **No cropping needed**, and the note under the chips says so: *Who the person is. The model finds the face itself, so the picture needn't be cropped.*
 - **Two more sliders**, only for FaceID: *Face structure* (how much of the face's shape comes from the picture, on top of who it is) and *Face LoRA* (the LoRA trained with the model; lower lets the checkpoint's look through). Each has its note under it. The LoRA isn't added to the LoRAs row, because it belongs to the model.
 - Weight starts at 0.8 for FaceID, 0.6 for a CLIP face model.
+
+### Phase 13: FLUX.1 Redux
+
+Built. FLUX.1 gets the same *Image prompts* row and sheet, showing only what Redux can do. The family says what that is (`image_prompt_options`), so no screen knows about Redux by name.
+
+- **One question instead of five chips.** Redux has no blocks to pick, so the *Everything / Style / Layout* chips, *Area* and *Steps* are gone. In their place, *How closely*: *Closely*, *Somewhat*, *Loosely* (the default) and *Just the gist*, each with a line saying what it does, from *Close variations of the picture; the prompt has little say.* to *Its overall colour and feel; the prompt leads.* It shrinks how much of the picture the model reads, which is the best lever on a model that otherwise copies the picture and ignores the prompt.
+- **Weight starts at 1.** The row reads *Loosely, weight 1.00*.
+- Pictures are still cut square: SigLIP squashes them to 384 px squares.
 
 ## 5. Component inventory
 

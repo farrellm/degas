@@ -1,19 +1,29 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
-import { api, thumbUrl, type Asset, type BlobInfo, type Fit, type Variant } from '../api'
+import {
+  api,
+  thumbUrl,
+  type Asset,
+  type BlobInfo,
+  type Fit,
+  type ImagePromptOptions,
+  type Variant,
+} from '../api'
 import { assetLabel } from '../assets'
 import type { Source } from '../draft'
 import { size } from '../format'
 import {
+  DETAILS,
   FACEID_NOTE,
   MAX_PICTURES,
-  TAKES,
+  detailInfo,
   adapterKind,
   anyOblong,
   isFaceid,
   mismatch,
   modelFor,
   takeInfo,
+  takesFor,
   weightFor,
   type PromptUnit,
   type Take,
@@ -51,6 +61,8 @@ interface Props {
   target: { w: number; h: number }
   steps: number
   constraints: Variant['size_constraints']
+  /** What the family's image prompts can do. */
+  options: ImagePromptOptions
   onChange: (update: (unit: PromptUnit) => PromptUnit) => void
   onRemove: () => void
   onClose: () => void
@@ -94,10 +106,12 @@ export function PromptEditor({
   target,
   steps,
   constraints,
+  options,
   onChange,
   onRemove,
   onClose,
 }: Props) {
+  const takes = takesFor(options)
   const [overlay, setOverlay] = useState<Overlay>(null)
   // The picture being cropped, and its place in the row (one past the end adds it).
   const [cropping, setCropping] = useState<{ sha: string; at: number } | null>(null)
@@ -208,8 +222,9 @@ export function PromptEditor({
         describe={(a) => KIND_LABELS[adapterKind(a)]}
         empty={
           <p>
-            No image prompt models found. Put IP-Adapters in Drive under{' '}
-            <code>degas/ip_adapters/{familyId}/</code>, then rescan.
+            No image prompt models found. Put{' '}
+            {options.detail ? 'the FLUX.1-Redux-dev diffusers folder' : 'IP-Adapters'} in Drive
+            under <code>degas/ip_adapters/{familyId}/</code>, then rescan.
           </p>
         }
         onPick={(a) => {
@@ -298,23 +313,46 @@ export function PromptEditor({
                 : 'The model sees the middle square, at low resolution: fine detail and text don’t carry.'}
         </p>
 
-        <div className="control-traces" role="group" aria-label="Take from it">
-          {TAKES.map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              aria-pressed={unit.take === t.id}
-              onClick={() => {
-                choose(t.id)
-              }}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
-        <p className="row-note">
-          {unit.take === 'face' && faceid ? FACEID_NOTE : takeInfo(unit.take).note}
-        </p>
+        {takes.length > 0 && (
+          <div className="control-traces" role="group" aria-label="Take from it">
+            {takes.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                aria-pressed={unit.take === t.id}
+                onClick={() => {
+                  choose(t.id)
+                }}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+        )}
+        {takes.length > 0 && (
+          <p className="row-note">
+            {unit.take === 'face' && faceid ? FACEID_NOTE : takeInfo(unit.take).note}
+          </p>
+        )}
+        {options.detail && (
+          <>
+            <div className="control-traces" role="group" aria-label="How closely">
+              {DETAILS.map((d) => (
+                <button
+                  key={d.downsample}
+                  type="button"
+                  aria-pressed={unit.downsample === d.downsample}
+                  onClick={() => {
+                    onChange((u) => ({ ...u, downsample: d.downsample }))
+                  }}
+                >
+                  {d.label}
+                </button>
+              ))}
+            </div>
+            <p className="row-note">{detailInfo(unit.downsample).note}</p>
+          </>
+        )}
 
         <div className={modelMissing ? 'model-row missing' : 'model-row'}>
           <button
@@ -381,61 +419,65 @@ export function PromptEditor({
           </>
         )}
 
-        <StepRange
-          steps={steps}
-          a={span.a}
-          b={span.b}
-          onChange={setSpan}
-          note="Ending early keeps its influence on the big shapes and leaves the details to the prompt."
-        />
+        {options.steps && (
+          <StepRange
+            steps={steps}
+            a={span.a}
+            b={span.b}
+            onChange={setSpan}
+            note="Ending early keeps its influence on the big shapes and leaves the details to the prompt."
+          />
+        )}
 
-        <div className="source-row">
-          <button
-            type="button"
-            className="setting setting-button"
-            disabled={openArea.isPending}
-            onClick={() => {
-              openArea.mutate()
-            }}
-          >
-            <span className="setting-label">Area</span>{' '}
-            <span className={unit.area ? 'setting-value' : 'setting-value none'}>
-              {unit.area ? (
-                <>
-                  <MaskThumb source={unit.area.over.sha} mask={unit.area.sha} />
-                  Edit area
-                </>
-              ) : (
-                'Limit to an area'
-              )}
-            </span>
-          </button>
-          {openArea.error && (
-            <p className="row-warning" role="alert">
-              {openArea.error.message}
-            </p>
-          )}
-          {unit.area && (
-            <div className="row-buttons source-actions">
-              <button
-                type="button"
-                className="btn quiet small"
-                onClick={() => {
-                  onChange((u) => ({ ...u, area: null }))
-                }}
-              >
-                Clear
-              </button>
-            </div>
-          )}
-          {unit.area &&
-            (unit.area.over.width !== target.w || unit.area.over.height !== target.h) && (
-              <p className="row-note">
-                Painted at {size(unit.area.over.width, unit.area.over.height)}; it will be fitted to{' '}
-                {size(target.w, target.h)}.
+        {options.areas && (
+          <div className="source-row">
+            <button
+              type="button"
+              className="setting setting-button"
+              disabled={openArea.isPending}
+              onClick={() => {
+                openArea.mutate()
+              }}
+            >
+              <span className="setting-label">Area</span>{' '}
+              <span className={unit.area ? 'setting-value' : 'setting-value none'}>
+                {unit.area ? (
+                  <>
+                    <MaskThumb source={unit.area.over.sha} mask={unit.area.sha} />
+                    Edit area
+                  </>
+                ) : (
+                  'Limit to an area'
+                )}
+              </span>
+            </button>
+            {openArea.error && (
+              <p className="row-warning" role="alert">
+                {openArea.error.message}
               </p>
             )}
-        </div>
+            {unit.area && (
+              <div className="row-buttons source-actions">
+                <button
+                  type="button"
+                  className="btn quiet small"
+                  onClick={() => {
+                    onChange((u) => ({ ...u, area: null }))
+                  }}
+                >
+                  Clear
+                </button>
+              </div>
+            )}
+            {unit.area &&
+              (unit.area.over.width !== target.w || unit.area.over.height !== target.h) && (
+                <p className="row-note">
+                  Painted at {size(unit.area.over.width, unit.area.over.height)}; it will be fitted
+                  to {size(target.w, target.h)}.
+                </p>
+              )}
+          </div>
+        )}
 
         {anyOblong(unit) && (
           <div className="setting">

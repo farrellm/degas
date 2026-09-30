@@ -32,6 +32,17 @@ class Variant:
 
 
 @dataclass(frozen=True)
+class ImagePromptOptions:
+    """What a family's image prompts can do, for the form (docs/ip-adapter.md)."""
+
+    purposes: tuple[str, ...] = ("all",)  # which UNet blocks a unit can act in
+    areas: bool = False  # limited to an area of the output
+    steps: bool = False  # limited to a range of steps
+    faces: bool = False  # FaceID models
+    detail: bool = False  # Redux: how many of the picture's tokens the prompt gets (`downsample`)
+
+
+@dataclass(frozen=True)
 class SizeConstraints:
     multiple_of: int
     min_pixels: int
@@ -47,6 +58,9 @@ class FamilyDescriptor(Protocol):
     lora_format: Literal["single", "paired_hi_lo"]
     supports_control: bool
     supports_image_prompts: bool
+
+    @property
+    def image_prompt_options(self) -> ImagePromptOptions | None: ...
 
     def param_schema(self, variant: str, mode: str) -> JsonSchema: ...
 
@@ -69,6 +83,9 @@ def describe(family: FamilyDescriptor) -> dict[str, Any]:
         "lora_format": family.lora_format,
         "supports_control": family.supports_control,
         "supports_image_prompts": family.supports_image_prompts,
+        "image_prompt_options": (
+            family.image_prompt_options.__dict__ if family.image_prompt_options else None
+        ),
         "variants": [
             {
                 "id": v.id,
@@ -301,6 +318,8 @@ MAX_PROMPT_IMAGES = 4
 # weight of the LoRA the model carries.
 FACE_STRUCTURE: JsonSchema = {"type": "number", "minimum": 0, "maximum": 2}
 FACE_LORA: JsonSchema = {"type": "number", "minimum": 0, "maximum": 1.5}
+# Redux: its 27 x 27 grid of picture tokens is shrunk by this factor before the prompt sees it.
+DOWNSAMPLE: JsonSchema = {"type": "integer", "minimum": 1, "maximum": 5}
 
 
 def validate_image_prompts(prompts: Any, family: str, limit: int) -> list[dict[str, Any]]:
@@ -348,7 +367,12 @@ def _image_prompt(n: int, unit: Any, folder: str) -> dict[str, Any]:
         raise SpecError(f"Image prompt {n}: its steps must start before they end")
     if unit.get("mask") is not None:
         entry["mask"] = _sha(unit["mask"], f"Image prompt {n} area")
-    for key, schema in (("structure", FACE_STRUCTURE), ("lora_weight", FACE_LORA)):
+    optional = (
+        ("structure", FACE_STRUCTURE),
+        ("lora_weight", FACE_LORA),
+        ("downsample", DOWNSAMPLE),
+    )
+    for key, schema in optional:
         if unit.get(key) is not None:
             entry[key] = _coerce(key, schema, unit[key])
     return entry

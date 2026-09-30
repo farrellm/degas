@@ -1,5 +1,8 @@
 """FLUX.1 [dev] descriptor: text-to-image (design §4.3).
 
+Image prompts use FLUX.1 Redux (`ip_adapters/flux1/FLUX.1-Redux-dev/`, a diffusers folder):
+each picture's tokens are appended to the prompt's, shrunk and weighted.
+
 A checkpoint is a single `.safetensors` transformer (the fp8 `flux1-dev-fp8`, or a Civitai
 fine-tune); the text encoders, VAE and configs come from the official diffusers folder in
 `configs/flux1/`, without its transformer weights. A whole diffusers folder in `models/flux1/`
@@ -9,18 +12,24 @@ loads on its own.
 from typing import Any, Literal
 
 from degas.families.base import (
+    ImagePromptOptions,
     JsonSchema,
     SizeConstraints,
     SpecError,
     Variant,
     find_variant,
     snap_size,
+    validate_image_prompts,
     validate_model,
     validate_params,
     validate_single_loras,
 )
 
 MAX_LORAS = 8
+MAX_IMAGE_PROMPTS = 2
+# Redux shrinks each picture's 27 x 27 tokens by 3 unless told: at full size the pictures
+# drown the prompt.
+DOWNSAMPLE = 3
 # What a single-file checkpoint is loaded with: FLUX.1-dev's diffusers folder, whose
 # `transformer/` keeps only its config.json.
 BASE = "configs/flux1/FLUX.1-dev"
@@ -49,7 +58,8 @@ class Flux1:
     media: Literal["image", "video"] = "image"
     lora_format: Literal["single", "paired_hi_lo"] = "single"
     supports_control = False
-    supports_image_prompts = False
+    supports_image_prompts = True
+    image_prompt_options = ImagePromptOptions(detail=True)
     variants: tuple[Variant, ...] = (
         Variant(id="dev", label="FLUX.1 [dev]", min_gpu="L4", modes=("t2i",)),
     )
@@ -129,4 +139,17 @@ class Flux1:
         }
         if model["path"].lower().endswith(SINGLE_FILE):
             out["config"] = {"path": BASE, "size": None}
+        prompts = validate_image_prompts(spec.get("image_prompts"), self.id, MAX_IMAGE_PROMPTS)
+        if prompts:
+            out["image_prompts"] = [redux_unit(n, u) for n, u in enumerate(prompts, 1)]
         return out
+
+
+def redux_unit(n: int, unit: dict[str, Any]) -> dict[str, Any]:
+    """A Redux unit: its pictures, weight and downsampling, and nothing Redux can't do."""
+    if unit.get("mask"):
+        raise SpecError(f"Image prompt {n}: FLUX.1 can't limit a picture to an area")
+    if unit["purpose"] != "all" or (unit["start"], unit["end"]) != (0.0, 1.0):
+        raise SpecError(f"Image prompt {n}: FLUX.1 reads a picture everywhere, at every step")
+    kept = ("adapter", "images", "fit", "purpose", "weight", "start", "end")
+    return {**{k: unit[k] for k in kept}, "downsample": unit.get("downsample", DOWNSAMPLE)}
