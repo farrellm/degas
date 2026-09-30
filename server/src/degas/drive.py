@@ -452,6 +452,16 @@ class DriveIndexer:
         await self._http.aclose()
 
 
+def companions(file: str, names: list[str]) -> list[str]:
+    """The sidecar and preview beside a weights file, of the files in its folder."""
+    stem = Path(file).stem
+    return [
+        n
+        for n in names
+        if Path(n).stem == stem and Path(n).suffix.lower() in (*SIDECAR_SUFFIXES, *PREVIEW_TYPES)
+    ]
+
+
 def _rev(file: dict[str, Any] | None) -> str | None:
     """A Drive file's revision marker: its md5, else its id and modification time."""
     if file is None:

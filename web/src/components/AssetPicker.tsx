@@ -21,6 +21,11 @@ interface Props {
   empty: ReactNode
   /** Above the rescan footer (the LoRA picker's Import from Civitai). */
   footer?: ReactNode
+  /** Offer a delete mode: `note` follows the question, `run` deletes the row's files. */
+  deleting?: {
+    note: (asset: Asset) => string
+    run: (asset: Asset) => Promise<unknown>
+  }
   onPick: (asset: Asset) => void
   onClose: () => void
 }
@@ -35,10 +40,23 @@ export function AssetPicker({
   describe,
   empty,
   footer,
+  deleting,
   onPick,
   onClose,
 }: Props) {
   const [query, setQuery] = useState('')
+  const [deleteMode, setDeleteMode] = useState(false)
+  const [confirming, setConfirming] = useState<string | null>(null)
+  const [deleted, setDeleted] = useState<string | null>(null)
+  const qc = useQueryClient()
+  const remove = useMutation({
+    mutationFn: (a: Asset) => deleting?.run(a) ?? Promise.resolve(),
+    onSuccess: (_, a) => {
+      setDeleted(`Deleted ${assetLabel(a.path, assets)}.`)
+      setConfirming(null)
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: ['assets'] }),
+  })
   const cached = useCachedPaths()
   const q = query.trim().toLowerCase()
   const shown = q
@@ -51,7 +69,28 @@ export function AssetPicker({
   const withThumbs = thumbs || assets.some((a) => a.preview_thumb)
 
   return (
-    <Sheet title={title} onClose={onClose}>
+    <Sheet
+      title={deleteMode ? `Delete ${noun}` : title}
+      actions={
+        deleting &&
+        assets.length > 0 && (
+          <button
+            type="button"
+            className="btn quiet small"
+            aria-pressed={deleteMode}
+            onClick={() => {
+              setDeleteMode((on) => !on)
+              setConfirming(null)
+              setDeleted(null)
+              remove.reset()
+            }}
+          >
+            {deleteMode ? 'Stop deleting' : `Delete ${noun}`}
+          </button>
+        )
+      }
+      onClose={onClose}
+    >
       {assets.length >= SEARCH_FROM && (
         <input
           type="search"
@@ -83,14 +122,24 @@ export function AssetPicker({
             const meta = [describe?.(a), a.size === null ? null : bytes(a.size), where]
               .filter(Boolean)
               .join(', ')
+            const asking = deleteMode && confirming === a.path
+            const going = remove.isPending && remove.variables.path === a.path
             return (
-              <li key={a.path}>
+              <li key={a.path} className={asking || going ? 'doomed' : undefined}>
                 <button
                   type="button"
-                  className="asset-row"
-                  aria-pressed={on}
+                  className={deleteMode ? 'asset-row deleting' : 'asset-row'}
+                  aria-pressed={deleteMode ? undefined : on}
+                  aria-expanded={deleteMode ? asking : undefined}
+                  disabled={remove.isPending}
                   onClick={() => {
-                    onPick(a)
+                    if (!deleteMode) {
+                      onPick(a)
+                      return
+                    }
+                    setConfirming(asking ? null : a.path)
+                    setDeleted(null)
+                    remove.reset()
                   }}
                 >
                   {withThumbs && (
@@ -105,12 +154,44 @@ export function AssetPicker({
                   </span>
                   <span className="asset-check" aria-hidden />
                 </button>
+                {(asking || going) && deleting && (
+                  <div className="confirm asset-confirm" role="group" aria-label="Confirm delete">
+                    <p>
+                      Delete {assetLabel(a.path, assets)}? {deleting.note(a)}
+                    </p>
+                    <button
+                      type="button"
+                      className="btn danger"
+                      disabled={going}
+                      onClick={() => {
+                        remove.mutate(a)
+                      }}
+                    >
+                      {going ? 'Deleting…' : 'Delete'}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn quiet"
+                      disabled={going}
+                      onClick={() => {
+                        setConfirming(null)
+                        remove.reset()
+                      }}
+                    >
+                      Cancel
+                    </button>
+                    {remove.error && <p role="alert">{remove.error.message}</p>}
+                  </div>
+                )}
               </li>
             )
           })}
         </ul>
       )}
-      {footer}
+      <p className="asset-deleted" aria-live="polite">
+        {deleted}
+      </p>
+      {!deleteMode && footer}
       <RescanFooter />
     </Sheet>
   )

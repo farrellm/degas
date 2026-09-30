@@ -708,6 +708,16 @@ class Database:
         rows = self.conn.execute(query, args).fetchall()
         return [a for r in rows if (a := _row(r, ("sidecar",))) is not None]
 
+    def delete_assets(self, paths: Iterable[str]) -> list[str]:
+        """Drop assets from the index; returns the preview blobs they held."""
+        shas: list[str] = []
+        with self.conn:
+            self.conn.execute("BEGIN")
+            for path in paths:
+                self.conn.execute("DELETE FROM assets WHERE path = ?", (path,))
+                shas += self.remove_blob_refs("asset", path)
+        return shas
+
     def get_asset(self, path: str) -> dict[str, Any] | None:
         row = self.conn.execute("SELECT * FROM assets WHERE path = ?", (path,)).fetchone()
         return _row(row, ("sidecar",))

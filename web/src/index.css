@@ -1458,6 +1458,12 @@ code {
   margin-bottom: 8px;
 }
 
+.sheet-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .sheet-head h2 {
   font-family: var(--serif);
   font-size: var(--step-1);
@@ -1689,6 +1695,49 @@ code {
   border-right: 2px solid var(--accent);
   border-bottom: 2px solid var(--accent);
   transform: rotate(45deg);
+}
+
+/* Delete mode: a vermilion ring with a bar where the check was. */
+.asset-row.deleting .asset-check::after {
+  content: '';
+  display: block;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: linear-gradient(var(--danger), var(--danger)) center / 8px 1.5px no-repeat;
+  box-shadow: inset 0 0 0 1.5px var(--danger);
+}
+
+.asset-row.deleting:disabled {
+  cursor: default;
+}
+
+/* Asking to delete a LoRA: it fades back the way a doomed group in Results does. */
+.asset-list .doomed .asset-row {
+  border-bottom-color: transparent;
+}
+
+.asset-list .doomed :is(.asset-thumb img, .asset-text) {
+  opacity: 0.35;
+  filter: grayscale(1);
+  transition:
+    opacity 0.2s ease-out,
+    filter 0.2s ease-out;
+}
+
+.asset-confirm {
+  padding: 4px 0 14px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.asset-confirm [role='alert'] {
+  color: var(--danger);
+}
+
+.asset-deleted:not(:empty) {
+  padding-top: 12px;
+  color: var(--ink-muted);
+  font-size: 0.9375rem;
 }
 
 .asset-empty {

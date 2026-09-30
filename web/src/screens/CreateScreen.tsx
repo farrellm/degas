@@ -796,6 +796,17 @@ function CreateForm({
               />
             )
           }
+          deleting={{
+            note: (row) =>
+              isPair(choices.entryFor(row))
+                ? 'Both halves go to Drive’s trash.'
+                : 'Its files go to Drive’s trash.',
+            run: async (row) => {
+              const paths = loraPaths(choices.entryFor(row))
+              await api.deleteLoras(paths)
+              setLoras((ls) => ls.filter((l) => !loraPaths(l).some((p) => paths.includes(p))))
+            },
+          }}
           onPick={(a) => {
             addLora(choices.entryFor(a))
             setPicker(null)

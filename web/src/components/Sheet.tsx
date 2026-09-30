@@ -2,12 +2,14 @@ import { useEffect, useRef, type ReactNode } from 'react'
 
 interface Props {
   title: string
+  /** Beside Done in the header (the LoRA picker's Delete LoRAs). */
+  actions?: ReactNode
   onClose: () => void
   children: ReactNode
 }
 
 /** Modal bottom sheet: Escape or the scrim closes it, focus returns to the opener. */
-export function Sheet({ title, onClose, children }: Props) {
+export function Sheet({ title, actions, onClose, children }: Props) {
   const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -40,9 +42,12 @@ export function Sheet({ title, onClose, children }: Props) {
         <div className="sheet-inner">
           <div className="sheet-head">
             <h2>{title}</h2>
-            <button type="button" className="btn quiet small" onClick={onClose}>
-              Done
-            </button>
+            <div className="sheet-actions">
+              {actions}
+              <button type="button" className="btn quiet small" onClick={onClose}>
+                Done
+              </button>
+            </div>
           </div>
           {children}
         </div>

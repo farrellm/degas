@@ -227,6 +227,13 @@ class FakeRemote:
                 return f"{hashlib.md5(data).hexdigest()}  {args[1].rsplit('/', 1)[-1]}\n"
             case "deletefile":
                 del self.files[args[1]]
+            case "lsf":
+                folder = args[-1] + "/"
+                return "".join(
+                    f"{p.removeprefix(folder)}\n"
+                    for p in sorted(self.files)
+                    if p.startswith(folder) and "/" not in p.removeprefix(folder)
+                )
         return ""
 
     async def rcat(self, target: str, chunks: AsyncIterator[bytes], size: int | None) -> None:
@@ -480,3 +487,59 @@ def test_api_import_refuses_while_one_runs(
     assert client.post("/api/civitai/import", json={"url": "200002"}).status_code == 202
     resp = client.post("/api/civitai/import", json={"url": "200002", "name": "other"})
     assert resp.status_code == 409
+
+
+def test_api_delete_lora(civitai_client: tuple[TestClient, FakeCivitai, FakeRemote]) -> None:
+    client, _fake, remote = civitai_client
+    svc = client.app.state.services  # type: ignore[attr-defined]
+    base = "gdrive:degas/loras/wan22"
+    for name in [
+        "motion_high_noise.safetensors",
+        "motion_high_noise.yaml",
+        "motion_high_noise.jpg",
+        "motion_low_noise.safetensors",
+        "motion_low_noise.yaml",
+        "motion_v2.safetensors",
+        "motion_v2.jpg",
+    ]:
+        remote.files[f"{base}/{name}"] = b"x"
+    preview = svc.blobs.put(jpeg(), "image/jpeg")
+    lora = {"family": "wan22", "kind": "lora", "size": 1}
+    svc.db.replace_assets(
+        [
+            {
+                **lora,
+                "path": "loras/wan22/motion_high_noise.safetensors",
+                "drive_file_id": "h",
+                "preview_thumb": preview,
+            },
+            {**lora, "path": "loras/wan22/motion_low_noise.safetensors", "drive_file_id": "l"},
+            {**lora, "path": "loras/wan22/motion_v2.safetensors", "drive_file_id": "v"},
+            {
+                "path": "models/sdxl/base.safetensors",
+                "family": "sdxl",
+                "kind": "model",
+                "drive_file_id": "m",
+            },
+        ]
+    )
+
+    resp = client.delete(
+        "/api/assets",
+        params=[
+            ("path", "loras/wan22/motion_high_noise.safetensors"),
+            ("path", "loras/wan22/motion_low_noise.safetensors"),
+        ],
+    )
+    assert resp.status_code == 200, resp.text
+    # Both halves go, with their sidecars and preview; a LoRA with a similar name stays.
+    assert sorted(remote.files) == [f"{base}/motion_v2.jpg", f"{base}/motion_v2.safetensors"]
+    assert [a["path"] for a in svc.db.list_assets(kind="lora")] == [
+        "loras/wan22/motion_v2.safetensors"
+    ]
+    assert svc.blobs.path(preview) is None
+
+    model = client.delete("/api/assets", params={"path": "models/sdxl/base.safetensors"})
+    assert model.status_code == 400
+    missing = client.delete("/api/assets", params={"path": "loras/wan22/gone.safetensors"})
+    assert missing.status_code == 404

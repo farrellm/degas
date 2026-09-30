@@ -76,6 +76,7 @@ One name per action, used in buttons, confirmations and empty states:
 | Worker | Restart worker | — |
 | Drive | Rescan Drive | Models indexed 3 h ago. |
 | Copy a LoRA from Civitai into Drive | Import from Civitai / Check link / Import | Copying to Drive, 45% of 228 MB · Imported Film Grain XL and added it. |
+| Delete a LoRA from Drive | Delete LoRAs (beside Done in the LoRA picker) / Stop deleting | Delete Film Grain XL? Its files go to Drive’s trash. (*Both halves* for an A14B pair.) The row fades to grey while it asks; *Deleted Film Grain XL.* It also comes out of the form. |
 | Open the mask editor | Paint the area to redraw / Edit mask | — |
 | Close the mask editor | Done | — |
 | Use a SAM selection | Add / Subtract / Replace | Shown as an outline. |
