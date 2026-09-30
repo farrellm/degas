@@ -387,6 +387,20 @@ async def clear_results(svc: Svc) -> dict[str, Any]:
     return {"results": cleared["results"], "jobs": cleared["jobs"]}
 
 
+@router.delete("/jobs/{job_id}/results")
+async def delete_job_results(svc: Svc, job_id: str, chain: bool = False) -> dict[str, Any]:
+    """Delete one finished job's results: its stitched chain with `chain`, else the rest."""
+    job = svc.db.get_job(job_id)
+    if job is None:
+        raise HTTPException(404, "Unknown job")
+    if job["status"] in ("queued", "running"):
+        raise HTTPException(409, "Cancel the job before deleting it")
+    deleted = svc.db.delete_job_results(job_id, chain)
+    release(svc.db, svc.blobs, deleted["blobs"])
+    svc.bus.publish({"type": "swept", "results": deleted["results"], "jobs": deleted["jobs"]})
+    return {"results": deleted["results"], "jobs": deleted["jobs"]}
+
+
 @router.post("/results/{result_id}/save")
 async def save_result(svc: Svc, result_id: str) -> dict[str, Any]:
     """Keep a result in the library, with the config that reproduces it."""

@@ -96,6 +96,29 @@ def test_clear_results_keeps_kept_images_and_queued_jobs(client: TestClient) -> 
     assert client.delete("/api/results").json() == {"results": 0, "jobs": 0}
 
 
+def test_delete_one_jobs_results(client: TestClient) -> None:
+    first, second = generate(client)
+    item = client.post(f"/api/results/{second['id']}/save").json()
+    harbour = {**SPEC, "params": {"prompt": "a harbour", "seed": 7}}
+    other = generate(client, harbour, n=1)[0]
+    client.delete("/api/session")
+    queued = client.post("/api/jobs", json={"spec": SPEC}).json()
+
+    assert client.delete(f"/api/jobs/{queued['id']}/results").status_code == 409
+    assert client.delete("/api/jobs/nope/results").status_code == 404
+    # A job has no chain unless it extended a clip, so this leaves everything.
+    gone = client.delete(f"/api/jobs/{first['job_id']}/results?chain=true").json()
+    assert gone == {"results": 0, "jobs": 0}
+
+    gone = client.delete(f"/api/jobs/{first['job_id']}/results").json()
+    assert gone == {"results": 2, "jobs": 1}
+    assert [r["id"] for r in client.get("/api/results").json()["results"]] == [other["id"]]
+    assert {j["id"] for j in client.get("/api/jobs").json()} == {queued["id"], other["job_id"]}
+    assert client.get(f"/api/blobs/{first['blob_sha']}").status_code == 404
+    assert client.get(f"/api/library/{item['id']}").status_code == 200
+    assert client.get(f"/api/blobs/{second['blob_sha']}").status_code == 200
+
+
 def test_saved_prompts(client: TestClient) -> None:
     long = "a lighthouse on a cliff at dusk, oil painting, thick impasto"
     saved = client.post("/api/prompts", json={"prompt": long, "negative_prompt": "blurry"})

@@ -70,6 +70,7 @@ One name per action, used in buttons, confirmations and empty states:
 | Load a result's spec into Create | Reuse settings (becomes **Remix** in Phase 3) | — |
 | Keep a result (Phase 3) | Keep | Kept |
 | Export to the phone | Save to Photos | — |
+| Delete one finished job's results | Delete (in the group's corner) | Delete these 4 images? Kept ones stay in the library. The images that will go fade to grey while it asks. |
 | Delete every finished result now | Clear results | Delete every finished image and clip? Kept ones stay in the library. |
 | GPU | Start L4 session / Stop session / Keep running | Starting L4 / Ready on NVIDIA L4 / Generating on … |
 | Worker | Restart worker | — |

@@ -1870,6 +1870,38 @@ describe('App', () => {
     expect(await screen.findByText('Nothing here yet.')).toBeInTheDocument()
   })
 
+  it('deletes one group of results after asking', async () => {
+    const second = { ...JOB_DONE, id: 'j2', spec: { ...SPEC, params: { prompt: 'second' } } }
+    const deleted: string[] = []
+    mockApi({
+      'GET /api/jobs': () => [JOB_DONE, second].filter((j) => !deleted.includes(j.id)),
+      'GET /api/results': () => ({
+        results: [RESULT, { ...RESULT, id: 'r2', job_id: 'j2', spec: second.spec }].filter(
+          (r) => !deleted.includes(r.job_id),
+        ),
+        cursor: null,
+      }),
+      'DELETE /api/jobs/j2/results': () => {
+        deleted.push('j2')
+        return { results: 1, jobs: 1 }
+      },
+    })
+    const user = userEvent.setup()
+    renderApp()
+    await user.click(screen.getByRole('button', { name: /Results/ }))
+    const group = await screen.findByRole('region', { name: 'second' })
+    await user.click(within(group).getByRole('button', { name: 'Delete' }))
+    const confirm = within(group).getByRole('group', { name: 'Confirm delete' })
+    expect(confirm).toHaveTextContent('Delete this image?')
+    expect(deleted).toEqual([])
+    await user.click(within(confirm).getByRole('button', { name: 'Delete' }))
+    await vi.waitFor(() => {
+      expect(screen.queryByRole('region', { name: 'second' })).not.toBeInTheDocument()
+    })
+    expect(deleted).toEqual(['j2'])
+    expect(screen.getAllByRole('region')).toHaveLength(1)
+  })
+
   it('undoes cancelling a queued job', async () => {
     let status = 'queued'
     mockApi({

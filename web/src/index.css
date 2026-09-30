@@ -1120,6 +1120,19 @@ code {
   color: var(--warn);
 }
 
+/* Asking to delete a group: the sheets that will go fade back; kept ones stay put. */
+.group-confirm {
+  margin-bottom: 12px;
+}
+
+.group.doomed .contact .tile:not(.kept) {
+  opacity: 0.35;
+  filter: grayscale(1);
+  transition:
+    opacity 0.2s ease-out,
+    filter 0.2s ease-out;
+}
+
 /* ---------- Queue: reorder and undo ---------- */
 
 .group {

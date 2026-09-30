@@ -484,6 +484,36 @@ class Database:
                     shas.update(self.remove_blob_refs(ref_type, id_))
         return {"results": len(results), "jobs": len(jobs), "blobs": sorted(shas)}
 
+    def delete_job_results(self, job_id: str, chain: bool) -> dict[str, Any]:
+        """Delete one finished job's results now: its stitched chain, or everything else.
+
+        The job goes too once nothing is left to show. Returns the counts and the blobs
+        that lost a reference.
+        """
+        with self.conn:
+            self.conn.execute("BEGIN")
+            results = [
+                r[0]
+                for r in self.conn.execute(
+                    "DELETE FROM results WHERE job_id = ? AND (segments IS NOT NULL) = ?"
+                    " RETURNING id",
+                    (job_id, chain),
+                ).fetchall()
+            ]
+            jobs = [
+                r[0]
+                for r in self.conn.execute(
+                    "DELETE FROM jobs WHERE id = ? AND status NOT IN ('queued', 'running')"
+                    " AND id NOT IN (SELECT job_id FROM results) RETURNING id",
+                    (job_id,),
+                ).fetchall()
+            ]
+            shas: set[str] = set()
+            for ref_type, ids in (("job", jobs), ("result", results)):
+                for id_ in ids:
+                    shas.update(self.remove_blob_refs(ref_type, id_))
+        return {"results": len(results), "jobs": len(jobs), "blobs": sorted(shas)}
+
     # -- library ---------------------------------------------------------------------------
 
     def insert_library_item(
