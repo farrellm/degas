@@ -24,6 +24,8 @@ TREE: dict[str, list[dict[str, Any]]] = {
         {"id": "cn", "name": "controlnets", "mimeType": FOLDER},
         {"id": "vae", "name": "vae", "mimeType": FOLDER},
         {"id": "cfg", "name": "configs", "mimeType": FOLDER},
+        {"id": "ipa", "name": "ip_adapters", "mimeType": FOLDER},
+        {"id": "enc", "name": "image_encoders", "mimeType": FOLDER},
         {"id": "junk", "name": "notes.txt", "mimeType": "text/plain"},
     ],
     "models": [
@@ -69,6 +71,21 @@ TREE: dict[str, list[dict[str, Any]]] = {
     "fix": [
         {"id": "fc", "name": "config.json", "mimeType": "application/json", "size": "6"},
         {"id": "fw", "name": "diffusion_pytorch_model.safetensors", "mimeType": "x", "size": "50"},
+    ],
+    "ipa": [{"id": "ipa-sdxl", "name": "sdxl", "mimeType": FOLDER}],
+    "ipa-sdxl": [
+        {
+            "id": "ip1",
+            "name": "ip-adapter-plus_sdxl_vit-h.safetensors",
+            "mimeType": "x",
+            "size": "8",
+        }
+    ],
+    "enc": [{"id": "enc-sdxl", "name": "sdxl", "mimeType": FOLDER}],
+    "enc-sdxl": [{"id": "vith", "name": "clip-vit-h-14", "mimeType": FOLDER}],
+    "vith": [
+        {"id": "vc", "name": "config.json", "mimeType": "application/json", "size": "1"},
+        {"id": "vw", "name": "model.safetensors", "mimeType": "x", "size": "90"},
     ],
     "cfg": [{"id": "cfg-sdxl", "name": "sdxl", "mimeType": FOLDER}],
     "cfg-sdxl": [{"id": "base", "name": "stable-diffusion-xl-base-1.0", "mimeType": FOLDER}],
@@ -165,8 +182,14 @@ async def test_scan(auth: DriveAuth) -> None:
         "controlnets/sdxl/canny.safetensors",
         "vae/sdxl/sdxl-vae-fp16-fix",
         "configs/sdxl/stable-diffusion-xl-base-1.0",
+        "ip_adapters/sdxl/ip-adapter-plus_sdxl_vit-h.safetensors",
+        "image_encoders/sdxl/clip-vit-h-14",
     }
     assert assets["preprocessors/dwpose"]["size"] == 300
+    ipa = assets["ip_adapters/sdxl/ip-adapter-plus_sdxl_vit-h.safetensors"]
+    assert (ipa["kind"], ipa["family"]) == ("ip_adapter", "sdxl")
+    encoder = assets["image_encoders/sdxl/clip-vit-h-14"]
+    assert (encoder["kind"], encoder["family"], encoder["size"]) == ("image_encoder", "sdxl", 91)
     vae = assets["vae/sdxl/sdxl-vae-fp16-fix"]
     assert (vae["kind"], vae["family"], vae["size"]) == ("vae", "sdxl", 56)
     config = assets["configs/sdxl/stable-diffusion-xl-base-1.0"]
@@ -252,6 +275,8 @@ async def test_sidecars_and_previews(auth: DriveAuth) -> None:
             "pair: {high: h.safetensors, low: l.safetensors}\nvariants: [t2v-a14b]\n",
             {"pair": {"high": "h.safetensors", "low": "l.safetensors"}, "variants": ["t2v-a14b"]},
         ),
+        ("purpose: face\n", {"purpose": "face"}),
+        ("purpose: style\n", {}),
     ],
 )
 def test_parse_sidecar(text: str, expected: dict[str, Any]) -> None:

@@ -46,6 +46,7 @@ class FamilyDescriptor(Protocol):
     variants: tuple[Variant, ...]
     lora_format: Literal["single", "paired_hi_lo"]
     supports_control: bool
+    supports_image_prompts: bool
 
     def param_schema(self, variant: str, mode: str) -> JsonSchema: ...
 
@@ -67,6 +68,7 @@ def describe(family: FamilyDescriptor) -> dict[str, Any]:
         "media": family.media,
         "lora_format": family.lora_format,
         "supports_control": family.supports_control,
+        "supports_image_prompts": family.supports_image_prompts,
         "variants": [
             {
                 "id": v.id,
@@ -200,6 +202,14 @@ def spec_assets(spec: dict[str, Any]) -> list[dict[str, Any]]:
         net = unit["controlnet"]
         if all(a["path"] != net["path"] for a in assets):
             assets.append({"path": net["path"], "size": net.get("size"), "kind": "controlnet"})
+    for unit in spec.get("image_prompts") or []:
+        adapter = unit["adapter"]
+        if all(a["path"] != adapter["path"] for a in assets):
+            assets.append(
+                {"path": adapter["path"], "size": adapter.get("size"), "kind": "ip_adapter"}
+            )
+    if spec.get("image_encoder"):
+        assets.append({**spec["image_encoder"], "kind": "image_encoder"})
     return assets
 
 
@@ -275,6 +285,63 @@ def _control_unit(n: int, unit: dict[str, Any]) -> dict[str, Any]:
             "source": _sha(pre.get("source"), "preprocessor source"),
             "params": params,
         }
+    return entry
+
+
+# -- Image prompts (IP-Adapter, docs/ip-adapter.md) -------------------------------------------
+
+# What an image prompt takes from its pictures: which of the UNet's attention blocks the
+# adapter acts in (the runner maps these to blocks).
+IP_PURPOSES = ("all", "style", "layout", "style_layout")
+IP_WEIGHT: JsonSchema = {"type": "number", "minimum": 0, "maximum": 2}
+MAX_PROMPT_IMAGES = 4
+
+
+def validate_image_prompts(prompts: Any, family: str, limit: int) -> list[dict[str, Any]]:
+    """Validate image prompts:
+    `[{adapter: {path}, images: [sha…], fit?, purpose, weight, start, end, mask?}]`."""
+    if prompts is None:
+        return []
+    if not isinstance(prompts, list):
+        raise SpecError("image_prompts: expected a list")
+    if len(prompts) > limit:
+        raise SpecError(f"At most {limit} image prompts can be used at once")
+    return [_image_prompt(n, unit, f"ip_adapters/{family}/") for n, unit in enumerate(prompts, 1)]
+
+
+def _image_prompt(n: int, unit: Any, folder: str) -> dict[str, Any]:
+    """One image prompt's model, pictures, fit, purpose, weight, step range and area."""
+    if not isinstance(unit, dict):
+        raise SpecError("Each image prompt must be an object")
+    adapter = unit.get("adapter")
+    path = adapter.get("path") if isinstance(adapter, dict) else adapter
+    if not isinstance(path, str) or not path:
+        raise SpecError(f"Image prompt {n}: choose a model")
+    if not path.startswith(folder):
+        raise SpecError(f"{path} isn't an image prompt model for this model")
+    images = unit.get("images")
+    if not isinstance(images, list) or not images:
+        raise SpecError(f"Image prompt {n}: add a picture")
+    if len(images) > MAX_PROMPT_IMAGES:
+        raise SpecError(f"Image prompt {n}: at most {MAX_PROMPT_IMAGES} pictures")
+    size = adapter.get("size") if isinstance(adapter, dict) else None
+    entry: dict[str, Any] = {
+        "adapter": {"path": path, "size": size},
+        "images": [_sha(image, f"Image prompt {n} picture") for image in images],
+        "fit": unit.get("fit") or "crop",
+        "purpose": unit.get("purpose") or "all",
+        "weight": _coerce("weight", IP_WEIGHT, unit.get("weight", 0.6)),
+        "start": _coerce("start", CONTROL_FRACTION, unit.get("start", 0.0)),
+        "end": _coerce("end", CONTROL_FRACTION, unit.get("end", 1.0)),
+    }
+    if entry["fit"] not in FIT_MODES:
+        raise SpecError(f"fit: must be one of {', '.join(FIT_MODES)}")
+    if entry["purpose"] not in IP_PURPOSES:
+        raise SpecError(f"purpose: must be one of {', '.join(IP_PURPOSES)}")
+    if entry["start"] >= entry["end"]:
+        raise SpecError(f"Image prompt {n}: its steps must start before they end")
+    if unit.get("mask") is not None:
+        entry["mask"] = _sha(unit["mask"], f"Image prompt {n} area")
     return entry
 
 

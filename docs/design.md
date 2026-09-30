@@ -170,6 +170,7 @@ class FamilyDescriptor:
     modes: list[Mode]                # t2i, i2i, edit, inpaint, outpaint, t2v, i2v
     lora_format: Literal["single", "paired_hi_lo"]
     supports_control: bool
+    supports_image_prompts: bool     # IP-Adapter (SDXL)
     def param_schema(self, variant, mode) -> JsonSchema   # drives the UI form
     def size_constraints(self, variant) -> SizeConstraints # multiple_of, min/max pixels, presets
     def validate(self, spec) -> Spec                       # fill defaults, clamp values
@@ -219,6 +220,7 @@ class FamilyRunner:
 
   The ControlNet variants of the pipelines (`StableDiffusionXLControlNet{,Img2Img,Inpaint}Pipeline`) are made from the loaded pipeline with `from_pipe`, and a list of ControlNets becomes a `MultiControlNetModel`. A job has at most 3 units, and a ControlNet model guides one unit. The runner keeps the requested ControlNets resident and drops the rest. A ControlNet is a single `.safetensors` file (`from_single_file`) or a diffusers folder with `config.json` (`from_pretrained`). Union ControlNets (`ControlNetUnionModel`) are refused with a clear error for now.
 - **Regional ControlNet:** each unit's down-block and mid-block residuals are multiplied by its area mask, downsampled to each residual's size (`area` interpolation). The runner replaces `forward` on the ControlNet instance while the pipeline runs (`limit_to_areas` in the SDXL runner), rather than wrapping it in another module, so the pipelines' `isinstance` checks and accelerate's offload hook keep working. With *Around the mask*, area masks get the same crop as the image.
+- **Image prompts (IP-Adapter, Phase 11).** Up to 2 units, each an IP-Adapter from `ip_adapters/sdxl/` with up to 4 pictures, a purpose, a weight (0–2), a step range and an optional area of the output. The purpose picks the UNet blocks the adapter acts in (InstantStyle): `all`, `style` (up block 0, attention 1), `layout` (down block 2, attention 1) or `style_layout`. The adapters share one CLIP image encoder, chosen from the file name (ViT-H, or ViT-bigG for h94's `ip-adapter_sdxl`) and put in the spec as `image_encoder`. The runner loads them into the shared UNet with `load_ip_adapter` and registers the encoder, unloads them for a job without image prompts (the UNet refuses IP layers without pictures), remakes the `from_pipe` pipelines when the set changes, encodes the pictures once per job, sets each unit's scale again between steps for its range, and passes areas as `ip_adapter_masks`. Research, variants and the later plans (FaceID, FLUX.1 Redux): [ip-adapter.md](ip-adapter.md).
 - **Parameters:** prompt, negative prompt, width and height (with SDXL aspect-ratio presets), steps, CFG, sampler and noise schedule (Default/Karras/Exponential), seed, clip skip, denoise strength (i2i and inpaint), mask blur and padding (inpaint), and an optional refiner.
 
 **Wan 2.2 (`wan22`)**
@@ -299,6 +301,11 @@ MyDrive/degas/
     klein/         *.safetensors
   controlnets/
     sdxl/          *.safetensors or diffusers dirs
+  ip_adapters/
+    sdxl/          IP-Adapter *.safetensors / *.bin (+ *.yaml sidecar: `purpose: subject|face|composition`)
+  image_encoders/
+    sdxl/          clip-vit-h-14/ (h94/IP-Adapter models/image_encoder: config.json + model.safetensors),
+                   clip-vit-bigg-14/ (sdxl_models/image_encoder, only for ip-adapter_sdxl)
   preprocessors/   one folder per preprocessor: sam3/ and depth-anything-v2/ (transformers folders), dwpose/ (two ONNX files)
   vae/
     sdxl/          sdxl-vae-fp16-fix/ (the fp16-fix VAE, diffusers folder)
@@ -368,7 +375,7 @@ Direct links to video files (MP4/WebM) are accepted as a video source. The frame
 - **`prompts`**: id, name, prompt, negative_prompt, family (nullable), tags, created_at.
 - **`blob_refs`**: blob_sha, ref_type (`result|library|job|draft|derived`), ref_id, expires_at (nullable). Used for reference counting and retention.
 - **`blob_transforms`**: derived_sha, original_sha, ops (JSON). A derived blob holds a reference to its original (see §6.5).
-- **`assets`**: family, kind (`model|lora|controlnet|vae|config|preprocessor`), path, drive_file_id, size, mtime, md5, sha256 (Drive's, for Civitai lookups), sidecar (JSON), preview_thumb, indexed_at.
+- **`assets`**: family, kind (`model|lora|controlnet|ip_adapter|image_encoder|vae|config|preprocessor`), path, drive_file_id, size, mtime, md5, sha256 (Drive's, for Civitai lookups), sidecar (JSON), preview_thumb, indexed_at.
 - **`push_subscriptions`**: endpoint, keys, created_at.
 - **`settings`**: key, value. Holds idle timeout, default GPU, retention, and similar settings.
 
@@ -421,7 +428,7 @@ Saving an image or video stores a config that is self-contained and can be repla
 }
 ```
 
-For a Wan 2.2 A14B LoRA, the entry has the form `{ "high": {path, weight}, "low": {path, weight} }`. If an input image came from a URL, the config also records `inputs.origins: { "<sha256>": "<url>" }` for provenance. Replay always uses the stored blob, so the URL is never fetched again. Video extension records the parent video in `inputs.extends` (the parent's blob hash) and the extracted frame in `inputs.source`. A Qwen-Image 2.1 edit records its extra reference images, in order, in `inputs.refs` (a list of blob hashes; the source is image 1).
+For a Wan 2.2 A14B LoRA, the entry has the form `{ "high": {path, weight}, "low": {path, weight} }`. If an input image came from a URL, the config also records `inputs.origins: { "<sha256>": "<url>" }` for provenance. Replay always uses the stored blob, so the URL is never fetched again. Video extension records the parent video in `inputs.extends` (the parent's blob hash) and the extracted frame in `inputs.source`. A Qwen-Image 2.1 edit records its extra reference images, in order, in `inputs.refs` (a list of blob hashes; the source is image 1). SDXL image prompts are a top-level `image_prompts` list, `[{adapter: {path, size}, images: [sha…], purpose, weight, start, end, mask?}]`; each picture is fitted to a square (cropped, or letterboxed with `fit: pad`) and its area to the output size, both recorded in `inputs.transforms`.
 
 **Video extension output.** An extend job produces the new continuation clip as its result. When it completes, the server uses `ffmpeg` to create a second result: the stitched chain, which is the parent (itself possibly stitched) followed by the continuation, with the duplicated boundary frame dropped. Both results can be saved. The stitched result's config records the ordered list of segment configs, so every segment of the chain can be reproduced.
 
@@ -620,6 +627,7 @@ Phases are numbered from 0.
     - a kohya-format Civitai LoRA on the fp8 transformer, checking that the adapters stay bf16 and the output is sane;
     - that layerwise casting works under model CPU offload;
     - klein edits with 0 and 3 references, and their time on an L4, where it offloads.
+11. **Image prompts (IP-Adapter).** ✅ Built, not yet tested on a live GPU. SDXL image prompts (§4.3; research and plan in [ip-adapter.md](ip-adapter.md), Plan A). The Drive index takes `ip_adapters/<family>/` files and `image_encoders/<family>/` folders; sidecars can say an adapter's `purpose`. `validate_image_prompts` in `families/base.py`; pictures are squared and areas fitted in `inputs.resolve`; kept items and staging include them. The worker's torch-free `families/ip_adapter.py` maps purposes to blocks and step ranges to scales. In the UI, an *Image prompts* row under ControlNet opens a sheet with the pictures (cut square, as the encoder sees them), *Everything / Style / Layout / Style and layout / Face* chips that pick the blocks and the model, weight, steps and an area; the crop editor gains a square mode. Live test to do (ip-adapter.md §4.8), on a T4 and an L4: VRAM with ViT-H resident next to SDXL, with and without ControlNet; Style, Layout and Everything against no image prompt on a fixed seed; a LoRA with an image prompt, then removing the image prompt (no leftover IP layers); two units with areas; a step range; `enable_model_cpu_offload` after registering the encoder; the NoobAI adapter on an Illustrious checkpoint.
 
 ## 11. Risks and open questions
 
@@ -636,6 +644,7 @@ Phases are numbered from 0.
 | Web Push on iOS | Needs a home-screen install and iOS 16.4+ | Document it; the in-app SSE path works regardless |
 | diffusers API churn for newer Wan and ControlNet classes | Upgrades break the worker | Pin versions in `requirements-worker.txt`; record versions in each saved config |
 | fp8 layerwise casting is newer diffusers code, used here with model CPU offload and PEFT LoRAs | FLUX.1 fails to load a LoRA, or runs slowly, on an L4 | `_adapters_in_bf16` keeps adapters out of fp8; the live test covers offload and a LoRA; on an A100 and up, a bf16 folder model skips fp8 entirely |
+| diffusers' IP-Adapter layers and PEFT LoRAs on the same attention modules; `unload_ip_adapter` resets every processor | A LoRA or a regional ControlNet misbehaves after image prompts are added or removed | The live test adds and removes each with the other loaded; the runner remakes derived pipelines whenever the adapter set changes |
 | Qwen-Image 2.1 needs diffusers `main` (not in 0.40.0) | The pinned commit also runs SDXL and Wan, and could break them | Install the pin only when the image's diffusers lacks `QwenImage21Pipeline`; re-test SDXL and Wan on it; move to the first release that has the pipeline |
 
 ## 12. Future work

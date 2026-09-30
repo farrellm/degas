@@ -27,6 +27,8 @@ export interface Family {
   lora_format: 'single' | 'paired_hi_lo'
   /** Whether jobs take ControlNet units (SDXL). */
   supports_control: boolean
+  /** Whether jobs take image prompts (IP-Adapter, SDXL). */
+  supports_image_prompts: boolean
   variants: Variant[]
 }
 
@@ -66,6 +68,8 @@ export interface Sidecar {
   pair?: { high: string; low: string }
   /** ControlNets: the kind of control image the model reads. */
   control?: TraceId
+  /** Image prompt models (IP-Adapters): what they were trained to carry. */
+  purpose?: AdapterKind
   /** Where it came from, e.g. its Civitai page. */
   source?: string
 }
@@ -181,6 +185,28 @@ export interface ControlSpec {
   preprocessor?: { id: TraceId; source: string; params: Params }
 }
 
+/** What an image prompt model was trained to carry: a picture's subject, a face, or its
+ * composition. */
+export type AdapterKind = 'subject' | 'face' | 'composition'
+
+/** Which of the UNet's blocks an image prompt acts in. */
+export type Purpose = 'all' | 'style' | 'layout' | 'style_layout'
+
+/** An image prompt (IP-Adapter) in a job spec (docs/ip-adapter.md). */
+export interface ImagePromptSpec {
+  adapter: { path: string; size?: number | null }
+  /** `sha256:…` of its pictures. */
+  images: string[]
+  fit?: Fit
+  purpose: Purpose
+  weight: number
+  /** The fraction of the steps it acts on, from start to end. */
+  start: number
+  end: number
+  /** `sha256:…` of the area of the output it's limited to. */
+  mask?: string
+}
+
 export interface Spec {
   family: string
   variant: string
@@ -190,6 +216,7 @@ export interface Spec {
   params: Params
   inputs?: Inputs
   control?: ControlSpec[]
+  image_prompts?: ImagePromptSpec[]
 }
 
 /** A transform operation (design §6.5). Rotation is clockwise. */

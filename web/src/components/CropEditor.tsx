@@ -54,6 +54,11 @@ interface Props {
   free?: boolean
   /** The model scales references down only (FLUX.2 [klein]), so a small crop isn't enlarged. */
   refsKeepSize?: boolean
+  /**
+   * An image prompt's picture: a free crop that starts square, because the image encoder sees
+   * a small square from the middle. Its size doesn't matter, so there's no upscale warning.
+   */
+  square?: boolean
   onApply: (image: BlobInfo) => void
   onCancel: () => void
 }
@@ -88,11 +93,13 @@ export function CropEditor({
   sha,
   target,
   constraints,
-  free = false,
+  free: freeCrop = false,
   refsKeepSize = false,
+  square = false,
   onApply,
   onCancel,
 }: Props) {
+  const free = freeCrop || square
   const history = useQuery({
     queryKey: ['transform', sha],
     queryFn: () => api.getTransform(sha),
@@ -143,11 +150,14 @@ export function CropEditor({
 
   const targetRatio = target.w / target.h
 
-  /** Where a crop starts: all of a free crop's image, else the target's shape, centred. */
+  /** Where a crop starts: all of a free crop's image, a square in the middle of an image
+   * prompt's, else the target's shape, centred. */
   const initial = (image: Size): Pick<Edit, 'aspect' | 'crop'> =>
-    free
-      ? { aspect: 'free', crop: { x: 0, y: 0, ...image } }
-      : { aspect: 'match', crop: centered(image, targetRatio) }
+    square
+      ? { aspect: '1:1', crop: centered(image, 1) }
+      : free
+        ? { aspect: 'free', crop: { x: 0, y: 0, ...image } }
+        : { aspect: 'match', crop: centered(image, targetRatio) }
 
   // Until edited: the earlier crop of a derived image, else where a crop starts.
   let edit = edited
@@ -192,7 +202,13 @@ export function CropEditor({
   const out =
     crop && edit ? (free ? crop : outputSize(crop, edit.aspect, target, constraints)) : null
   const scale =
-    crop && out ? (free ? (refsKeepSize ? 1 : modelUpscale(crop, target)) : upscale(crop, out)) : 1
+    crop && out && !square
+      ? free
+        ? refsKeepSize
+          ? 1
+          : modelUpscale(crop, target)
+        : upscale(crop, out)
+      : 1
 
   /** Move or zoom the image under the frame. */
   const moveView = (change: (v: View) => View) => {
@@ -455,6 +471,12 @@ export function CropEditor({
         {out && natural && (
           <p className={scale > UPSCALE_WARN ? 'readout warn' : 'readout'} aria-live="polite">
             {size(out.w, out.h)} from {size(natural.w, natural.h)}
+            {square && Math.abs(out.w / out.h - 1) > 0.01 && (
+              <>
+                <br />
+                The model sees the middle square.
+              </>
+            )}
             {scale > UPSCALE_WARN && (
               <>
                 <br />

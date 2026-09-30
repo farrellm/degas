@@ -28,6 +28,8 @@ def saved_config(job: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
         "inputs": spec.get("inputs") or {},
         "control": spec.get("control") or [],
     }
+    if spec.get("image_prompts"):
+        config["image_prompts"] = spec["image_prompts"]
     if job.get("runtime"):
         config["runtime"] = job["runtime"]
     if result.get("segments"):
@@ -36,8 +38,8 @@ def saved_config(job: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
 
 
 def input_blobs(spec: dict[str, Any]) -> list[str]:
-    """Blob shas a spec uses as inputs: source, mask, references, control images and their
-    originals."""
+    """Blob shas a spec uses as inputs: source, mask, references, control images, image prompts
+    and their originals."""
     shas: list[str] = []
 
     def add(value: Any) -> None:
@@ -58,6 +60,9 @@ def input_blobs(spec: dict[str, Any]) -> list[str]:
         for key in ("image", "mask"):
             add(unit.get(key))
         add((unit.get("preprocessor") or {}).get("source"))
+    for unit in spec.get("image_prompts") or []:
+        for value in [*unit.get("images", []), unit.get("mask")]:
+            add(value)
     return shas
 
 

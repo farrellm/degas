@@ -49,6 +49,7 @@ class Wan22:
     media: Literal["image", "video"] = "video"
     lora_format: Literal["single", "paired_hi_lo"] = "paired_hi_lo"
     supports_control = False
+    supports_image_prompts = False
     variants: tuple[Variant, ...] = (
         Variant(
             id="ti2v-5b",

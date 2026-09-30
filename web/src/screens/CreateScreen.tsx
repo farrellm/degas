@@ -19,6 +19,9 @@ import { CivitaiImport } from '../components/CivitaiImport'
 import { ControlEditor } from '../components/ControlEditor'
 import { ControlList } from '../components/ControlList'
 import { newUnit, unitReady, unitSpec, type ControlUnit } from '../control'
+import { PromptEditor } from '../components/PromptEditor'
+import { PromptList } from '../components/PromptList'
+import { modelFor, newPrompt, promptReady, promptSpec, type PromptUnit } from '../imagePrompt'
 import { CropEditor } from '../components/CropEditor'
 import { ImagePicker } from '../components/ImagePicker'
 import { LoraList } from '../components/LoraList'
@@ -99,6 +102,8 @@ function CreateForm({
   const [control, setControl] = useState<ControlUnit[]>(draft.control ?? [])
   const [refs, setRefs] = useState<Source[]>(draft.refs ?? [])
   const [editingUnit, setEditingUnit] = useState<string | null>(null)
+  const [prompts, setPrompts] = useState<PromptUnit[]>(draft.prompts ?? [])
+  const [editingPrompt, setEditingPrompt] = useState<string | null>(null)
   const [batchCount, setBatchCount] = useState(draft.batchCount)
   const [seedMode, setSeedMode] = useState<SeedMode>(draft.seedMode)
   const [queued, setQueued] = useState<number | null>(null)
@@ -168,6 +173,8 @@ function CreateForm({
   const choices = loraChoices(loraIndex, variant)
   const controlnets = assets.data?.filter((a) => a.family === family?.id && a.kind === 'controlnet')
   const withControl = !!family?.supports_control
+  const adapters = assets.data?.filter((a) => a.family === family?.id && a.kind === 'ip_adapter')
+  const withPrompts = !!family?.supports_image_prompts
 
   // The form always fits the current variant's schema: defaults, then what was typed.
   const params = schema.data ? initialParams(schema.data, editedParams ?? draft.params) : null
@@ -188,6 +195,7 @@ function CreateForm({
         place: chosenPlace,
         control,
         refs,
+        prompts,
       },
       batchCount,
       seedMode,
@@ -205,6 +213,7 @@ function CreateForm({
     chosenPlace,
     control,
     refs,
+    prompts,
     batchCount,
     seedMode,
   ])
@@ -253,6 +262,7 @@ function CreateForm({
               },
             }),
           ...(withControl && control.length > 0 && { control: control.map(unitSpec) }),
+          ...(withPrompts && prompts.length > 0 && { image_prompts: prompts.map(promptSpec) }),
         },
         batchCount,
         randomSeeds ? 'random' : 'increment',
@@ -583,6 +593,19 @@ function CreateForm({
           }}
         />
       )}
+      {withPrompts && (
+        <PromptList
+          units={prompts}
+          index={adapters}
+          steps={Number(params.steps ?? 30)}
+          onOpen={setEditingPrompt}
+          onAdd={() => {
+            const unit = { ...newPrompt(), model: modelFor(adapters ?? [], 'all')?.path ?? '' }
+            setPrompts([...prompts, unit])
+            setEditingPrompt(unit.key)
+          }}
+        />
+      )}
     </>
   )
 
@@ -837,6 +860,31 @@ function CreateForm({
           }}
         />
       )}
+      {editingPrompt && variant && (
+        <ImagePromptEditor
+          unit={prompts.find((u) => u.key === editingPrompt)}
+          adapters={adapters ?? []}
+          familyId={familyId}
+          canvasOver={needsSource && source && !sourceGone && !misfit ? source : null}
+          target={target}
+          steps={Number(params.steps ?? 30)}
+          constraints={variant.size_constraints}
+          onChange={(update) => {
+            setPrompts((units) => units.map((u) => (u.key === editingPrompt ? update(u) : u)))
+          }}
+          onRemove={() => {
+            setPrompts((units) => units.filter((u) => u.key !== editingPrompt))
+            setEditingPrompt(null)
+          }}
+          onClose={() => {
+            // A unit left without a picture isn't worth keeping.
+            setPrompts((units) =>
+              units.filter((u) => u.key !== editingPrompt || u.pictures.length > 0),
+            )
+            setEditingPrompt(null)
+          }}
+        />
+      )}
       {cropping && variant && (
         <CropEditor
           sha={cropping.sha}
@@ -921,7 +969,8 @@ function CreateForm({
                 !hasPrompt ||
                 (needsSource && (!source || sourceGone)) ||
                 (mode === 'inpaint' && !maskFits) ||
-                (withControl && !control.every(unitReady))
+                (withControl && !control.every(unitReady)) ||
+                (withPrompts && !prompts.every(promptReady))
               }
             >
               {submit.isPending
@@ -943,6 +992,14 @@ function UnitEditor({
   ...props
 }: Omit<Parameters<typeof ControlEditor>[0], 'unit'> & { unit: ControlUnit | undefined }) {
   return unit ? <ControlEditor unit={unit} {...props} /> : null
+}
+
+/** The image prompt editor for a unit that's still in the list. */
+function ImagePromptEditor({
+  unit,
+  ...props
+}: Omit<Parameters<typeof PromptEditor>[0], 'unit'> & { unit: PromptUnit | undefined }) {
+  return unit ? <PromptEditor unit={unit} {...props} /> : null
 }
 
 /** A LoRA's files, without weights, to tell whether it's already in the list. */

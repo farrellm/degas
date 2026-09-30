@@ -1395,6 +1395,91 @@ describe('App', () => {
     ])
   })
 
+  it('takes the style of a cropped picture as an image prompt', async () => {
+    const transforms: unknown[] = []
+    const submitted: { spec: { image_prompts?: unknown } }[] = []
+    const adapter = (name: string, purpose?: string) => ({
+      path: `ip_adapters/sdxl/${name}`,
+      family: 'sdxl',
+      kind: 'ip_adapter',
+      size: 8.5e8,
+      sidecar: purpose ? { purpose } : null,
+      preview_thumb: null,
+    })
+    mockApi({
+      'GET /api/families': () => [{ ...FAMILIES[0], supports_image_prompts: true }],
+      'GET /api/assets': () => [
+        ...ASSETS,
+        adapter('ip-adapter_sdxl_vit-h.safetensors'),
+        adapter('ip-adapter-plus_sdxl_vit-h.safetensors'),
+        adapter('portrait.safetensors', 'face'),
+      ],
+      'GET /api/results': () => ({ results: [RESULT], cursor: null }),
+      'GET /api/blobs/abc/transform': () => ({ original: 'abc', ops: [] }),
+      'POST /api/blobs/abc/transform': (init) => {
+        transforms.push(JSON.parse(init?.body as string))
+        return { sha256: 'sq', media_type: 'image/png', width: 832, height: 832 }
+      },
+      'POST /api/jobs': (init) => {
+        submitted.push(JSON.parse(init?.body as string) as (typeof submitted)[number])
+        return { id: 'j4' }
+      },
+    })
+    const user = userEvent.setup()
+    renderApp()
+    await user.type(await screen.findByLabelText('Prompt'), 'a lighthouse at dusk')
+    await user.click(await screen.findByRole('button', { name: 'Add image prompt' }))
+    const sheet = await screen.findByRole('dialog', { name: 'Image prompt' })
+    // A new unit starts with the plus model, which reads the picture's detail.
+    expect(within(sheet).getByRole('button', { name: /Model ip-adapter-plus/ })).toBeInTheDocument()
+    await user.click(within(sheet).getByRole('button', { name: 'Choose a picture' }))
+
+    // The picture is cropped square, as the model sees it.
+    const picker = screen.getByRole('dialog', { name: 'Choose image' })
+    await user.click(await within(picker).findByRole('button', { name: 'Image: a lighthouse' }))
+    await user.click(within(picker).getByRole('button', { name: 'Crop' }))
+    const editor = await screen.findByRole('dialog', { name: 'Crop' })
+    const img = editor.querySelector('img')
+    if (!img) throw new Error('no image in the editor')
+    Object.defineProperty(img, 'naturalWidth', { value: 832 })
+    Object.defineProperty(img, 'naturalHeight', { value: 1216 })
+    fireEvent.load(img)
+    expect(within(editor).getByRole('button', { name: '1:1' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    expect(await within(editor).findByText(/832 × 832 from 832 × 1216/)).toBeInTheDocument()
+    expect(within(editor).queryByText(/The model sees the middle square/)).not.toBeInTheDocument()
+    await user.click(within(editor).getByRole('button', { name: 'Apply' }))
+    expect(transforms).toEqual([{ ops: [{ op: 'crop', x: 0, y: 192, w: 832, h: 832 }] }])
+
+    const unit = await screen.findByRole('dialog', { name: 'Image prompt' })
+    expect(within(unit).getByRole('img', { name: 'Picture 1' })).toBeInTheDocument()
+    // Face picks a face model; Style goes back to the plus model at full weight.
+    await user.click(within(unit).getByRole('button', { name: 'Face' }))
+    expect(within(unit).getByRole('button', { name: /Model portrait/ })).toBeInTheDocument()
+    await user.click(within(unit).getByRole('button', { name: 'Style' }))
+    expect(within(unit).getByRole('button', { name: /Model ip-adapter-plus/ })).toBeInTheDocument()
+    expect(within(unit).getByText(/the prompt decides what’s in the picture/)).toBeInTheDocument()
+    fireEvent.change(within(unit).getByLabelText('Last step'), { target: { value: '24' } })
+    await user.click(within(unit).getByRole('button', { name: 'Done' }))
+
+    expect(screen.getByText('Style, weight 1.00, steps 1–24')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Generate' }))
+    expect(await screen.findByText('Queued 1 image.')).toBeInTheDocument()
+    expect(submitted[0]?.spec.image_prompts).toEqual([
+      {
+        adapter: { path: 'ip_adapters/sdxl/ip-adapter-plus_sdxl_vit-h.safetensors' },
+        images: ['sha256:sq'],
+        fit: 'crop',
+        purpose: 'style',
+        weight: 1,
+        start: 0,
+        end: 0.8,
+      },
+    ])
+  })
+
   it('plays a clip and extends it from its last frame', async () => {
     const submitted: { spec: { inputs?: unknown } }[] = []
     mockApi({

@@ -8,6 +8,10 @@ With ControlNet units, the ControlNet version of the mode's pipeline is made the
 
 Regional ControlNet: a unit with an area mask has its ControlNet's residuals multiplied by
 the mask, downsampled to each residual's size, so it only guides that area.
+
+Image prompts (IP-Adapter): one adapter per unit, loaded into the shared UNet with the CLIP
+image encoder they read pictures with, and unloaded when a job has none. Each unit's scale
+names the blocks its purpose uses and is set again between steps for its step range.
 """
 
 import contextlib
@@ -36,9 +40,12 @@ from diffusers import (
     StableDiffusionXLPipeline,
     UniPCMultistepScheduler,
 )
+from diffusers.image_processor import IPAdapterMaskProcessor
 from PIL import Image
+from transformers import CLIPImageProcessor, CLIPVisionModelWithProjection
 
 from degas_worker import masks
+from degas_worker.families import ip_adapter
 from degas_worker.families.base import Output, RunContext
 from degas_worker.families.control import control_kwargs, crop_areas
 from degas_worker.families.lora import plan_loras, strip_text_model
@@ -82,34 +89,15 @@ class SdxlRunner:
         self.derived: dict[str, Any] = {}  # mode → pipeline made from `pipe` with from_pipe
         self.adapters: dict[str, str] = {}  # LoRA asset path → loaded adapter name
         self.controlnets: dict[str, Any] = {}  # ControlNet asset path → loaded model
+        self.ip_adapters: tuple[str, ...] = ()  # IP-Adapter asset paths, one per unit
+        self.encoder_path: Path | None = None  # their image encoder
         self._scheduler_config: Any = None
 
     def run(self, spec: dict[str, Any], seeds: list[int], ctx: RunContext) -> Iterator[Output]:
         mode = spec.get("mode", "t2i")
         if mode not in ("t2i", "i2i", "inpaint", "outpaint"):
             raise ValueError(f"SDXL can't do {mode!r}")
-        model = spec["model"]
-        path = ctx.fetch_asset(model["path"], model.get("size"))
-        config = ctx.fetch_asset(spec["config"]["path"], spec["config"].get("size"))
-        vae = spec.get("vae")
-        vae_path = ctx.fetch_asset(vae["path"], vae.get("size")) if vae else None
-        loras = [
-            (lora["path"], ctx.fetch_asset(lora["path"], lora.get("size")), float(lora["weight"]))
-            for lora in spec.get("loras") or []
-        ]
-        units = spec.get("control") or []
-        nets = [
-            (net["path"], ctx.fetch_asset(net["path"], net.get("size")))
-            for net in (u["controlnet"] for u in units)
-        ]
-        ctx.check_cancelled()
-        ctx.progress(0, "load", 0, 1)
-        self._load(path, config, vae_path, inpaint=spec.get("variant") == "inpaint")
-        self._apply_loras(loras)
-        self._load_controlnets(nets)
-        pipe = self._pipe_for(mode, [p for p, _ in nets])
-        ctx.progress(0, "load", 1, 1)
-
+        pipe = self._load_for(mode, spec, ctx)
         params = spec["params"]
         self._set_scheduler(
             pipe, params.get("scheduler", "dpmpp_2m"), params.get("schedule", "karras")
@@ -117,18 +105,8 @@ class SdxlRunner:
         steps = int(params["steps"])
         size = (int(params["width"]), int(params["height"]))
         kwargs, original, keep = self._inputs(mode, spec, size, ctx)
-        areas: list[Image.Image | None] = []
-        if units:
-            images, areas = self._control_inputs(units, ctx)
-            if "padding_mask_crop" in kwargs:
-                box = pipe.mask_processor.get_crop_region(
-                    kwargs["mask_image"], *size, pad=kwargs["padding_mask_crop"]
-                )
-                areas = crop_areas(areas, box, size)
-            kwargs.update(control_kwargs(units, images, mode))
-        regional = [
-            (self.controlnets[p], area) for (p, _), area in zip(nets, areas, strict=False) if area
-        ]
+        regional = self._guidance(pipe, mode, spec, kwargs, size, ctx)
+        prompts = spec.get("image_prompts") or []
         # Starting from an image skips the first (1 - strength) of the schedule.
         strength = float(kwargs.get("strength", 1.0))
         runs = max(1, min(steps, int(steps * strength)))
@@ -137,12 +115,18 @@ class SdxlRunner:
             ctx.check_cancelled()
             ctx.progress(item, "denoise", 0, runs)
 
+            if prompts:
+                pipe.set_ip_adapter_scale(ip_adapter.scales(prompts, 0, runs))
+
             def on_step(
                 _pipe: Any, i: int, _t: Any, kw: dict[str, Any], item: int = item
             ) -> dict[str, Any]:
                 ctx.check_cancelled()
                 done = min(i + 1, runs)
                 ctx.progress(item, "denoise" if done < runs else "decode", done, runs)
+                # Image prompts that start or end at the next step.
+                if prompts and (scales := ip_adapter.changed(prompts, done, runs)) is not None:
+                    _pipe.set_ip_adapter_scale(scales)
                 return kw
 
             with limit_to_areas(regional):
@@ -165,6 +149,77 @@ class SdxlRunner:
             yield Output(
                 item=item, seed=seed, data=buf.getvalue(), media_type="image/png", ext="png"
             )
+
+    def _load_for(self, mode: str, spec: dict[str, Any], ctx: RunContext) -> Any:
+        """Copy what the spec needs into the cache, load it, and return the mode's pipeline."""
+        model = spec["model"]
+        path = ctx.fetch_asset(model["path"], model.get("size"))
+        config = ctx.fetch_asset(spec["config"]["path"], spec["config"].get("size"))
+        vae = spec.get("vae")
+        vae_path = ctx.fetch_asset(vae["path"], vae.get("size")) if vae else None
+        loras = [
+            (lora["path"], ctx.fetch_asset(lora["path"], lora.get("size")), float(lora["weight"]))
+            for lora in spec.get("loras") or []
+        ]
+        nets = [
+            (net["path"], ctx.fetch_asset(net["path"], net.get("size")))
+            for net in (u["controlnet"] for u in spec.get("control") or [])
+        ]
+        prompts = spec.get("image_prompts") or []
+        adapters = [
+            (a["path"], ctx.fetch_asset(a["path"], a.get("size")))
+            for a in (u["adapter"] for u in prompts)
+        ]
+        encoder = spec.get("image_encoder") if prompts else None
+        encoder_path = ctx.fetch_asset(encoder["path"], encoder.get("size")) if encoder else None
+        ctx.check_cancelled()
+        ctx.progress(0, "load", 0, 1)
+        self._load(path, config, vae_path, inpaint=spec.get("variant") == "inpaint")
+        self._apply_loras(loras)
+        self._load_image_prompts(adapters, encoder_path)
+        self._load_controlnets(nets)
+        pipe = self._pipe_for(mode, [p for p, _ in nets])
+        ctx.progress(0, "load", 1, 1)
+        return pipe
+
+    def _guidance(
+        self,
+        pipe: Any,
+        mode: str,
+        spec: dict[str, Any],
+        kwargs: dict[str, Any],
+        size: tuple[int, int],
+        ctx: RunContext,
+    ) -> list[tuple[Any, Image.Image]]:
+        """Add the ControlNet units' and image prompts' arguments to `kwargs`; returns the
+        ControlNets limited to areas, for `limit_to_areas`."""
+        # *Around the mask* redraws a crop, so areas get the same crop.
+        box = (
+            pipe.mask_processor.get_crop_region(
+                kwargs["mask_image"], *size, pad=kwargs["padding_mask_crop"]
+            )
+            if "padding_mask_crop" in kwargs
+            else None
+        )
+        units = spec.get("control") or []
+        areas: list[Image.Image | None] = []
+        if units:
+            images, areas = self._control_inputs(units, ctx)
+            if box:
+                areas = crop_areas(areas, box, size)
+            kwargs.update(control_kwargs(units, images, mode))
+        prompts = spec.get("image_prompts") or []
+        if prompts:
+            cfg = float(spec["params"]["cfg"]) > 1  # diffusers only guides above 1
+            kwargs["ip_adapter_image_embeds"] = self._image_prompt_embeds(pipe, prompts, ctx, cfg)
+            ip_masks = self._image_prompt_areas(prompts, ctx, size, box)
+            if ip_masks:
+                kwargs["cross_attention_kwargs"] = {"ip_adapter_masks": ip_masks}
+        return [
+            (self.controlnets[u["controlnet"]["path"]], area)
+            for u, area in zip(units, areas, strict=False)
+            if area
+        ]
 
     def _inputs(
         self, mode: str, spec: dict[str, Any], size: tuple[int, int], ctx: RunContext
@@ -221,6 +276,108 @@ class SdxlRunner:
             else:
                 areas.append(None)
         return images, areas
+
+    @staticmethod
+    def _image_prompt_embeds(
+        pipe: Any, prompts: list[dict[str, Any]], ctx: RunContext, cfg: bool
+    ) -> list[Any]:
+        """Each unit's pictures encoded once for the whole batch (diffusers would encode them
+        again for every image)."""
+        pictures: list[list[Image.Image]] = []
+        for unit in prompts:
+            unit_pictures = []
+            for ref in unit["images"]:
+                with Image.open(ctx.blob(ref)) as im:
+                    unit_pictures.append(im.convert("RGB"))
+            pictures.append(unit_pictures)
+        with torch.no_grad():
+            return list(
+                pipe.prepare_ip_adapter_image_embeds(pictures, None, pipe._execution_device, 1, cfg)
+            )
+
+    @staticmethod
+    def _image_prompt_areas(
+        prompts: list[dict[str, Any]],
+        ctx: RunContext,
+        size: tuple[int, int],
+        box: tuple[int, int, int, int] | None,
+    ) -> list[Any] | None:
+        """Each unit's area as diffusers takes it (one mask per picture), None for a unit
+        without one; None when no unit has an area."""
+        areas: list[Image.Image | None] = []
+        for unit in prompts:
+            if unit.get("mask"):
+                with Image.open(ctx.blob(unit["mask"])) as im:
+                    areas.append(im.convert("L"))
+            else:
+                areas.append(None)
+        if not any(areas):
+            return None
+        if box:
+            areas = crop_areas(areas, box, size)
+        processor = IPAdapterMaskProcessor()
+        out: list[Any] = []
+        for unit, area in zip(prompts, areas, strict=True):
+            if area is None:
+                out.append(None)
+                continue
+            mask = processor.preprocess([area], height=size[1], width=size[0])
+            out.append(mask.reshape(1, 1, *mask.shape[-2:]).repeat(1, len(unit["images"]), 1, 1))
+        return out
+
+    def _load_image_prompts(self, adapters: list[tuple[str, Path]], encoder: Path | None) -> None:
+        """Load these IP-Adapters (one per unit) and their image encoder, or unload them all.
+
+        The UNet refuses to run with IP-Adapter layers and no pictures, so a job without image
+        prompts unloads them. Pipelines made with `from_pipe` copied the old encoder (or none),
+        so they are made again.
+        """
+        wanted = tuple(path for path, _ in adapters)
+        if wanted == self.ip_adapters and encoder == self.encoder_path:
+            return
+        if self.ip_adapters:
+            self.pipe.unload_ip_adapter()
+            self.ip_adapters = ()
+            self.encoder_path = None
+            gc.collect()
+            torch.cuda.empty_cache()
+        self.derived = {}
+        if not wanted:
+            if self.offload:
+                # Drop the old encoder's offload hook along with it.
+                self.pipe.enable_model_cpu_offload()
+            return
+        if encoder is None:
+            raise ValueError("Image prompts need their image encoder")
+        try:
+            image_encoder = CLIPVisionModelWithProjection.from_pretrained(
+                str(encoder), dtype=torch.float16, local_files_only=True
+            )
+        except Exception as e:
+            raise ValueError(f"Could not load the image encoder {encoder.name}: {e}") from e
+        if not self.offload:
+            image_encoder.to("cuda")
+        self.pipe.register_modules(
+            image_encoder=image_encoder, feature_extractor=CLIPImageProcessor()
+        )
+        files = [local for _, local in adapters]
+        try:
+            self.pipe.load_ip_adapter(
+                [str(f.parent) for f in files],
+                subfolder=[""] * len(files),
+                weight_name=[f.name for f in files],
+                image_encoder_folder=None,
+                local_files_only=True,
+            )
+        except Exception as e:
+            with contextlib.suppress(Exception):
+                self.pipe.unload_ip_adapter()
+            raise ValueError(f"Could not load image prompt model {', '.join(wanted)}: {e}") from e
+        if self.offload:
+            # Offload hooks are set per component; the encoder needs its own.
+            self.pipe.enable_model_cpu_offload()
+        self.ip_adapters = wanted
+        self.encoder_path = encoder
 
     def _load_controlnets(self, nets: list[tuple[str, Path]]) -> None:
         """Keep the requested ControlNets resident and drop the rest."""
@@ -369,6 +526,8 @@ class SdxlRunner:
         self.derived = {}
         self.adapters = {}
         self.controlnets = {}
+        self.ip_adapters = ()
+        self.encoder_path = None
         gc.collect()
         torch.cuda.empty_cache()
 

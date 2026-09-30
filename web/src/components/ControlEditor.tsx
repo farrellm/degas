@@ -580,16 +580,19 @@ const round = (x: number) => Math.round(x * 1000) / 1000
  * The steps a unit guides, as two thumbs on one track counted in the form's steps. Early
  * steps set the layout, so ending early leaves the details free.
  */
-function StepRange({
+export function StepRange({
   steps,
   a,
   b,
   onChange,
+  note = 'Early steps set the layout; ending early leaves the details free.',
 }: {
   steps: number
   a: number
   b: number
   onChange: (a: number, b: number) => void
+  /** What the range is for, under the track. */
+  note?: string
 }) {
   const n = Math.max(1, steps)
   const pct = (x: number) => `${String((x / n) * 100)}%`
@@ -631,9 +634,7 @@ function StepRange({
             }}
           />
         </div>
-        <p className="row-note">
-          Early steps set the layout; ending early leaves the details free.
-        </p>
+        <p className="row-note">{note}</p>
       </div>
     </div>
   )

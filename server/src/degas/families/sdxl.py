@@ -10,6 +10,7 @@ from degas.families.base import (
     find_variant,
     snap_size,
     validate_control,
+    validate_image_prompts,
     validate_inputs,
     validate_model,
     validate_params,
@@ -34,6 +35,14 @@ SCHEDULED = frozenset({"dpmpp_2m", "dpmpp_2m_sde", "dpmpp_3m_sde", "euler", "uni
 
 MAX_LORAS = 8
 MAX_CONTROL = 3
+MAX_IMAGE_PROMPTS = 2
+
+# The CLIP image encoders IP-Adapters read their pictures with (transformers folders). Every
+# useful SDXL adapter uses ViT-H; only h94's first one, `ip-adapter_sdxl`, uses ViT-bigG.
+ENCODERS = {
+    "vit-h": "image_encoders/sdxl/clip-vit-h-14",
+    "vit-bigg": "image_encoders/sdxl/clip-vit-bigg-14",
+}
 
 # Inpainting checkpoints (9-channel UNets) live apart from the rest, so they don't show up
 # where a text-to-image model is expected.
@@ -76,6 +85,7 @@ class Sdxl:
     media: Literal["image", "video"] = "image"
     lora_format: Literal["single", "paired_hi_lo"] = "single"
     supports_control = True
+    supports_image_prompts = True
     variants: tuple[Variant, ...] = (
         Variant(id="base", label="SDXL", min_gpu="T4", modes=("t2i", "i2i", "inpaint", "outpaint")),
         Variant(
@@ -216,12 +226,33 @@ class Sdxl:
             "inputs": inputs,
             "control": validate_control(spec.get("control"), self.id, MAX_CONTROL),
         }
+        prompts = validate_image_prompts(spec.get("image_prompts"), self.id, MAX_IMAGE_PROMPTS)
+        if prompts:
+            out["image_prompts"] = prompts
+            out["image_encoder"] = {"path": image_encoder(prompts), "size": None}
         if not params["vae_fp32"]:
             out["vae"] = {"path": FP16_VAE, "size": None}
         return out
 
     def _check(self, variant: str, mode: str) -> None:
         find_variant(self, variant, mode)
+
+
+def encoder_of(adapter: str) -> str:
+    """The image encoder an IP-Adapter file was trained with, from its name."""
+    stem = adapter.rsplit("/", 1)[-1].rsplit(".", 1)[0].lower()
+    return "vit-bigg" if stem == "ip-adapter_sdxl" or "bigg" in stem else "vit-h"
+
+
+def image_encoder(prompts: list[dict[str, Any]]) -> str:
+    """The one image encoder a job's image prompts share (the pipeline holds one)."""
+    kinds = {encoder_of(unit["adapter"]["path"]) for unit in prompts}
+    if len(kinds) > 1:
+        raise SpecError(
+            "These image prompt models read pictures with different encoders (ViT-H and "
+            "ViT-bigG), so they can't be used together"
+        )
+    return ENCODERS[kinds.pop()]
 
 
 def upgrade_params(params: dict[str, Any]) -> dict[str, Any]:

@@ -115,12 +115,22 @@ class FakeSdxl:
                 with Image.open(ctx.blob(unit["mask"])) as im:
                     staged.setdefault("areas", []).append(im.size)
             staged.setdefault("control", []).append(size)
+        for unit in spec.get("image_prompts") or []:
+            pictures = []
+            for ref in unit["images"]:
+                with Image.open(ctx.blob(ref)) as im:
+                    pictures.append(im.size)
+            staged.setdefault("prompts", []).append(pictures)
+            if unit.get("mask"):
+                with Image.open(ctx.blob(unit["mask"])) as im:
+                    staged.setdefault("prompt_areas", []).append(im.size)
         if staged:
             self.inputs.append(staged)
         if self.fetch:
             nets = [u["controlnet"] for u in spec.get("control") or []]
-            vae = [spec["vae"]] if spec.get("vae") else []
-            for asset in [spec["model"], spec["config"], *vae, *spec.get("loras", []), *nets]:
+            nets += [u["adapter"] for u in spec.get("image_prompts") or []]
+            extra = [spec[k] for k in ("vae", "image_encoder") if spec.get(k)]
+            for asset in [spec["model"], spec["config"], *extra, *spec.get("loras", []), *nets]:
                 ctx.fetch_asset(asset["path"], asset.get("size"))
             ctx.progress(0, "load", 1, 1)
         for item, seed in enumerate(seeds):
@@ -387,6 +397,20 @@ CONTROLNET = {
     "size": 25,
     "sidecar": {"label": "Depth XL", "control": "depth"},
 }
+IP_ADAPTER = {
+    "path": "ip_adapters/sdxl/ip-adapter-plus_sdxl_vit-h.safetensors",
+    "family": "sdxl",
+    "kind": "ip_adapter",
+    "drive_file_id": "ip1",
+    "size": 26,
+}
+IMAGE_ENCODER = {
+    "path": "image_encoders/sdxl/clip-vit-h-14",
+    "family": "sdxl",
+    "kind": "image_encoder",
+    "drive_file_id": "ie1",
+    "size": 27,
+}
 INPAINT_MODEL = {
     "path": "models/sdxl/inpaint/sdxl-inpaint.safetensors",
     "family": "sdxl",
@@ -460,6 +484,8 @@ def client(harness: Harness) -> Iterator[TestClient]:
                 SAM,
                 DEPTH,
                 CONTROLNET,
+                IP_ADAPTER,
+                IMAGE_ENCODER,
             ]
         )
         yield c
