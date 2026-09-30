@@ -122,6 +122,13 @@ function update(family: string, change: (fd: Partial<FamilyDraft>) => Partial<Fa
 /** What Create takes with it to another family. */
 export interface Carry {
   prompt: string
+  /** The negative prompt, carried with the prompt when `keep` is set. */
+  negative?: string
+  /**
+   * Replace the other family's prompt and images rather than filling them only when empty:
+   * changing the model keeps what's been typed and chosen.
+   */
+  keep?: boolean
   model?: string
   mode?: string
   /** Kept only if the other family's draft has no source (or references) of its own. */
@@ -130,8 +137,8 @@ export interface Carry {
 }
 
 /**
- * Switch Create to another family, carrying the prompt (and source) over if that family has
- * none yet, and choosing `model` and `mode` if given.
+ * Switch Create to another family, carrying the prompt and images over if that family has
+ * none yet (always, with `keep`), and choosing `model` and `mode` if given.
  */
 export function switchFamily(family: string, carry: Carry) {
   update(family, (fd) => {
@@ -140,10 +147,22 @@ export function switchFamily(family: string, carry: Carry) {
       ...(carry.model && { model: carry.model }),
       ...(carry.mode && { mode: carry.mode }),
     }
-    if (carry.source && !next.source) {
-      Object.assign(next, { source: carry.source, extends: null, mask: null, place: null })
+    const source = carry.keep ? (carry.source ?? null) : (next.source ?? carry.source)
+    // What was drawn over another source doesn't belong to this one.
+    if (source?.sha !== next.source?.sha) {
+      Object.assign(next, { source, extends: null, mask: null, place: null })
     }
-    if (carry.refs?.length && !next.refs?.length) next.refs = carry.refs
+    if (carry.keep ? carry.refs : carry.refs?.length && !next.refs?.length) next.refs = carry.refs
+    if (carry.keep) {
+      return {
+        ...next,
+        params: {
+          ...next.params,
+          prompt: carry.prompt,
+          ...(carry.negative !== undefined && { negative_prompt: carry.negative }),
+        },
+      }
+    }
     return String(next.params?.prompt ?? '').trim() || !carry.prompt
       ? next
       : { ...next, params: { ...next.params, prompt: carry.prompt } }
