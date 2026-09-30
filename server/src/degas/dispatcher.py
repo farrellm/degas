@@ -67,7 +67,9 @@ class Dispatcher:
             self.bus.publish({"type": "job", "job": self.describe(job)})
 
     def describe(self, job: dict[str, Any]) -> dict[str, Any]:
-        return {**job, "progress": self.progress.get(job["id"])}
+        # The log (a failed job's worker traceback) is for debugging, not for the phone.
+        fields = {k: v for k, v in job.items() if k != "log"}
+        return {**fields, "progress": self.progress.get(job["id"])}
 
     # -- queue -----------------------------------------------------------------------------
 
@@ -251,7 +253,7 @@ class Dispatcher:
             if terminal is not None:
                 await self._collect(worker, job_id)
                 if terminal["t"] == "error":
-                    return "error", str(terminal.get("message") or "Job failed")
+                    return "error", self._failed(job_id, terminal)
                 return str(terminal["t"]), None
 
             # The stream ended without a terminal event: reconcile via /state.
@@ -267,6 +269,13 @@ class Dispatcher:
                 continue  # finished meanwhile: replaying the events gives the outcome
             await asyncio.sleep(1)
         return "error", "Could not follow the job's progress"
+
+    def _failed(self, job_id: str, event: dict[str, Any]) -> str:
+        """Keep the worker's traceback in the job's log, and return the message to show."""
+        if trace := event.get("trace"):
+            log.warning("job %s failed on the worker:\n%s", job_id, trace)
+            self.db.update_job(job_id, log=trace)
+        return str(event.get("message") or "Job failed")
 
     # -- prefetch --------------------------------------------------------------------------
 

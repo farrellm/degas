@@ -135,6 +135,10 @@ def test_job_error_is_reported(client: TestClient, harness: Any) -> None:
     submitted = client.post("/api/jobs", json={"spec": SPEC}).json()
     done = wait_for(lambda: (j := job(client, submitted["id"]))["status"] == "error" and j)
     assert done["error"] == "CUDA out of memory"
+    assert "log" not in done
+    stored = client.app.state.services.db.get_job(submitted["id"])  # type: ignore[attr-defined]
+    assert stored["log"].startswith("Traceback")
+    assert "RuntimeError: CUDA out of memory" in stored["log"]
     wait_for(lambda: session_state(client) == "ready")
 
 
