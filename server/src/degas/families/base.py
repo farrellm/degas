@@ -210,6 +210,8 @@ def spec_assets(spec: dict[str, Any]) -> list[dict[str, Any]]:
             )
     if spec.get("image_encoder"):
         assets.append({**spec["image_encoder"], "kind": "image_encoder"})
+    if spec.get("face_detector"):
+        assets.append({**spec["face_detector"], "kind": "preprocessor"})
     return assets
 
 
@@ -295,6 +297,10 @@ def _control_unit(n: int, unit: dict[str, Any]) -> dict[str, Any]:
 IP_PURPOSES = ("all", "style", "layout", "style_layout")
 IP_WEIGHT: JsonSchema = {"type": "number", "minimum": 0, "maximum": 2}
 MAX_PROMPT_IMAGES = 4
+# FaceID: how much of CLIP's reading of the face Plus v2 adds (its `shortcut_scale`), and the
+# weight of the LoRA the model carries.
+FACE_STRUCTURE: JsonSchema = {"type": "number", "minimum": 0, "maximum": 2}
+FACE_LORA: JsonSchema = {"type": "number", "minimum": 0, "maximum": 1.5}
 
 
 def validate_image_prompts(prompts: Any, family: str, limit: int) -> list[dict[str, Any]]:
@@ -342,6 +348,9 @@ def _image_prompt(n: int, unit: Any, folder: str) -> dict[str, Any]:
         raise SpecError(f"Image prompt {n}: its steps must start before they end")
     if unit.get("mask") is not None:
         entry["mask"] = _sha(unit["mask"], f"Image prompt {n} area")
+    for key, schema in (("structure", FACE_STRUCTURE), ("lora_weight", FACE_LORA)):
+        if unit.get(key) is not None:
+            entry[key] = _coerce(key, schema, unit[key])
     return entry
 
 

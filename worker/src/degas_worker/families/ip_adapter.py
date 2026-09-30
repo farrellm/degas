@@ -57,3 +57,36 @@ def changed(units: list[dict[str, Any]], step: int, steps: int) -> list[Scale] |
         return None
     after = scales(units, step, steps)
     return after if after != scales(units, step - 1, steps) else None
+
+
+# -- FaceID ----------------------------------------------------------------------------------
+
+# The weight of the LoRA a FaceID model carries, when a unit doesn't say.
+FACEID_LORA = 0.6
+
+
+def _stem(path: str) -> str:
+    return path.rsplit("/", 1)[-1].rsplit(".", 1)[0].lower()
+
+
+def is_faceid(path: str) -> bool:
+    """Whether an adapter reads InsightFace identities rather than CLIP pictures."""
+    return "faceid" in _stem(path)
+
+
+def has_shortcut(path: str) -> bool:
+    """FaceID Plus v2 adds its CLIP structure to the identity (`shortcut`); v1 doesn't."""
+    return "v2" in _stem(path)
+
+
+def face_loras(units: list[dict[str, Any]]) -> list[tuple[str, float]]:
+    """The PEFT adapters diffusers loads from FaceID models' own LoRAs, with their weights.
+
+    `load_ip_adapter` names each `faceid_<i>`, where i is the model's place in the list it
+    loaded (one per unit here).
+    """
+    return [
+        (f"faceid_{i}", float(u.get("lora_weight", FACEID_LORA)))
+        for i, u in enumerate(units)
+        if is_faceid(u["adapter"]["path"])
+    ]

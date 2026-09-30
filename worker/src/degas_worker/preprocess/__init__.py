@@ -29,9 +29,16 @@ def _canny() -> Preprocessor:
     return Canny()
 
 
+def _face() -> Preprocessor:
+    from degas_worker.preprocess.face import FacePreprocessor  # noqa: PLC0415 - cv2, lazily
+
+    return FacePreprocessor()
+
+
 PREPROCESSORS: dict[str, Callable[[], Preprocessor]] = {
     "sam": _sam,
     "depth": _depth,
     "pose": _pose,
     "canny": _canny,
+    "face": _face,
 }

@@ -3044,6 +3044,24 @@ code {
   object-fit: cover;
 }
 
+/* A FaceID picture while the GPU looks for its face, and what it found. */
+.prompt-picture img.finding {
+  opacity: 0.55;
+}
+
+.prompt-picture-note {
+  color: var(--ink-muted);
+  font-size: var(--step--1);
+}
+
+.prompt-picture-note.warn {
+  color: var(--warn);
+}
+
+.prompt-editor .slider-note {
+  margin: -4px 0 8px;
+}
+
 .prompt-picture figcaption {
   justify-content: space-between;
 }

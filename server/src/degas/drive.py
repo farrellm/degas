@@ -51,7 +51,7 @@ PREVIEW_TYPES = {
 MAX_SIDECAR_BYTES = 64 * 1024
 # Part of a parsed sidecar's cache key: bump it when `parse_sidecar` keeps new fields, so the
 # next rescan parses every sidecar again instead of reusing the old result.
-SIDECAR_FORMAT = 3
+SIDECAR_FORMAT = 4
 MAX_PREVIEW_BYTES = 16 * 1024 * 1024
 
 # Stores a preview image's bytes (with its media type) and returns the blob's sha256.
@@ -494,6 +494,6 @@ def parse_sidecar(text: str) -> dict[str, Any]:
     if control in ("depth", "pose", "canny"):
         out["control"] = control
     purpose = data.get("purpose")  # IP-Adapters: what they were trained to carry
-    if purpose in ("subject", "face", "composition"):
+    if purpose in ("subject", "face", "faceid", "composition"):
         out["purpose"] = purpose
     return out

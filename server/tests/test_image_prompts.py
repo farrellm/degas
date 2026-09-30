@@ -8,8 +8,8 @@ from fastapi.testclient import TestClient
 from degas.families.base import SpecError, spec_assets
 from degas.families.sdxl import Sdxl
 
-from .conftest import CONFIGS, IMAGE_ENCODER, IP_ADAPTER, MODEL, VAE, Harness
-from .test_api import wait_for
+from .conftest import CONFIGS, FACEID, IMAGE_ENCODER, INSIGHTFACE, IP_ADAPTER, MODEL, VAE, Harness
+from .test_api import session_state, wait_for
 from .test_inpaint import mask_png, put_mask, read
 from .test_video import image, results, run, upload
 
@@ -209,3 +209,59 @@ def test_adapters_are_fetched_with_the_model(client: TestClient, harness: Harnes
         VAE["path"],
         CONFIGS[0]["path"],
     }
+
+
+# -- FaceID --------------------------------------------------------------------------------
+
+
+def faceid(**change: Any) -> dict[str, Any]:
+    return unit(adapter={"path": FACEID["path"]}, **change)
+
+
+def test_faceid_units_get_their_face_settings_and_the_detector() -> None:
+    spec = Sdxl().validate({**SPEC, "image_prompts": [unit(), faceid(lora_weight=2)]})
+    plain, face = spec["image_prompts"]
+    assert "structure" not in plain
+    assert "lora_weight" not in plain
+    assert (face["structure"], face["lora_weight"]) == (1.0, 1.5)  # clamped
+    assert spec["face_detector"] == {"path": INSIGHTFACE["path"], "size": None}
+    assert (INSIGHTFACE["path"], "preprocessor") in [
+        (a["path"], a["kind"]) for a in spec_assets(spec)
+    ]
+    # FaceID Plus v2 reads the face with CLIP ViT-H too.
+    assert spec["image_encoder"]["path"] == IMAGE_ENCODER["path"]
+    with pytest.raises(SpecError, match="reads a face"):
+        Sdxl().validate({**SPEC, "image_prompts": [faceid(purpose="style")]})
+    # Only FaceID units carry face settings.
+    spec = Sdxl().validate({**SPEC, "image_prompts": [unit(structure=0.5)]})
+    assert "structure" not in spec["image_prompts"][0]
+    assert "face_detector" not in spec
+
+
+def test_a_faceid_job_fetches_insightface(client: TestClient, harness: Harness) -> None:
+    picture = f"sha256:{upload(client, image(512, 512))['sha256']}"
+    done = run(client, {**SPEC, "image_prompts": [faceid(images=[picture])]})
+    assert done["spec"]["face_detector"]["size"] == INSIGHTFACE["size"]
+    svc = client.app.state.services  # type: ignore[attr-defined]
+    svc.db.replace_assets([MODEL, VAE, *CONFIGS, FACEID, IMAGE_ENCODER])
+    resp = client.post(
+        "/api/jobs", json={"spec": {**SPEC, "image_prompts": [faceid(images=[picture])]}}
+    )
+    assert resp.status_code == 400
+    assert "FaceID needs InsightFace" in resp.json()["detail"]
+
+
+def test_finding_a_face(client: TestClient, harness: Harness) -> None:
+    harness.worker_app.state.cache.set_token("tok", "2026-09-27T12:00:00Z", "degas")
+    client.post("/api/session", json={"gpu": "T4"})
+    wait_for(lambda: session_state(client) == "ready")
+    portrait = upload(client, image(600, 800))
+    body = client.post("/api/preprocess", json={"id": "face", "image": portrait["sha256"]})
+    assert body.status_code == 201, body.text
+    found = body.json()
+    assert found["faces"] == 1
+    assert (found["image"]["width"], found["image"]["height"]) == (224, 224)
+    tiny = upload(client, image(80, 80))
+    resp = client.post("/api/preprocess", json={"id": "face", "image": tiny["sha256"]})
+    assert resp.status_code == 422
+    assert resp.json()["detail"] == "No face found in this picture."

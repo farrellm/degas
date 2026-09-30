@@ -89,6 +89,7 @@ One name per action, used in buttons, confirmations and empty states:
 | Add an image prompt (SDXL) | Add (Image prompts row) | — |
 | Choose what an image prompt carries | Everything / Style / Layout / Style and layout / Face | The line under the chips says what the choice does |
 | Drop an image prompt | Remove this image prompt | — |
+| FaceID: find the face (automatic with a ready session) | — | The tile shows the face found; *The biggest of 3 faces*; *No face found in this picture.* |
 | Put a setting back to the family's default | Reset to 28 (under the label, only when changed) | — |
 | Discretion mode (Phase 9) | Cover images (header switch) | Covered tiles read *Show image 1*; prompts *Show prompt* |
 
@@ -273,6 +274,15 @@ Built. SDXL gets pictures that work like the prompt (IP-Adapter; [ip-adapter.md]
 - **Steps** reuses ControlNet's range, with its own note: *Ending early keeps its influence on the big shapes and leaves the details to the prompt.*
 - **Area** is where in the output the picture applies, painted in the mask editor titled *Area* over Create's source when it has the output's shape, else over a plain canvas of that shape.
 - Thumbnails are ordinary images, never rose or hatched. Discretion covers the 34 px ones in the row; the sheet is opened on purpose and stays clear.
+
+### Phase 12: Faces
+
+Built. *Face* prefers a FaceID model when Drive has one, which reads who the person is rather than what the photo looks like.
+
+- **The face the model reads is what the tile shows.** With a ready session, each picture is sent to the GPU as it's added, and its tile turns into the aligned face crop InsightFace found: the model's own view, so a wrong face is obvious. Several faces add *The biggest of 3 faces*; none shows *No face found in this picture.* in ochre. Without a session, one line says the face is found when the job runs.
+- **No cropping needed**, and the note under the chips says so: *Who the person is. The model finds the face itself, so the picture needn't be cropped.*
+- **Two more sliders**, only for FaceID: *Face structure* (how much of the face's shape comes from the picture, on top of who it is) and *Face LoRA* (the LoRA trained with the model; lower lets the checkpoint's look through). Each has its note under it. The LoRA isn't added to the LoRAs row, because it belongs to the model.
+- Weight starts at 0.8 for FaceID, 0.6 for a CLIP face model.
 
 ## 5. Component inventory
 

@@ -243,6 +243,19 @@ class FakeTrace:
         pass
 
 
+class FakeFace:
+    """Finds a face in any picture wider than 100 px: a 224 px crop, and one face."""
+
+    def run(self, model: Path | None, image: Path, params: dict[str, Any]) -> dict[str, Any]:
+        with Image.open(image) as im:
+            if im.width <= 100:
+                raise ValueError("No face found in this picture")
+        return {**trace(Image.new("RGB", (224, 224), (200, 160, 140))), "faces": 1}
+
+    def unload(self) -> None:
+        pass
+
+
 class FastIntervals(Intervals):
     tick = 0.02
     health = 0.05
@@ -292,6 +305,7 @@ class Harness:
             preprocessors={
                 "sam": lambda: self.sam,
                 **{kind: (lambda: self.trace) for kind in ("depth", "pose", "canny")},
+                "face": FakeFace,
             },
         )
         self.config = Config(data_dir=tmp_path / "data", web_dist=tmp_path / "no-web")
@@ -411,6 +425,20 @@ IMAGE_ENCODER = {
     "drive_file_id": "ie1",
     "size": 27,
 }
+FACEID = {
+    "path": "ip_adapters/sdxl/ip-adapter-faceid-plusv2_sdxl.bin",
+    "family": "sdxl",
+    "kind": "ip_adapter",
+    "drive_file_id": "ip2",
+    "size": 28,
+}
+INSIGHTFACE = {
+    "path": "preprocessors/insightface",
+    "family": None,
+    "kind": "preprocessor",
+    "drive_file_id": "if1",
+    "size": 10,
+}
 INPAINT_MODEL = {
     "path": "models/sdxl/inpaint/sdxl-inpaint.safetensors",
     "family": "sdxl",
@@ -486,6 +514,8 @@ def client(harness: Harness) -> Iterator[TestClient]:
                 CONTROLNET,
                 IP_ADAPTER,
                 IMAGE_ENCODER,
+                FACEID,
+                INSIGHTFACE,
             ]
         )
         yield c

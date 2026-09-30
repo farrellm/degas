@@ -185,9 +185,9 @@ export interface ControlSpec {
   preprocessor?: { id: TraceId; source: string; params: Params }
 }
 
-/** What an image prompt model was trained to carry: a picture's subject, a face, or its
- * composition. */
-export type AdapterKind = 'subject' | 'face' | 'composition'
+/** What an image prompt model was trained to carry: a picture's subject, a face (from CLIP,
+ * or an InsightFace identity for FaceID), or its composition. */
+export type AdapterKind = 'subject' | 'face' | 'faceid' | 'composition'
 
 /** Which of the UNet's blocks an image prompt acts in. */
 export type Purpose = 'all' | 'style' | 'layout' | 'style_layout'
@@ -205,6 +205,10 @@ export interface ImagePromptSpec {
   end: number
   /** `sha256:…` of the area of the output it's limited to. */
   mask?: string
+  /** FaceID: how much of CLIP's reading of the face Plus v2 adds. */
+  structure?: number
+  /** FaceID: the weight of the LoRA the model carries. */
+  lora_weight?: number
 }
 
 export interface Spec {
@@ -449,6 +453,13 @@ export const api = {
   /** Trace a control image (a depth map, a pose, edges) from a picture, at its size. */
   trace: (id: TraceId, image: string, params: Params) =>
     request<{ image: BlobInfo }>('POST', '/preprocess', { id, image, params }),
+  /** The aligned crop of a picture's main face, which a FaceID image prompt reads. */
+  findFace: (image: string) =>
+    request<{ image: BlobInfo; faces: number }>('POST', '/preprocess', {
+      id: 'face',
+      image,
+      params: {},
+    }),
   extendResult: (id: string) => request<Extension>('POST', `/results/${id}/extend`),
   extendLibraryItem: (id: string) => request<Extension>('POST', `/library/${id}/extend`),
 }
