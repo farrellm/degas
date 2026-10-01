@@ -6,6 +6,8 @@ Kept free of torch and diffusers so it can be tested without a GPU.
 
 from typing import Any
 
+from degas_worker.spec import ImagePromptUnit
+
 # InstantStyle (Wang et al. 2024): in SDXL's UNet one attention block carries the layout
 # (the second in down block 2) and one the style (the second in up block 0). Scales use
 # diffusers' `set_ip_adapter_scale` form; blocks left out get 0.
@@ -40,7 +42,7 @@ def active(start: float, end: float, step: int, steps: int) -> bool:
     return step / steps >= start and (step + 1) / steps <= end
 
 
-def scales(units: list[dict[str, Any]], step: int, steps: int) -> list[Scale]:
+def scales(units: list[ImagePromptUnit], step: int, steps: int) -> list[Scale]:
     """Every unit's scale for one step, in unit order (0 outside its steps)."""
     return [
         block_scale(u["purpose"], float(u["weight"]))
@@ -50,7 +52,7 @@ def scales(units: list[dict[str, Any]], step: int, steps: int) -> list[Scale]:
     ]
 
 
-def changed(units: list[dict[str, Any]], step: int, steps: int) -> list[Scale] | None:
+def changed(units: list[ImagePromptUnit], step: int, steps: int) -> list[Scale] | None:
     """The scales to set before step `step` (0-based) when a unit starts or stops there;
     None when nothing changes."""
     if step <= 0 or step >= steps:
@@ -79,7 +81,7 @@ def has_shortcut(path: str) -> bool:
     return "v2" in _stem(path)
 
 
-def face_loras(units: list[dict[str, Any]]) -> list[tuple[str, float]]:
+def face_loras(units: list[ImagePromptUnit]) -> list[tuple[str, float]]:
     """The PEFT adapters diffusers loads from FaceID models' own LoRAs, with their weights.
 
     `load_ip_adapter` names each `faceid_<i>`, where i is the model's place in the list it

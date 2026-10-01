@@ -9,6 +9,8 @@ from typing import Any
 
 from PIL import Image, ImageDraw, ImageFilter
 
+from degas_worker.spec import Place
+
 # The blurred copy of the source that fills an outpaint's margins before denoising.
 FILL_BLUR = 48
 
@@ -18,7 +20,7 @@ def blur(mask: Image.Image, radius: int) -> Image.Image:
 
 
 def outpaint_canvas(
-    source: Image.Image, place: dict[str, int], size: tuple[int, int], blend: int
+    source: Image.Image, place: Place, size: tuple[int, int], blend: int
 ) -> tuple[Image.Image, Image.Image]:
     """The canvas an outpaint starts from, and its mask.
 

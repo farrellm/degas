@@ -1,13 +1,16 @@
 """Results: listing, clearing, keeping one in the library, and extending a clip."""
 
+from collections.abc import Mapping
 from typing import Annotated, Any
 
 from fastapi import APIRouter, HTTPException, Query
 
 from degas.api.deps import Svc, family_or_400, job_or_404, result_or_404
 from degas.db import PENDING_JOB_STATUSES
+from degas.db.rows import Cleared
 from degas.library import input_blobs, release, saved_config
 from degas.services import Services
+from degas_worker.spec import Spec
 
 router = APIRouter(tags=["results"])
 
@@ -20,14 +23,16 @@ async def list_results(
     limit: Annotated[int, Query(ge=1, le=200)] = 60,
 ) -> dict[str, Any]:
     results = svc.db.list_results(cursor, limit, job)
-    specs: dict[str, Any] = {}
+    specs: dict[str, Spec | None] = {}
     for r in results:
         if r["job_id"] not in specs:
             j = svc.db.get_job(r["job_id"])
             specs[r["job_id"]] = j["spec"] if j else None
-        r["spec"] = specs[r["job_id"]]
     next_cursor = results[-1]["created_at"] if len(results) == limit else None
-    return {"results": results, "cursor": next_cursor}
+    return {
+        "results": [{**r, "spec": specs[r["job_id"]]} for r in results],
+        "cursor": next_cursor,
+    }
 
 
 @router.delete("/results")
@@ -45,7 +50,7 @@ async def delete_job_results(svc: Svc, job_id: str, chain: bool = False) -> dict
     return _swept(svc, svc.db.delete_job_results(job_id, chain))
 
 
-def _swept(svc: Services, deleted: dict[str, Any]) -> dict[str, Any]:
+def _swept(svc: Services, deleted: Cleared) -> dict[str, Any]:
     """Free the deleted results' blobs and tell the app what went."""
     release(svc.db, svc.blobs, deleted["blobs"])
     counts = {"results": deleted["results"], "jobs": deleted["jobs"]}
@@ -54,7 +59,7 @@ def _swept(svc: Services, deleted: dict[str, Any]) -> dict[str, Any]:
 
 
 @router.post("/results/{result_id}/save")
-async def save_result(svc: Svc, result_id: str) -> dict[str, Any]:
+async def save_result(svc: Svc, result_id: str) -> Mapping[str, Any]:
     """Keep a result in the library, with the config that reproduces it."""
     result = result_or_404(svc, result_id)
     existing = svc.db.library_item_for_result(result_id)

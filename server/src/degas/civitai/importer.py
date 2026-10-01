@@ -10,7 +10,7 @@ import hashlib
 import logging
 import secrets
 import time
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
 from typing import Any
 
 from degas.civitai.client import Civitai, CivitaiError
@@ -30,7 +30,7 @@ class CivitaiImportError(DegasError):
     """The import can't go ahead, or failed partway."""
 
 
-def find_duplicates(plan: ImportPlan, index: list[dict[str, Any]]) -> list[str]:
+def find_duplicates(plan: ImportPlan, index: Sequence[Mapping[str, Any]]) -> list[str]:
     """Why the plan would duplicate what's in the Drive index, if it would."""
     problems = []
     by_sha = {a["sha256"]: a["path"] for a in index if a.get("sha256")}
@@ -60,7 +60,7 @@ class Importer:
     async def plan(
         self,
         ref: str,
-        index: list[dict[str, Any]],
+        index: Sequence[Mapping[str, Any]],
         *,
         family: str | None = None,
         name: str | None = None,
@@ -104,7 +104,7 @@ class Importer:
             await self._preview(plan, f"{folder}/{plan.files[0].stem}.jpg")
         return [f.path for f in plan.files]
 
-    async def backfill(self, asset: dict[str, Any]) -> ImportPlan | None:
+    async def backfill(self, asset: Mapping[str, Any]) -> ImportPlan | None:
         """Write a sidecar (and a preview, if it has none) for a LoRA already in Drive that
         Civitai knows by its SHA-256. None if Civitai doesn't know it."""
         if not asset.get("sha256"):
@@ -188,7 +188,7 @@ class Imports:
     def __init__(
         self,
         importer: Importer,
-        index: Callable[[], list[dict[str, Any]]],
+        index: Callable[[], Sequence[Mapping[str, Any]]],
         publish: Callable[[dict[str, Any]], None],
         rescan: Callable[[], Awaitable[int]],
     ) -> None:

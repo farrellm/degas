@@ -1,7 +1,7 @@
 """The asset index: what the Drive folder holds, with each asset's sidecar and preview."""
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -183,7 +183,7 @@ class DriveIndexer:
     async def enrich(
         self,
         assets: list[dict[str, Any]],
-        previous: dict[str, dict[str, Any]],
+        previous: Mapping[str, Mapping[str, Any]],
         store_preview: StorePreview,
     ) -> None:
         """Parse sidecars and store previews, reusing unchanged ones from the previous index."""

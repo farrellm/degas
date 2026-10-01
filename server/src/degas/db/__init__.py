@@ -10,6 +10,19 @@ from degas.db.database import (
     new_id,
     now,
 )
+from degas.db.rows import (
+    AssetRow,
+    JobRow,
+    JobRuntime,
+    JobStatus,
+    LibraryItem,
+    ResultRow,
+    SavedConfig,
+    SavedPrompt,
+    SessionRow,
+    SessionState,
+    TransformRecord,
+)
 
 __all__ = [
     "ACTIVE_SESSION_STATES",
@@ -17,7 +30,18 @@ __all__ = [
     "PENDING_JOB_STATUSES",
     "RESULT_TTL",
     "RUNNING_SESSION_STATES",
+    "AssetRow",
     "Database",
+    "JobRow",
+    "JobRuntime",
+    "JobStatus",
+    "LibraryItem",
+    "ResultRow",
+    "SavedConfig",
+    "SavedPrompt",
+    "SessionRow",
+    "SessionState",
+    "TransformRecord",
     "new_id",
     "now",
 ]

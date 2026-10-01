@@ -1,5 +1,6 @@
 """Drive assets: the index, rescans, deleting LoRAs, and importing them from Civitai."""
 
+from collections.abc import Mapping, Sequence
 from typing import Annotated, Any
 
 from fastapi import APIRouter, HTTPException, Query
@@ -13,7 +14,7 @@ router = APIRouter(tags=["assets"])
 @router.get("/assets")
 async def assets(
     svc: Svc, family: str | None = None, kind: str | None = None
-) -> list[dict[str, Any]]:
+) -> Sequence[Mapping[str, Any]]:
     return svc.db.list_assets(family, kind)
 
 

@@ -2,10 +2,11 @@
 Drive index, and one seed per image."""
 
 import random
-from typing import Any, Literal
+from typing import Literal
 
 from degas.db import Database
 from degas.families.base import SpecError, lora_files, spec_assets
+from degas_worker.spec import Spec
 
 SEED_MAX = 2**32
 
@@ -29,7 +30,7 @@ CHOSEN = {
 }
 
 
-def resolve_assets(db: Database, family: str, spec: dict[str, Any]) -> None:
+def resolve_assets(db: Database, family: str, spec: Spec) -> None:
     """Check that every asset the spec names is in the Drive index, and record its size."""
     sizes: dict[str, int | None] = {}
     for need in spec_assets(spec):
@@ -47,11 +48,17 @@ def resolve_assets(db: Database, family: str, spec: dict[str, Any]) -> None:
             part["size"] = sizes[part["path"]]
     for unit in spec.get("control") or []:
         unit["controlnet"]["size"] = sizes[unit["controlnet"]["path"]]
-    for unit in spec.get("image_prompts") or []:
-        unit["adapter"]["size"] = sizes[unit["adapter"]["path"]]
-    for kind in MISSING:
-        if spec.get(kind):
-            spec[kind]["size"] = sizes[spec[kind]["path"]]
+    for prompt in spec.get("image_prompts") or []:
+        prompt["adapter"]["size"] = sizes[prompt["adapter"]["path"]]
+    added = (
+        spec.get("config"),
+        spec.get("vae"),
+        spec.get("image_encoder"),
+        spec.get("face_detector"),
+    )
+    for extra in added:
+        if extra:
+            extra["size"] = sizes[extra["path"]]
 
 
 def batch_seeds(

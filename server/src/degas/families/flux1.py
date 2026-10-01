@@ -35,6 +35,7 @@ from degas.families.validation import (
     validate_params,
     validate_single_loras,
 )
+from degas_worker.spec import ImagePromptUnit, Spec
 
 MAX_LORAS = 8
 MAX_IMAGE_PROMPTS = 2
@@ -98,7 +99,7 @@ class Flux1:
         }
         return params_schema(props)
 
-    def validate(self, spec: dict[str, Any]) -> dict[str, Any]:
+    def validate(self, spec: dict[str, Any]) -> Spec:
         variant = spec.get("variant", "dev")
         mode = spec.get("mode", "t2i")
         v = find_variant(self, variant, mode)
@@ -107,7 +108,7 @@ class Flux1:
         snap_size(params, SIZE, self.label)
         if spec.get("control"):
             raise SpecError(f"{self.label} doesn't take control units")
-        out: dict[str, Any] = {
+        out: Spec = {
             "family": self.id,
             "variant": variant,
             "mode": mode,
@@ -125,11 +126,19 @@ class Flux1:
         return out
 
 
-def redux_unit(n: int, unit: dict[str, Any]) -> dict[str, Any]:
+def redux_unit(n: int, unit: ImagePromptUnit) -> ImagePromptUnit:
     """A Redux unit: its pictures, weight and downsampling, and nothing Redux can't do."""
     if unit.get("mask"):
         raise SpecError(f"Image prompt {n}: FLUX.1 can't limit a picture to an area")
     if unit["purpose"] != "all" or (unit["start"], unit["end"]) != (0.0, 1.0):
         raise SpecError(f"Image prompt {n}: FLUX.1 reads a picture everywhere, at every step")
-    kept = ("adapter", "images", "fit", "purpose", "weight", "start", "end")
-    return {**{k: unit[k] for k in kept}, "downsample": unit.get("downsample", DOWNSAMPLE)}
+    return {
+        "adapter": unit["adapter"],
+        "images": unit["images"],
+        "fit": unit["fit"],
+        "purpose": unit["purpose"],
+        "weight": unit["weight"],
+        "start": unit["start"],
+        "end": unit["end"],
+        "downsample": unit.get("downsample", DOWNSAMPLE),
+    }

@@ -7,9 +7,11 @@ from typing import Any
 
 from PIL import Image
 
+from degas_worker.spec import ControlUnit
+
 
 def control_kwargs(
-    units: list[dict[str, Any]], images: list[Image.Image], mode: str
+    units: list[ControlUnit], images: list[Image.Image], mode: str
 ) -> dict[str, Any]:
     """The pipeline arguments for ControlNet units, in unit order.
 

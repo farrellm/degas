@@ -1,9 +1,10 @@
 """Family descriptors: what a model family offers and how its job specs are validated."""
 
 from dataclasses import asdict, dataclass, field
-from typing import Any, Literal, Protocol
+from typing import Any, Literal, Protocol, cast
 
 from degas.errors import DegasError
+from degas_worker.spec import AssetRef, Lora, PairedLora, Spec
 
 GPUS = ("T4", "L4", "A100", "H100")  # ascending capability
 JsonSchema = dict[str, Any]
@@ -70,7 +71,7 @@ class FamilyDescriptor(Protocol):
 
     def size_constraints(self, variant: str) -> SizeConstraints: ...
 
-    def validate(self, spec: dict[str, Any]) -> dict[str, Any]:
+    def validate(self, spec: dict[str, Any]) -> Spec:
         """Return a normalized spec (defaults filled, values clamped) or raise SpecError."""
         ...
 
@@ -116,34 +117,38 @@ def find_variant(family: FamilyDescriptor, variant: str, mode: str) -> Variant:
     return v
 
 
-def spec_assets(spec: dict[str, Any]) -> list[dict[str, Any]]:
-    """The Drive assets a validated spec needs on the GPU: `[{path, size, kind}]`."""
-    assets = [{**spec["model"], "kind": "model"}]
-    for kind in ("config", "vae"):
-        if spec.get(kind):
-            assets.append({**spec[kind], "kind": kind})
+class NeededAsset(AssetRef):
+    kind: str  # as the Drive index names it: model, lora, controlnet …
+
+
+def spec_assets(spec: Spec) -> list[NeededAsset]:
+    """The Drive assets a validated spec needs on the GPU, each once."""
+    assets: list[NeededAsset] = []
+
+    def need(asset: AssetRef | None, kind: str, *, shared: bool = False) -> None:
+        # Units may share a ControlNet or an image prompt model.
+        if not asset or (shared and any(a["path"] == asset["path"] for a in assets)):
+            return
+        assets.append({"path": asset["path"], "size": asset.get("size"), "kind": kind})
+
+    need(spec["model"], "model")
+    need(spec.get("config"), "config")
+    need(spec.get("vae"), "vae")
     for lora in spec.get("loras") or []:
         for part in lora_files(lora):
-            assets.append({"path": part["path"], "size": part.get("size"), "kind": "lora"})
+            need(part, "lora")
     for unit in spec.get("control") or []:
-        net = unit["controlnet"]
-        if all(a["path"] != net["path"] for a in assets):
-            assets.append({"path": net["path"], "size": net.get("size"), "kind": "controlnet"})
-    for unit in spec.get("image_prompts") or []:
-        adapter = unit["adapter"]
-        if all(a["path"] != adapter["path"] for a in assets):
-            assets.append(
-                {"path": adapter["path"], "size": adapter.get("size"), "kind": "ip_adapter"}
-            )
-    if spec.get("image_encoder"):
-        assets.append({**spec["image_encoder"], "kind": "image_encoder"})
-    if spec.get("face_detector"):
-        assets.append({**spec["face_detector"], "kind": "preprocessor"})
+        need(unit["controlnet"], "controlnet", shared=True)
+    for prompt in spec.get("image_prompts") or []:
+        need(prompt["adapter"], "ip_adapter", shared=True)
+    need(spec.get("image_encoder"), "image_encoder")
+    need(spec.get("face_detector"), "preprocessor")
     return assets
 
 
-def lora_files(lora: dict[str, Any]) -> list[dict[str, Any]]:
+def lora_files(lora: Lora | PairedLora) -> list[Lora]:
     """The file entries of a LoRA: itself, or the high/low halves of a Wan A14B pair."""
     if "high" in lora or "low" in lora:
-        return [part for part in (lora.get("high"), lora.get("low")) if part]
-    return [lora]
+        pair = cast("PairedLora", lora)
+        return [part for part in (pair.get("high"), pair.get("low")) if part]
+    return [cast("Lora", lora)]

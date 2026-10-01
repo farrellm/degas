@@ -21,6 +21,7 @@ from typing import Any
 from degas_worker.cache import AssetCache
 from degas_worker.families.base import FamilyRunner, JobCancelled, Output
 from degas_worker.paths import Paths
+from degas_worker.spec import Spec
 
 log = logging.getLogger(__name__)
 
@@ -36,7 +37,7 @@ class WorkerBusy(Exception):  # noqa: N818
 @dataclass
 class JobRecord:
     id: str
-    spec: dict[str, Any]
+    spec: Spec
     seeds: list[int]
     loop: asyncio.AbstractEventLoop
     status: str = "running"
@@ -154,7 +155,7 @@ class JobManager:
     def get(self, job_id: str) -> JobRecord | None:
         return self._jobs.get(job_id)
 
-    def start(self, job_id: str, spec: dict[str, Any], seeds: list[int]) -> JobRecord:
+    def start(self, job_id: str, spec: Spec, seeds: list[int]) -> JobRecord:
         if self.busy:
             raise WorkerBusy
         if job_id in self._jobs:

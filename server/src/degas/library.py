@@ -6,7 +6,8 @@ from collections.abc import Iterable, Iterator
 from typing import Any
 
 from degas.blobs import REF_PREFIX, BlobStore, unref
-from degas.db import Database
+from degas.db import Database, JobRow, ResultRow, SavedConfig
+from degas_worker.spec import Spec
 
 log = logging.getLogger(__name__)
 
@@ -16,10 +17,10 @@ CONFIG_VERSION = 1
 BLOB_GRACE_S = 3600
 
 
-def saved_config(job: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
+def saved_config(job: JobRow, result: ResultRow) -> SavedConfig:
     """The self-contained, replayable config of one result: its job's spec, pinned to its seed."""
     spec = job["spec"]
-    config: dict[str, Any] = {
+    config: SavedConfig = {
         "degas_version": CONFIG_VERSION,
         "family": spec["family"],
         "variant": spec["variant"],
@@ -32,26 +33,26 @@ def saved_config(job: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
     }
     if spec.get("image_prompts"):
         config["image_prompts"] = spec["image_prompts"]
-    if job.get("runtime"):
-        config["runtime"] = job["runtime"]
-    if result.get("segments"):
-        config["segments"] = result["segments"]
+    if runtime := job.get("runtime"):
+        config["runtime"] = runtime
+    if segments := result.get("segments"):
+        config["segments"] = segments
     return config
 
 
-def input_blobs(spec: dict[str, Any]) -> list[str]:
+def input_blobs(spec: Spec | SavedConfig) -> list[str]:
     """Blob shas a spec uses as inputs: source, mask, references, control images, image prompts
     and their originals."""
     return _shas(_refs(spec, provenance=True))
 
 
-def staged_blobs(spec: dict[str, Any]) -> list[str]:
+def staged_blobs(spec: Spec) -> list[str]:
     """The input blobs the worker reads: `input_blobs` without what only records where an
     input came from (the extended clip, originals and traced sources)."""
     return _shas(_refs(spec, provenance=False))
 
 
-def _refs(spec: dict[str, Any], *, provenance: bool) -> Iterator[Any]:
+def _refs(spec: Spec | SavedConfig, *, provenance: bool) -> Iterator[Any]:
     inputs = spec.get("inputs") or {}
     yield inputs.get("source")
     yield inputs.get("mask")
@@ -61,15 +62,17 @@ def _refs(spec: dict[str, Any], *, provenance: bool) -> Iterator[Any]:
     if provenance:
         for derived, transform in (inputs.get("transforms") or {}).items():
             yield derived
-            yield (transform or {}).get("original")
+            if transform:
+                yield transform.get("original")
     for unit in spec.get("control") or []:
         yield unit.get("image")
         yield unit.get("mask")
-        if provenance:
-            yield (unit.get("preprocessor") or {}).get("source")
-    for unit in spec.get("image_prompts") or []:
-        yield from unit.get("images", [])
-        yield unit.get("mask")
+        trace = unit.get("preprocessor")
+        if provenance and trace:
+            yield trace.get("source")
+    for prompt in spec.get("image_prompts") or []:
+        yield from prompt.get("images", [])
+        yield prompt.get("mask")
 
 
 def _shas(values: Iterable[Any]) -> list[str]:

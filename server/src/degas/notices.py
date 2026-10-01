@@ -2,8 +2,8 @@
 
 import math
 from datetime import timedelta
-from typing import Any
 
+from degas.db import JobRow
 from degas.families import FAMILIES
 
 BODY_CHARS = 140
@@ -12,7 +12,7 @@ RESULTS_URL = "/?tab=results"
 SESSION_URL = "/?sheet=session"
 
 
-def job_notice(job: dict[str, Any]) -> tuple[str, str] | None:
+def job_notice(job: JobRow) -> tuple[str, str] | None:
     """(title, body) for a finished job, or None when there's nothing to tell (cancelled)."""
     if job["status"] == "error":
         return "Job failed", _clip(job.get("error") or "The job failed.")

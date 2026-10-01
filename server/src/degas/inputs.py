@@ -9,7 +9,7 @@ import base64
 import binascii
 import tempfile
 from pathlib import Path
-from typing import Any
+from typing import Any, NotRequired, TypedDict, cast
 from urllib.parse import unquote_to_bytes
 
 import httpx2
@@ -17,10 +17,11 @@ from starlette.concurrency import run_in_threadpool
 
 from degas import media
 from degas.blobs import THUMB_SIZE, BlobStore, ref, unref
-from degas.db import Database
+from degas.db import Database, SavedConfig
 from degas.families.base import FamilyDescriptor
 from degas.families.wan22 import extend_variant
 from degas.media import MediaError
+from degas_worker.spec import ControlUnit, ImagePromptUnit, Lora, PairedLora, Spec, Transform
 
 MAX_FETCH_BYTES = 50 * 1024 * 1024
 MAX_UPLOAD_BYTES = 200 * 1024 * 1024
@@ -34,6 +35,16 @@ USER_AGENT = (
 )
 
 
+class BlobInfo(TypedDict):
+    """A stored image or video, as the app's pickers and editors get it."""
+
+    sha256: str
+    media_type: str
+    width: int | None
+    height: int | None
+    duration: NotRequired[float]  # videos
+
+
 class Inputs:
     def __init__(self, db: Database, blobs: BlobStore) -> None:
         self.db = db
@@ -41,7 +52,7 @@ class Inputs:
 
     # -- storing -----------------------------------------------------------------------------
 
-    async def store(self, data: bytes, content_type: str | None = None) -> dict[str, Any]:
+    async def store(self, data: bytes, content_type: str | None = None) -> BlobInfo:
         """Store an uploaded or fetched image or video; returns its blob info."""
         try:
             image, media_type, w, h = await run_in_threadpool(media.normalize_image, data)
@@ -71,7 +82,7 @@ class Inputs:
             "duration": info["duration"],
         }
 
-    async def fetch(self, url: str) -> dict[str, Any]:
+    async def fetch(self, url: str) -> BlobInfo:
         """Import an image or a direct video link (or a `data:` URI)."""
         url = url.strip()
         if url.startswith("data:"):
@@ -119,7 +130,7 @@ class Inputs:
         webp = await run_in_threadpool(media.thumbnail, frame, THUMB_SIZE)
         return self.blobs.put_thumb(sha, webp)
 
-    async def frame(self, sha: str, at: str | float) -> dict[str, Any]:
+    async def frame(self, sha: str, at: str | float) -> BlobInfo:
         """Extract one frame of a video blob as a new image blob."""
         path = self.blobs.path(sha)
         if path is None or not self.blobs.is_video(sha):
@@ -127,7 +138,7 @@ class Inputs:
         png = await media.extract_frame(path, at)
         return self._put_image(png)
 
-    def _put_image(self, png: bytes) -> dict[str, Any]:
+    def _put_image(self, png: bytes) -> BlobInfo:
         sha = self.blobs.put(png, "image/png")
         self.db.hold_input(sha)
         w, h = media.image_size(png) or (None, None)
@@ -135,7 +146,7 @@ class Inputs:
 
     # -- transforms ----------------------------------------------------------------------------
 
-    async def derive(self, original: str, ops: list[media.Op]) -> dict[str, Any]:
+    async def derive(self, original: str, ops: list[media.Op]) -> BlobInfo:
         """Apply `ops` to the original blob; the derived blob records where it came from."""
         path = self.blobs.path(original)
         if path is None or self.blobs.is_video(original):
@@ -150,14 +161,14 @@ class Inputs:
         self.db.hold_input(sha)
         return {"sha256": sha, "media_type": "image/png", "width": w, "height": h}
 
-    async def transform(self, sha: str, ops: Any) -> dict[str, Any]:
+    async def transform(self, sha: str, ops: Any) -> BlobInfo:
         """Transform an image; for a derived image, `ops` replace its operations on the original."""
         ops = media.validate_ops(ops)
         record = self.db.get_transform(sha)
         original = record["original"] if record and self.blobs.path(record["original"]) else sha
         return await self.derive(original, ops)
 
-    async def resolve(self, spec: dict[str, Any]) -> None:
+    async def resolve(self, spec: Spec) -> None:
         """Fit the source (and its mask) and every control image (and its area) to the output
         size, image prompts' pictures to squares (and their areas to the output size), and
         record every transform in the spec, references' crops included (§6.5).
@@ -171,12 +182,12 @@ class Inputs:
         extends = inputs.get("extends")
         if extends and not self.blobs.is_video(unref(extends)):
             raise MediaError("The clip to extend is no longer stored")
-        transforms: dict[str, Any] = {}
+        transforms: dict[str, Transform] = {}
         output = (int(spec["params"]["width"]), int(spec["params"]["height"]))
         if inputs.get("source"):
             place = inputs.get("place")
             target = (int(place["w"]), int(place["h"])) if place else output
-            inputs["source"], inputs["mask"] = await self._fit(
+            inputs["source"], mask = await self._fit(
                 inputs["source"],
                 inputs.get("mask"),
                 target,
@@ -184,10 +195,12 @@ class Inputs:
                 transforms,
                 "The source image is no longer stored. Choose it again.",
             )
-            if inputs["mask"] is None:
-                del inputs["mask"]
-            elif await self._mask_empty(inputs["mask"]):
-                raise MediaError("The mask is empty. Paint the area to redraw.")
+            if mask is None:
+                inputs.pop("mask", None)
+            else:
+                inputs["mask"] = mask
+                if await self._mask_empty(mask):
+                    raise MediaError("The mask is empty. Paint the area to redraw.")
         # References go as they are: the pipeline sizes each one itself. A cropped one keeps
         # its original, so a remix can crop it again.
         for n, value in enumerate(inputs.get("refs") or [], 2):
@@ -199,8 +212,8 @@ class Inputs:
                 transforms[value] = {"original": ref(record["original"]), "ops": record["ops"]}
         for n, unit in enumerate(spec.get("control") or [], 1):
             await self._fit_control(n, unit, output, transforms)
-        for n, unit in enumerate(spec.get("image_prompts") or [], 1):
-            await self._fit_image_prompt(n, unit, output, transforms)
+        for n, prompt in enumerate(spec.get("image_prompts") or [], 1):
+            await self._fit_image_prompt(n, prompt, output, transforms)
         if transforms:
             spec.setdefault("inputs", inputs)["transforms"] = transforms
         else:
@@ -209,9 +222,9 @@ class Inputs:
     async def _fit_control(
         self,
         n: int,
-        unit: dict[str, Any],
+        unit: ControlUnit,
         output: tuple[int, int],
-        transforms: dict[str, Any],
+        transforms: dict[str, Transform],
     ) -> None:
         """Fit a ControlNet unit's image, and the area painted over it, to the output size."""
         unit["image"], mask = await self._fit(
@@ -230,9 +243,9 @@ class Inputs:
     async def _fit_image_prompt(
         self,
         n: int,
-        unit: dict[str, Any],
+        unit: ImagePromptUnit,
         output: tuple[int, int],
-        transforms: dict[str, Any],
+        transforms: dict[str, Transform],
     ) -> None:
         """Fit an image prompt's pictures to squares and its area to the output size.
 
@@ -267,7 +280,7 @@ class Inputs:
         mask: str | None,
         target: tuple[int, int],
         fit: str,
-        transforms: dict[str, Any],
+        transforms: dict[str, Transform],
         gone: str,
     ) -> tuple[str, str | None]:
         """Fit an image (and the mask painted over it) to `target`; returns the new refs."""
@@ -296,7 +309,7 @@ class Inputs:
         mask: str,
         size: tuple[int, int],
         fit_ops: list[media.Op],
-        transforms: dict[str, Any],
+        transforms: dict[str, Transform],
     ) -> str:
         """Give the mask the fit its image gets, so the two stay pixel for pixel."""
         sha = unref(mask)
@@ -321,7 +334,7 @@ class Inputs:
 
     # -- masks -------------------------------------------------------------------------------
 
-    async def store_mask(self, source: str, data: bytes) -> dict[str, Any]:
+    async def store_mask(self, source: str, data: bytes) -> BlobInfo:
         """Store a mask painted over `source`, at the source's pixel size."""
         size = self.blobs.image_size(source) if not self.blobs.is_video(source) else None
         if size is None:
@@ -350,7 +363,7 @@ class Inputs:
         png = await run_in_threadpool(media.apply_mask_ops, data, ops)
         return {**self._put_image(png), "empty": await run_in_threadpool(media.mask_is_empty, png)}
 
-    async def store_trace(self, data: bytes, size: tuple[int, int]) -> dict[str, Any]:
+    async def store_trace(self, data: bytes, size: tuple[int, int]) -> BlobInfo:
         """Store a preprocessor's trace of an image (a depth map, a pose, edges), which must be
         the image's size so an area painted over one fits the other."""
         if media.image_size(data) != size:
@@ -360,7 +373,7 @@ class Inputs:
     # -- video extension -------------------------------------------------------------------
 
     async def extend(
-        self, family: FamilyDescriptor, sha: str, spec: dict[str, Any]
+        self, family: FamilyDescriptor, sha: str, spec: Spec | SavedConfig
     ) -> dict[str, Any]:
         """A spec that continues a clip from its last frame (design §6.4), for editing in Create."""
         if family.id != "wan22" or not self.blobs.is_video(sha):
@@ -396,10 +409,17 @@ class Inputs:
         }
 
 
-def _strip_sizes(lora: dict[str, Any]) -> dict[str, Any]:
+def _strip_sizes(lora: Lora | PairedLora) -> dict[str, Any]:
+    """A LoRA as the form submits it, without the size the server looks up."""
     if "path" in lora:
-        return {"path": lora["path"], "weight": lora["weight"]}
-    return {k: {"path": v["path"], "weight": v["weight"]} for k, v in lora.items() if v}
+        single = cast("Lora", lora)
+        return {"path": single["path"], "weight": single["weight"]}
+    halves = {"high": lora.get("high"), "low": lora.get("low")}
+    return {
+        half: {"path": part["path"], "weight": part["weight"]}
+        for half, part in halves.items()
+        if part
+    }
 
 
 def _decode_data_uri(uri: str) -> tuple[bytes, str]:

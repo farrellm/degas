@@ -3,7 +3,9 @@
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Protocol
+
+from degas_worker.spec import Spec
 
 
 class JobCancelled(Exception):  # noqa: N818 - control flow, not an error
@@ -37,7 +39,7 @@ class RunContext(Protocol):
 
 
 class FamilyRunner(Protocol):
-    def run(self, spec: dict[str, Any], seeds: list[int], ctx: RunContext) -> Iterator[Output]:
+    def run(self, spec: Spec, seeds: list[int], ctx: RunContext) -> Iterator[Output]:
         """Load what the spec needs (reusing what is resident) and yield one output per seed."""
         ...
 

@@ -28,9 +28,10 @@ from transformers import SiglipImageProcessor, SiglipVisionModel
 
 from degas_worker.families import ip_adapter
 from degas_worker.families.base import Output, RunContext
-from degas_worker.families.lora import plan_loras, strip_text_model
+from degas_worker.families.lora import plan_loras, single_loras, strip_text_model
 from degas_worker.families.offload import OFFLOAD_ABOVE, place
 from degas_worker.safetensors_info import stored_float8
+from degas_worker.spec import ImagePromptUnit, Spec
 
 FLOAT8 = {"F8_E4M3": torch.float8_e4m3fn, "F8_E5M2": torch.float8_e5m2}
 
@@ -44,7 +45,7 @@ class Flux1Runner:
         self.offloaded = False
         self.redux: tuple[Path, Any, Any, Any] | None = None  # folder, SigLIP, processor, embedder
 
-    def run(self, spec: dict[str, Any], seeds: list[int], ctx: RunContext) -> Iterator[Output]:
+    def run(self, spec: Spec, seeds: list[int], ctx: RunContext) -> Iterator[Output]:
         if spec.get("mode", "t2i") != "t2i":
             raise ValueError(f"FLUX.1 can't do {spec['mode']!r}")
         model = spec["model"]
@@ -54,7 +55,7 @@ class Flux1Runner:
             base = ctx.fetch_asset(spec["config"]["path"], spec["config"].get("size"))
         loras = [
             (lora["path"], ctx.fetch_asset(lora["path"], lora.get("size")), float(lora["weight"]))
-            for lora in spec.get("loras") or []
+            for lora in single_loras(spec)
         ]
         prompts = spec.get("image_prompts") or []
         folders = {ctx.fetch_asset(u["adapter"]["path"], u["adapter"].get("size")) for u in prompts}
@@ -101,7 +102,7 @@ class Flux1Runner:
             )
 
     def _prompt(
-        self, prompt: str, prompts: list[dict[str, Any]], ctx: RunContext
+        self, prompt: str, prompts: list[ImagePromptUnit], ctx: RunContext
     ) -> dict[str, Any]:
         """The prompt, or with image prompts, its embeddings followed by the pictures' tokens."""
         if not prompts:

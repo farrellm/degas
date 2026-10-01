@@ -1,6 +1,7 @@
 """Blobs: uploads and imports, the image editors' transforms and masks, preprocessors, and
 the files themselves."""
 
+from collections.abc import Mapping
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
@@ -18,7 +19,7 @@ IMMUTABLE = {"Cache-Control": "public, max-age=31536000, immutable"}
 
 
 @router.post("/blobs", status_code=201)
-async def upload_blob(svc: Svc, request: Request) -> dict[str, Any]:
+async def upload_blob(svc: Svc, request: Request) -> Mapping[str, Any]:
     """Upload an image or video as the raw request body (camera roll)."""
     data = bytearray()
     async for chunk in request.stream():
@@ -31,18 +32,18 @@ async def upload_blob(svc: Svc, request: Request) -> dict[str, Any]:
 
 
 @router.post("/blobs/from-url", status_code=201)
-async def blob_from_url(svc: Svc, body: FromUrl) -> dict[str, Any]:
+async def blob_from_url(svc: Svc, body: FromUrl) -> Mapping[str, Any]:
     return await svc.inputs.fetch(body.url)
 
 
 @router.post("/blobs/{sha}/transform", status_code=201)
-async def transform_blob(svc: Svc, sha: str, body: Transform) -> dict[str, Any]:
+async def transform_blob(svc: Svc, sha: str, body: Transform) -> Mapping[str, Any]:
     blob_or_404(svc, sha)
     return await svc.inputs.transform(sha, body.ops)
 
 
 @router.get("/blobs/{sha}/transform")
-async def get_transform(svc: Svc, sha: str) -> dict[str, Any]:
+async def get_transform(svc: Svc, sha: str) -> Mapping[str, Any]:
     """The original and operations a derived image was made with, to reopen the editor.
 
     Any other image is its own original, with no operations.
@@ -55,7 +56,7 @@ async def get_transform(svc: Svc, sha: str) -> dict[str, Any]:
 
 
 @router.post("/blobs/{sha}/mask", status_code=201)
-async def upload_mask(svc: Svc, sha: str, request: Request) -> dict[str, Any]:
+async def upload_mask(svc: Svc, sha: str, request: Request) -> Mapping[str, Any]:
     """A mask painted over image `sha` (raw PNG body; white or opaque is redrawn)."""
     data = await request.body()
     if len(data) > MAX_UPLOAD_BYTES:
@@ -75,7 +76,7 @@ async def preprocess(svc: Svc, body: Preprocess) -> dict[str, Any]:
 
 
 @router.post("/blobs/{sha}/frame", status_code=201)
-async def blob_frame(svc: Svc, sha: str, body: Frame) -> dict[str, Any]:
+async def blob_frame(svc: Svc, sha: str, body: Frame) -> Mapping[str, Any]:
     return await svc.inputs.frame(sha, body.at)
 
 

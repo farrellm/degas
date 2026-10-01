@@ -49,7 +49,8 @@ from degas_worker import masks
 from degas_worker.families import ip_adapter
 from degas_worker.families.base import Output, RunContext
 from degas_worker.families.control import control_kwargs, crop_areas
-from degas_worker.families.lora import plan_loras, strip_text_model
+from degas_worker.families.lora import plan_loras, single_loras, strip_text_model
+from degas_worker.spec import ControlUnit, ImagePromptUnit, Spec
 
 # Keep in sync with the server descriptor (degas/families/sdxl.py).
 SCHEDULERS: dict[str, tuple[Any, dict[str, Any]]] = {
@@ -95,7 +96,7 @@ class SdxlRunner:
         self.faces: Any = None  # InsightFace, for FaceID units
         self._scheduler_config: Any = None
 
-    def run(self, spec: dict[str, Any], seeds: list[int], ctx: RunContext) -> Iterator[Output]:
+    def run(self, spec: Spec, seeds: list[int], ctx: RunContext) -> Iterator[Output]:
         mode = spec.get("mode", "t2i")
         if mode not in ("t2i", "i2i", "inpaint", "outpaint"):
             raise ValueError(f"SDXL can't do {mode!r}")
@@ -152,7 +153,7 @@ class SdxlRunner:
                 item=item, seed=seed, data=buf.getvalue(), media_type="image/png", ext="png"
             )
 
-    def _load_for(self, mode: str, spec: dict[str, Any], ctx: RunContext) -> Any:
+    def _load_for(self, mode: str, spec: Spec, ctx: RunContext) -> Any:
         """Copy what the spec needs into the cache, load it, and return the mode's pipeline."""
         model = spec["model"]
         path = ctx.fetch_asset(model["path"], model.get("size"))
@@ -161,7 +162,7 @@ class SdxlRunner:
         vae_path = ctx.fetch_asset(vae["path"], vae.get("size")) if vae else None
         loras = [
             (lora["path"], ctx.fetch_asset(lora["path"], lora.get("size")), float(lora["weight"]))
-            for lora in spec.get("loras") or []
+            for lora in single_loras(spec)
         ]
         nets = [
             (net["path"], ctx.fetch_asset(net["path"], net.get("size")))
@@ -195,7 +196,7 @@ class SdxlRunner:
         self,
         pipe: Any,
         mode: str,
-        spec: dict[str, Any],
+        spec: Spec,
         kwargs: dict[str, Any],
         size: tuple[int, int],
         ctx: RunContext,
@@ -231,7 +232,7 @@ class SdxlRunner:
         ]
 
     def _inputs(
-        self, mode: str, spec: dict[str, Any], size: tuple[int, int], ctx: RunContext
+        self, mode: str, spec: Spec, size: tuple[int, int], ctx: RunContext
     ) -> tuple[dict[str, Any], Image.Image | None, Image.Image | None]:
         """Pipeline arguments for the mode, plus the image and mask to composite back onto."""
         params = spec["params"]
@@ -271,7 +272,7 @@ class SdxlRunner:
 
     @staticmethod
     def _control_inputs(
-        units: list[dict[str, Any]], ctx: RunContext
+        units: list[ControlUnit], ctx: RunContext
     ) -> tuple[list[Image.Image], list[Image.Image | None]]:
         """Each unit's control image, and its area mask if it has one (both at output size)."""
         images: list[Image.Image] = []
@@ -287,7 +288,7 @@ class SdxlRunner:
         return images, areas
 
     def _image_prompt_embeds(
-        self, pipe: Any, prompts: list[dict[str, Any]], ctx: RunContext, cfg: bool
+        self, pipe: Any, prompts: list[ImagePromptUnit], ctx: RunContext, cfg: bool
     ) -> list[Any]:
         """Each unit's pictures encoded once for the whole batch (diffusers would encode them
         again for every image).
@@ -349,7 +350,7 @@ class SdxlRunner:
 
     @staticmethod
     def _image_prompt_areas(
-        prompts: list[dict[str, Any]],
+        prompts: list[ImagePromptUnit],
         ctx: RunContext,
         size: tuple[int, int],
         box: tuple[int, int, int, int] | None,

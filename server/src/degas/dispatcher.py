@@ -20,11 +20,12 @@ from degas import media
 from degas.blobs import BlobStore, unref
 from degas.colab.session import SessionManager
 from degas.colab.worker_client import WorkerBusyError, WorkerClient, WorkerError
-from degas.db import Database, now
+from degas.db import Database, JobRow, JobRuntime, SavedConfig, now
 from degas.events import EventBus
 from degas.families.base import spec_assets
 from degas.inputs import Inputs
 from degas.library import input_blobs, saved_config, staged_blobs
+from degas_worker.spec import Spec
 
 log = logging.getLogger(__name__)
 
@@ -53,7 +54,7 @@ class Dispatcher:
         self._prefetch: asyncio.Task[None] | None = None
         self._prefetched_after: str | None = None  # the running job that triggered a prefetch
         # Called with the job when it finishes (done, error or cancelled).
-        self.on_finish: list[Callable[[dict[str, Any]], None]] = []
+        self.on_finish: list[Callable[[JobRow], None]] = []
         sessions.on_ready.append(self.wake)
         sessions.on_end.append(self._orphans)
         sessions.has_pending_jobs = lambda: self.db.count_pending() > 0
@@ -66,14 +67,14 @@ class Dispatcher:
         if job is not None:
             self.bus.publish({"type": "job", "job": self.describe(job)})
 
-    def describe(self, job: dict[str, Any]) -> dict[str, Any]:
+    def describe(self, job: JobRow) -> dict[str, Any]:
         # The log (a failed job's worker traceback) is for debugging, not for the phone.
         fields = {k: v for k, v in job.items() if k != "log"}
         return {**fields, "progress": self.progress.get(job["id"])}
 
     # -- queue -----------------------------------------------------------------------------
 
-    def submit(self, spec: dict[str, Any], seeds: list[int]) -> dict[str, Any]:
+    def submit(self, spec: Spec, seeds: list[int]) -> JobRow:
         job = self.db.insert_job(spec, seeds)
         for sha in input_blobs(spec):
             self.db.add_blob_ref(sha, "job", job["id"])
@@ -157,7 +158,7 @@ class Dispatcher:
                 log.exception("dispatcher error on job %s", job["id"])
                 self._finish(job["id"], "error", "Internal dispatcher error")
 
-    async def _run_job(self, worker: WorkerClient, job: dict[str, Any], resume: bool) -> None:
+    async def _run_job(self, worker: WorkerClient, job: JobRow, resume: bool) -> None:
         job_id = job["id"]
         self._running = job_id
         session = self.sessions.session
@@ -200,12 +201,14 @@ class Dispatcher:
         job = self.db.get_job(job_id)
         session = self.sessions.session
         health = self.sessions.health or {}
-        runtime: dict[str, Any] = {"gpu": session["gpu"] if session else None}
-        for key in ("diffusers", "torch"):
-            if (health.get("versions") or {}).get(key):
-                runtime[key] = health["versions"][key]
-        if job and job.get("started_at"):
-            started = datetime.fromisoformat(job["started_at"])
+        versions = health.get("versions") or {}
+        runtime: JobRuntime = {"gpu": session["gpu"] if session else None}
+        if versions.get("diffusers"):
+            runtime["diffusers"] = versions["diffusers"]
+        if versions.get("torch"):
+            runtime["torch"] = versions["torch"]
+        if job and (started_at := job.get("started_at")):
+            started = datetime.fromisoformat(started_at)
             runtime["duration_s"] = round((datetime.now(UTC) - started).total_seconds(), 1)
         self.db.update_job(job_id, runtime=runtime)
 
@@ -222,7 +225,7 @@ class Dispatcher:
             except Exception:
                 log.exception("job finish callback failed")
 
-    async def _stage_inputs(self, worker: WorkerClient, spec: dict[str, Any]) -> None:
+    async def _stage_inputs(self, worker: WorkerClient, spec: Spec) -> None:
         """Send input blobs (content-addressed, so at most once per session)."""
         for sha in staged_blobs(spec):
             if await worker.has_blob(sha):
@@ -411,12 +414,12 @@ class Dispatcher:
             )
             self.bus.publish({"type": "result", "result": result})
 
-    def _segments(self, sha: str) -> list[dict[str, Any]]:
+    def _segments(self, sha: str) -> list[SavedConfig]:
         """The configs of the clips making up a stored video, oldest first."""
         result = self.db.result_for_blob(sha)
         if result is not None:
-            if result.get("segments"):
-                return list(result["segments"])
+            if segments := result.get("segments"):
+                return list(segments)
             job = self.db.get_job(result["job_id"])
             if job is not None:
                 return [saved_config(job, result)]
