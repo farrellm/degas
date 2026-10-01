@@ -22,7 +22,9 @@ from degas_worker import deps, faces
 
 DETECTOR = "det_10g.onnx"
 RECOGNIZER = "w600k_r50.onnx"
-DETECT_SIZE = 640
+# SCRFD misses a face that fills the frame, so a picture with none found is tried again
+# smaller (as ComfyUI_IPAdapter_plus does), which shrinks the face against the anchors.
+DETECT_SIZES = (640, 576, 512, 448, 384, 320)
 STRIDES = (8, 16, 32)
 ANCHORS = 2  # per location
 SCORE = 0.5
@@ -53,15 +55,22 @@ class FaceAnalyzer:
 
     def detect(self, rgb: Array) -> list[Face]:
         """Faces in the image, best first."""
+        for size in DETECT_SIZES:
+            if found := self._detect(rgb, size):
+                return found
+        return []
+
+    def _detect(self, rgb: Array, size: int) -> list[Face]:
+        """Faces found with the image fitted into a `size` px square."""
         h, w = rgb.shape[:2]
-        scale = DETECT_SIZE / max(h, w)
+        scale = size / max(h, w)
         resized = cv2.resize(rgb, (max(1, round(w * scale)), max(1, round(h * scale))))
-        canvas = np.zeros((DETECT_SIZE, DETECT_SIZE, 3), dtype=np.uint8)
+        canvas = np.zeros((size, size, 3), dtype=np.uint8)
         canvas[: resized.shape[0], : resized.shape[1]] = resized
         blob = ((canvas.astype(np.float32) - 127.5) / 128.0).transpose(2, 0, 1)[None]
         name = self.detector.get_inputs()[0].name
         outputs = self.detector.run(None, {name: blob})
-        return decode(outputs, scale)
+        return decode(outputs, scale, size)
 
     def identity(self, rgb: Array, face: Face) -> Array:
         """The face's ArcFace identity: 512 numbers of unit length."""
@@ -72,9 +81,9 @@ class FaceAnalyzer:
         return embedding / np.linalg.norm(embedding)
 
 
-def decode(outputs: list[Array], scale: float) -> list[Face]:
-    """SCRFD's outputs (scores, box distances and point offsets for each stride) as faces in
-    image pixels, overlapping ones merged."""
+def decode(outputs: list[Array], scale: float, size: int) -> list[Face]:
+    """SCRFD's outputs (scores, box distances and point offsets for each stride) for a `size`
+    px input, as faces in image pixels, overlapping ones merged."""
     n = len(STRIDES)
     batched = outputs[0].ndim == 3
     boxes: list[faces.Box] = []
@@ -84,7 +93,7 @@ def decode(outputs: list[Array], scale: float) -> list[Face]:
         score, dist, kps = (outputs[i + k * n] for k in range(3))
         if batched:
             score, dist, kps = score[0], dist[0], kps[0]
-        side = DETECT_SIZE // stride
+        side = size // stride
         ys, xs = np.mgrid[:side, :side]
         centres = np.stack([xs, ys], axis=-1).reshape(-1, 2) * stride
         centres = np.repeat(centres, ANCHORS, axis=0).astype(np.float32)

@@ -1,6 +1,7 @@
 # IP-Adapter: research and plan
 
-Status: Plans A, B and C built (Phases 11 to 13, 2026-09-30), not yet tested on a live GPU. What
+Status: Plans A, B and C built (Phases 11 to 13, 2026-09-30). FaceID was tested on an A100 on
+2026-10-01 (§5.2); the rest is not yet tested on a live GPU. What
 shipped is in [design.md](design.md) (§4.3, §5, §6.4, §10) and [ux.md](ux.md) (Phases 11 to 13).
 Where the build differs from the plan below, §4.7, §5.1 and §6.1 say how.
 
@@ -389,6 +390,59 @@ block choice in words, and *Model* stays available for anyone who wants the file
   unit's aligned crops, for its `clip_embeds`), then the FaceID slots are replaced by the ArcFace
   identities. `shortcut` is on for v2 files (by name); *Face structure* sets `shortcut_scale`.
 - A FaceID unit's purpose must be *Everything*; the other chips don't apply to identity.
+
+### 5.2 Checked against a settings guide, and tested (2026-10-01)
+
+A survey of FaceID Plus v2 settings (*Precision Identity Conditioning in Stable Diffusion XL*, an
+AI-written compilation of community posts) was checked against the build and against primary
+sources: the h94/IP-Adapter-FaceID model card, tencent-ailab's `ip_adapter_faceid.py` and
+`attention_processor_faceid.py`, diffusers' `embeddings.py`, `loaders/unet.py` and IP-Adapter
+guide, InsightFace's `scrfd.py`, and ComfyUI_IPAdapter_plus (`IPAdapterPlus.py`, `utils.py`,
+`CrossAttentionPatch.py`). The build already matched the sources; no default changed.
+
+| The guide says | Primary sources | Here |
+|---|---|---|
+| CLIP ViT-H, not bigG | h94: `laion/CLIP-ViT-H-14-laion2B-s32B-b79K` | ViT-H |
+| antelopev2 instead of buffalo_l | **Wrong.** h94 and diffusers use `buffalo_l`; ComfyUI_IPAdapter_plus names antelopev2 only for Kolors FaceID, which was trained on it. Another recognizer is another embedding space | `buffalo_l` |
+| The LoRA at 0.55–0.65 | ComfyUI's loader defaults to 0.6; the reference code applies it at 1.0 | 0.6 |
+| Weight 0.70–0.80 | Reference and ComfyUI default to 1.0 | 0.8 |
+| `v2_weight` 1.0–1.4, never over 2 | h94 `s_scale=1.0`; ComfyUI 1.0 | 1.0, to 2 |
+| CFG 4.0–5.5 | h94's examples use 7.5 | 5.5 (SDXL's default) |
+| End at 0.8 with an "ease out" curve | **Misread.** ComfyUI's *ease out* ramps the weight across UNet blocks, not over time; `end_at` defaults to 1.0 | Steps 0–1 |
+| DPM++ 2M SDE Karras | diffusers suggests DDIM or Euler | DPM++ 2M Karras; all are offered |
+| Several pictures: a normalized mean of identities, CLIP tokens concatenated | In no source. Plus pairs each identity with its own CLIP crop; ComfyUI concatenates both by default | Both concatenated |
+| Plus Face at 0.35–0.45 after FaceID | Community practice | Two units |
+| InstantID, PuLID, FaceDetailer | Outside diffusers (§2.6) | Not built; inpaint *Around the mask* with a FaceID unit is the nearest |
+
+Checking found one gap the guide doesn't mention: ComfyUI_IPAdapter_plus tries detection again
+at 576, 512, 448, 384 and 320 px when 640 finds no face, because SCRFD misses a face that fills
+the frame. `FaceAnalyzer.detect` now does the same.
+
+**Test.** An A100, RealVisXL V5.0, 1024², 30 steps, CFG 5.5, DPM++ 2M Karras, one seed, a prompt
+for a man in a garden. The reference is NASA's 1969 portrait of Neil Armstrong
+([Commons](https://commons.wikimedia.org/wiki/File:Neil_Armstrong_pose.jpg), public domain),
+with a second photo ([Commons](https://commons.wikimedia.org/wiki/File:Neil_Armstrong.jpg),
+public domain) for the two-picture case. The 29 results are in the library, tagged
+`faceid-test`. Likeness was judged by eye on one seed, so these are impressions, not
+measurements:
+
+- **Detection.** Two close crops of the face (440 px with a little margin, 300 px from brow
+  to chin) were refused before the fallback and found after it. The full photos gave the same
+  crop before and after.
+- **Likeness.** FaceID at its defaults carries the colouring, eyes, nose and face shape; the
+  hair and the age come from the checkpoint. It is a resemblance rather than a portrait. Plus
+  Face at 0.6 (from the close crop) also carries the hair and reads at least as close.
+  **FaceID 0.75 with Plus Face 0.4 was the closest of all**, which bears the guide out.
+- **Weight** 0.6, 0.8, 1.0: little difference. **Face LoRA** 0 is darker and less like; 0.6
+  and 1.0 are close (1.0 added stubble). **Face structure** 0 distorts the face; 1.0, 1.5
+  and 2.0 are close, and 2.0 showed none of the waxiness the guide warns of.
+- **CFG** 4, 5.5 and 7.5 all look sound; 7.5 didn't burn. **Ending at 0.8** barely differs from
+  1.0. Euler, DDIM, DPM++ 2M Karras and DPM++ 2M SDE Karras all work.
+- **Two pictures** mix the two readings: the second photo's smile and stubble came through.
+- **A picture of two people** used the bigger face.
+- **Checkpoints.** RealVisXL, Juggernaut XL and SDXL base all take it; base is the least like.
+- **Inpaint** *Around the mask* over the face at strength 0.35 with the same unit runs and
+  changes little, as a FaceDetailer pass would.
 
 ## 6. Plan C: FLUX.1 Redux (later)
 
