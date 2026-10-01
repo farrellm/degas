@@ -112,6 +112,20 @@
   outline-offset: -2px;
 }
 
+/* In the Library a prompt opens to its full text on a tap. */
+.prompt-toggle {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  text-align: left;
+}
+
+.prompt-toggle.expanded .prompt-text {
+  display: block;
+  white-space: pre-wrap;
+}
+
 .prompt-name {
   font-weight: 560;
 }

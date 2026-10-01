@@ -99,4 +99,18 @@ describe('Library', () => {
     await user.click(await screen.findByRole('button', { name: 'Use' }))
     expect(await screen.findByLabelText('Prompt')).toHaveValue('a harbour at dusk, oil painting')
   })
+
+  it('opens a saved prompt to its full text on a tap', async () => {
+    mockApi({ 'GET /api/prompts': () => [PROMPT] })
+    const user = userEvent.setup()
+    renderApp()
+    await user.click(await screen.findByRole('button', { name: 'Library' }))
+    await user.click(screen.getByRole('button', { name: 'Prompts' }))
+    const text = await screen.findByRole('button', { name: /a harbour at dusk/, expanded: false })
+    await user.click(text)
+    expect(text).toHaveAttribute('aria-expanded', 'true')
+    expect(text).toHaveClass('expanded')
+    await user.click(text)
+    expect(text).toHaveAttribute('aria-expanded', 'false')
+  })
 })
