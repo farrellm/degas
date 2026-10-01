@@ -5,7 +5,31 @@ Kept free of torch and diffusers so it can be tested without a GPU.
 
 import hashlib
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
+
+from degas_worker.spec import Lora, PairedLora, Spec
+
+
+def single_loras(spec: Spec) -> list[Lora]:
+    """A spec's LoRAs, for a family whose LoRAs are single files."""
+    return cast("list[Lora]", spec.get("loras") or [])
+
+
+def expert_loras(spec: Spec) -> list[tuple[Lora, str]]:
+    """Wan 2.2: each LoRA file with the component it goes into.
+
+    An A14B pair has a file for each expert (`transformer` denoises at high noise,
+    `transformer_2` at low); a single file goes into `transformer`.
+    """
+    files: list[tuple[Lora, str]] = []
+    for lora in spec.get("loras") or []:
+        if "high" in lora or "low" in lora:
+            pair = cast("PairedLora", lora)
+            halves = ((pair.get("high"), "transformer"), (pair.get("low"), "transformer_2"))
+            files += [(part, component) for part, component in halves if part]
+        else:
+            files.append((cast("Lora", lora), "transformer"))
+    return files
 
 
 def adapter_name(path: str) -> str:

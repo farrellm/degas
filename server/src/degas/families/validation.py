@@ -2,18 +2,27 @@
 it normalized (defaults filled, values clamped), or raises `SpecError` with a message for
 the form."""
 
-from typing import Any
+from typing import Any, Literal
 
 from degas.blobs import is_ref
 from degas.families.base import JsonSchema, SizeConstraints, SpecError, Variant
 from degas.media import FIT_MODES
+from degas_worker.spec import (
+    AssetRef,
+    ControlUnit,
+    ImagePromptUnit,
+    Lora,
+    PairedLora,
+    Place,
+    SpecInputs,
+)
 
 LORA_WEIGHT: JsonSchema = {"type": "number", "minimum": -2, "maximum": 2}
 # Modes that start from a source image.
 SOURCE_MODES = frozenset({"i2i", "i2v", "edit", "inpaint", "outpaint"})
 
 
-def validate_model(model: Any, variant: Variant) -> dict[str, Any]:
+def validate_model(model: Any, variant: Variant) -> AssetRef:
     if not isinstance(model, dict) or not isinstance(model.get("path"), str) or not model["path"]:
         raise SpecError("A model is required")
     path: str = model["path"]
@@ -24,7 +33,7 @@ def validate_model(model: Any, variant: Variant) -> dict[str, Any]:
     return {"path": path, "size": model.get("size")}
 
 
-def validate_inputs(inputs: Any, mode: str) -> dict[str, Any]:
+def validate_inputs(inputs: Any, mode: str) -> SpecInputs:
     """Source-image inputs: `{source, fit, extends?}`. Transforms are recorded by the server."""
     if mode not in SOURCE_MODES:
         return {}
@@ -35,7 +44,7 @@ def validate_inputs(inputs: Any, mode: str) -> dict[str, Any]:
     fit = inputs.get("fit") or "crop"
     if fit not in FIT_MODES:
         raise SpecError(f"fit: must be one of {', '.join(FIT_MODES)}")
-    out: dict[str, Any] = {"source": source, "fit": fit}
+    out: SpecInputs = {"source": source, "fit": fit}
     if mode == "inpaint":
         mask = inputs.get("mask")
         if not is_ref(mask):
@@ -69,16 +78,18 @@ def validate_refs(refs: Any, limit: int) -> list[str]:
 MIN_PLACE = 64
 
 
-def validate_place(place: Any, params: dict[str, Any]) -> dict[str, int]:
+def validate_place(place: Any, params: dict[str, Any]) -> Place:
     """Where an outpaint puts its source on the canvas: `{x, y, w, h}` in canvas pixels."""
     if not isinstance(place, dict):
         raise SpecError("Place the image on the canvas")
-    out: dict[str, int] = {}
-    for key in ("x", "y", "w", "h"):
+
+    def pixels(key: str) -> int:
         value = place.get(key)
         if isinstance(value, bool) or not isinstance(value, int | float):
             raise SpecError(f"place: {key} must be a number")
-        out[key] = round(value)
+        return round(value)
+
+    out: Place = {"x": pixels("x"), "y": pixels("y"), "w": pixels("w"), "h": pixels("h")}
     width, height = params["width"], params["height"]
     if out["w"] < MIN_PLACE or out["h"] < MIN_PLACE:
         raise SpecError(f"The image must be at least {MIN_PLACE} px on each side")
@@ -113,7 +124,7 @@ def _sha(value: Any, what: str) -> str:
     return value
 
 
-def validate_control(control: Any, family: str, limit: int) -> list[dict[str, Any]]:
+def validate_control(control: Any, family: str, limit: int) -> list[ControlUnit]:
     """Validate ControlNet units:
     `[{controlnet: {path}, image, fit?, scale, start, end, mask?, preprocessor?}]`."""
     if control is None:
@@ -123,7 +134,7 @@ def validate_control(control: Any, family: str, limit: int) -> list[dict[str, An
     if len(control) > limit:
         raise SpecError(f"At most {limit} ControlNets can be used at once")
     folder = f"controlnets/{family}/"
-    out: list[dict[str, Any]] = []
+    out: list[ControlUnit] = []
     seen: set[str] = set()
     for n, unit in enumerate(control, 1):
         if not isinstance(unit, dict):
@@ -139,15 +150,16 @@ def validate_control(control: Any, family: str, limit: int) -> list[dict[str, An
             raise SpecError(f"{path} is used twice. Each ControlNet can guide one image.")
         seen.add(path)
         size = net.get("size") if isinstance(net, dict) else None
-        out.append({"controlnet": {"path": path, "size": size}, **_control_unit(n, unit)})
+        out.append(_control_unit(n, unit, {"path": path, "size": size}))
     return out
 
 
-def _control_unit(n: int, unit: dict[str, Any]) -> dict[str, Any]:
-    """A unit's image, fit, weight, step range, area and preprocessor record."""
+def _control_unit(n: int, unit: dict[str, Any], net: AssetRef) -> ControlUnit:
+    """A unit's model, image, fit, weight, step range, area and preprocessor record."""
     if not isinstance(unit.get("image"), str) or not unit["image"]:
         raise SpecError(f"ControlNet {n}: choose a control image")
-    entry: dict[str, Any] = {
+    entry: ControlUnit = {
+        "controlnet": net,
         "image": _sha(unit["image"], f"ControlNet {n} image"),
         "fit": unit.get("fit") or "crop",
         "scale": _coerce("scale", CONTROL_SCALE, unit.get("scale", 0.7)),
@@ -190,7 +202,7 @@ FACE_LORA: JsonSchema = {"type": "number", "minimum": 0, "maximum": 1.5}
 DOWNSAMPLE: JsonSchema = {"type": "integer", "minimum": 1, "maximum": 5}
 
 
-def validate_image_prompts(prompts: Any, family: str, limit: int) -> list[dict[str, Any]]:
+def validate_image_prompts(prompts: Any, family: str, limit: int) -> list[ImagePromptUnit]:
     """Validate image prompts:
     `[{adapter: {path}, images: [sha…], fit?, purpose, weight, start, end, mask?}]`."""
     if prompts is None:
@@ -202,7 +214,7 @@ def validate_image_prompts(prompts: Any, family: str, limit: int) -> list[dict[s
     return [_image_prompt(n, unit, f"ip_adapters/{family}/") for n, unit in enumerate(prompts, 1)]
 
 
-def _image_prompt(n: int, unit: Any, folder: str) -> dict[str, Any]:
+def _image_prompt(n: int, unit: Any, folder: str) -> ImagePromptUnit:
     """One image prompt's model, pictures, fit, purpose, weight, step range and area."""
     if not isinstance(unit, dict):
         raise SpecError("Each image prompt must be an object")
@@ -218,7 +230,7 @@ def _image_prompt(n: int, unit: Any, folder: str) -> dict[str, Any]:
     if len(images) > MAX_PROMPT_IMAGES:
         raise SpecError(f"Image prompt {n}: at most {MAX_PROMPT_IMAGES} pictures")
     size = adapter.get("size") if isinstance(adapter, dict) else None
-    entry: dict[str, Any] = {
+    entry: ImagePromptUnit = {
         "adapter": {"path": path, "size": size},
         "images": [_sha(image, f"Image prompt {n} picture") for image in images],
         "fit": unit.get("fit") or "crop",
@@ -235,18 +247,16 @@ def _image_prompt(n: int, unit: Any, folder: str) -> dict[str, Any]:
         raise SpecError(f"Image prompt {n}: its steps must start before they end")
     if unit.get("mask") is not None:
         entry["mask"] = _sha(unit["mask"], f"Image prompt {n} area")
-    optional = (
-        ("structure", FACE_STRUCTURE),
-        ("lora_weight", FACE_LORA),
-        ("downsample", DOWNSAMPLE),
-    )
-    for key, schema in optional:
-        if unit.get(key) is not None:
-            entry[key] = _coerce(key, schema, unit[key])
+    if unit.get("structure") is not None:
+        entry["structure"] = _coerce("structure", FACE_STRUCTURE, unit["structure"])
+    if unit.get("lora_weight") is not None:
+        entry["lora_weight"] = _coerce("lora_weight", FACE_LORA, unit["lora_weight"])
+    if unit.get("downsample") is not None:
+        entry["downsample"] = _coerce("downsample", DOWNSAMPLE, unit["downsample"])
     return entry
 
 
-def validate_single_loras(loras: Any, limit: int) -> list[dict[str, Any]]:
+def validate_single_loras(loras: Any, limit: int) -> list[Lora]:
     """Validate a list of single-file LoRAs: `[{path, weight}]`."""
     if loras is None:
         return []
@@ -254,7 +264,7 @@ def validate_single_loras(loras: Any, limit: int) -> list[dict[str, Any]]:
         raise SpecError("loras: expected a list")
     if len(loras) > limit:
         raise SpecError(f"At most {limit} LoRAs can be applied at once")
-    out: list[dict[str, Any]] = []
+    out: list[Lora] = []
     for lora in loras:
         if not isinstance(lora, dict) or not isinstance(lora.get("path"), str):
             raise SpecError("Each LoRA needs a path")
@@ -265,7 +275,10 @@ def validate_single_loras(loras: Any, limit: int) -> list[dict[str, Any]]:
     return out
 
 
-def validate_paired_loras(loras: Any, limit: int) -> list[dict[str, Any]]:
+HALVES: tuple[Literal["high", "low"], ...] = ("high", "low")
+
+
+def validate_paired_loras(loras: Any, limit: int) -> list[PairedLora]:
     """Validate Wan A14B LoRAs: `[{high: {path, weight}, low: {path, weight}}]`.
 
     Either half may be left out, for a LoRA trained for one expert only.
@@ -276,13 +289,13 @@ def validate_paired_loras(loras: Any, limit: int) -> list[dict[str, Any]]:
         raise SpecError("loras: expected a list")
     if len(loras) > limit:
         raise SpecError(f"At most {limit} LoRAs can be applied at once")
-    out: list[dict[str, Any]] = []
+    out: list[PairedLora] = []
     seen: set[str] = set()
     for lora in loras:
         if not isinstance(lora, dict) or not (lora.get("high") or lora.get("low")):
             raise SpecError("Each LoRA needs a high-noise or low-noise file")
-        entry: dict[str, Any] = {}
-        for half in ("high", "low"):
+        entry: PairedLora = {}
+        for half in HALVES:
             part = lora.get(half)
             if not part:
                 continue

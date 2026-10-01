@@ -10,7 +10,7 @@ import signal
 import threading
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
-from typing import Any
+from typing import Any, cast
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse
@@ -27,6 +27,7 @@ from degas_worker.jobs import JobManager, WorkerBusy
 from degas_worker.paths import Paths
 from degas_worker.preprocess import PREPROCESSORS
 from degas_worker.preprocess.base import Preprocessor
+from degas_worker.spec import Spec
 
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
@@ -131,7 +132,7 @@ def create_app(  # noqa: PLR0915 - route definitions
     @app.post("/jobs", status_code=202)
     async def start_job(body: StartJob) -> dict[str, Any]:
         try:
-            record = jobs.start(body.job_id, body.spec, body.seeds)
+            record = jobs.start(body.job_id, cast("Spec", body.spec), body.seeds)
         except WorkerBusy:
             raise HTTPException(409, "A job is already running") from None
         except ValueError as e:

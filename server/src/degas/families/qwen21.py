@@ -28,6 +28,7 @@ from degas.families.validation import (
     validate_refs,
     validate_single_loras,
 )
+from degas_worker.spec import Spec
 
 MAX_LORAS = 8
 # The model takes up to 10 condition images: the source and 9 references.
@@ -119,7 +120,7 @@ class Qwen21:
             }
         return params_schema(props)
 
-    def validate(self, spec: dict[str, Any]) -> dict[str, Any]:
+    def validate(self, spec: dict[str, Any]) -> Spec:
         variant = spec.get("variant", "base")
         mode = spec.get("mode", "t2i")
         v = find_variant(self, variant, mode)

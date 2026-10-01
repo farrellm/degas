@@ -27,6 +27,7 @@ from degas.families.validation import (
     validate_params,
     validate_single_loras,
 )
+from degas_worker.spec import Lora, PairedLora, Spec
 
 MAX_LORAS = 6
 MODELS = "models/wan22"
@@ -152,7 +153,7 @@ class Wan22:
             }
         return params_schema(props)
 
-    def validate(self, spec: dict[str, Any]) -> dict[str, Any]:
+    def validate(self, spec: dict[str, Any]) -> Spec:
         variant = spec.get("variant", "ti2v-5b")
         mode = spec.get("mode", "t2v")
         v = find_variant(self, variant, mode)
@@ -160,6 +161,7 @@ class Wan22:
         params = validate_params(self.param_schema(variant, mode), spec.get("params") or {})
         snap_size(params, self.size_constraints(variant), v.label)
         params["num_frames"] = (params["num_frames"] - 1) // 4 * 4 + 1
+        loras: list[Lora] | list[PairedLora]
         if v.lora_format == "single":
             loras = validate_single_loras(spec.get("loras"), MAX_LORAS)
         else:

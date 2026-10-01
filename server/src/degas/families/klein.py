@@ -30,6 +30,7 @@ from degas.families.validation import (
     validate_refs,
     validate_single_loras,
 )
+from degas_worker.spec import Spec
 
 MAX_LORAS = 8
 MAX_REFS = 3
@@ -86,7 +87,7 @@ class Klein:
         }
         return params_schema(props)
 
-    def validate(self, spec: dict[str, Any]) -> dict[str, Any]:
+    def validate(self, spec: dict[str, Any]) -> Spec:
         variant = spec.get("variant", "9b")
         mode = spec.get("mode", "edit")
         v = find_variant(self, variant, mode)

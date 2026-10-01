@@ -4,7 +4,6 @@ import argparse
 import asyncio
 import logging
 import sys
-from typing import Any
 
 import httpx2
 
@@ -12,7 +11,7 @@ from degas.civitai.client import Civitai, CivitaiError
 from degas.civitai.importer import CivitaiImportError, Importer
 from degas.civitai.plan import ImportPlan, PlanError
 from degas.config import Config
-from degas.db import Database
+from degas.db import AssetRow, Database
 from degas.families import FAMILIES
 from degas.rclone import AsyncRclone, RcloneError
 
@@ -46,7 +45,7 @@ def importer(config: Config) -> Importer:
     )
 
 
-def load_index(config: Config) -> list[dict[str, Any]]:
+def load_index(config: Config) -> list[AssetRow]:
     path = config.data_dir / "degas.sqlite"
     if not path.exists():
         print("warning: no Drive index yet, so duplicates weren't checked")
@@ -119,11 +118,12 @@ async def _backfill(config: Config, args: argparse.Namespace) -> None:
     written = 0
     try:
         for asset in loras:
-            if not asset.get("sha256"):
+            sha256 = asset.get("sha256")
+            if not sha256:
                 print(f"{asset['path']}: no SHA-256 in the index (rescan Drive first)")
                 continue
             if args.dry_run:
-                version = await imp.civitai.by_hash(asset["sha256"])
+                version = await imp.civitai.by_hash(sha256)
                 found = (
                     version
                     and f"{(version.get('model') or {}).get('name')} ({version['baseModel']})"

@@ -7,7 +7,6 @@ import random
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import timedelta
-from typing import Any
 
 import httpx2
 
@@ -19,7 +18,7 @@ from degas.colab.session import SessionManager
 from degas.colab.tunnel import SshTunnel, Tunnel
 from degas.colab.worker_client import WorkerClient
 from degas.config import Config
-from degas.db import Database
+from degas.db import Database, JobRow
 from degas.dispatcher import Dispatcher
 from degas.drive import DriveAuth, DriveIndexer
 from degas.drive.catalog import AssetCatalog
@@ -142,7 +141,7 @@ def build_services(
     dispatcher = Dispatcher(db, blobs, bus, sessions, inputs)
     push = Push(db, config.vapid_key_file, config.push.subject, push_sender)
 
-    def job_finished(job: dict[str, Any]) -> None:
+    def job_finished(job: JobRow) -> None:
         notice = job_notice(job)
         if notice is not None:
             push.notify(*notice, tag=job["id"], url=RESULTS_URL)

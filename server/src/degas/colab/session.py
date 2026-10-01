@@ -18,7 +18,13 @@ from degas.colab.cli import Colab, ColabError
 from degas.colab.tunnel import Tunnel, TunnelError
 from degas.colab.worker_client import WorkerClient, WorkerError
 from degas.config import Config
-from degas.db import ACTIVE_SESSION_STATES, RUNNING_SESSION_STATES, Database, now
+from degas.db import (
+    ACTIVE_SESSION_STATES,
+    RUNNING_SESSION_STATES,
+    Database,
+    SessionRow,
+    now,
+)
 from degas.drive import DriveAuth, DriveError
 from degas.errors import DegasError
 from degas.events import EventBus
@@ -112,7 +118,7 @@ class SessionManager:
         self._bundle = bundle
         self.iv = intervals or Intervals()
 
-        self.session: dict[str, Any] | None = None
+        self.session: SessionRow | None = None
         self.tunnel: Tunnel | None = None
         self.worker: WorkerClient | None = None
         self.health: dict[str, Any] | None = None

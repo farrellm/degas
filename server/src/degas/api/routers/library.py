@@ -1,5 +1,6 @@
 """The library of kept results."""
 
+from collections.abc import Mapping
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Query
@@ -17,19 +18,19 @@ async def list_library(
     q: str | None = None,
     cursor: str | None = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 60,
-) -> dict[str, Any]:
+) -> Mapping[str, Any]:
     items = svc.db.list_library(q, cursor, limit)
     next_cursor = items[-1]["created_at"] if len(items) == limit else None
     return {"items": items, "cursor": next_cursor}
 
 
 @router.get("/library/{item_id}")
-async def get_library_item(svc: Svc, item_id: str) -> dict[str, Any]:
+async def get_library_item(svc: Svc, item_id: str) -> Mapping[str, Any]:
     return library_item_or_404(svc, item_id)
 
 
 @router.patch("/library/{item_id}")
-async def edit_library_item(svc: Svc, item_id: str, body: LibraryEdit) -> dict[str, Any]:
+async def edit_library_item(svc: Svc, item_id: str, body: LibraryEdit) -> Mapping[str, Any]:
     library_item_or_404(svc, item_id)
     fields: dict[str, Any] = {}
     if body.title is not None:

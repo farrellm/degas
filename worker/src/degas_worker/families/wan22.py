@@ -18,7 +18,8 @@ from diffusers import AutoencoderKLWan, DiffusionPipeline, WanImageToVideoPipeli
 from PIL import Image
 
 from degas_worker.families.base import Output, RunContext
-from degas_worker.families.lora import plan_loras
+from degas_worker.families.lora import expert_loras, plan_loras
+from degas_worker.spec import Spec
 from degas_worker.video import encode_mp4
 
 # Offload to the CPU when the loaded weights take more than this share of the GPU's memory.
@@ -36,21 +37,19 @@ class Wan22Runner:
         # "<component>|<asset path>" → adapter name, per expert
         self.adapters: dict[str, str] = {}
 
-    def run(self, spec: dict[str, Any], seeds: list[int], ctx: RunContext) -> Iterator[Output]:
+    def run(self, spec: Spec, seeds: list[int], ctx: RunContext) -> Iterator[Output]:
         mode = spec["mode"]
         model = spec["model"]
         path = ctx.fetch_asset(model["path"], model.get("size"))
-        loras: list[LoraLoad] = []
-        for lora in spec.get("loras") or []:
-            halves = (
-                [(lora.get("high"), "transformer"), (lora.get("low"), "transformer_2")]
-                if "high" in lora or "low" in lora
-                else [(lora, "transformer")]
+        loras: list[LoraLoad] = [
+            (
+                part["path"],
+                ctx.fetch_asset(part["path"], part.get("size")),
+                float(part["weight"]),
+                component,
             )
-            for part, component in halves:
-                if part:
-                    local = ctx.fetch_asset(part["path"], part.get("size"))
-                    loras.append((part["path"], local, float(part["weight"]), component))
+            for part, component in expert_loras(spec)
+        ]
         image = None
         if mode == "i2v":
             with Image.open(ctx.blob(spec["inputs"]["source"])) as im:

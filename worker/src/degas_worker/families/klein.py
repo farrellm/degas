@@ -17,8 +17,9 @@ from diffusers import Flux2KleinPipeline
 from PIL import Image
 
 from degas_worker.families.base import Output, RunContext
-from degas_worker.families.lora import plan_loras
+from degas_worker.families.lora import plan_loras, single_loras
 from degas_worker.families.offload import place
+from degas_worker.spec import Spec
 
 
 class KleinRunner:
@@ -27,14 +28,14 @@ class KleinRunner:
         self.model_path: Path | None = None
         self.adapters: dict[str, str] = {}  # LoRA asset path → loaded adapter name
 
-    def run(self, spec: dict[str, Any], seeds: list[int], ctx: RunContext) -> Iterator[Output]:
+    def run(self, spec: Spec, seeds: list[int], ctx: RunContext) -> Iterator[Output]:
         if spec.get("mode") != "edit":
             raise ValueError(f"FLUX.2 [klein] can't do {spec.get('mode')!r}")
         model = spec["model"]
         path = ctx.fetch_asset(model["path"], model.get("size"))
         loras = [
             (lora["path"], ctx.fetch_asset(lora["path"], lora.get("size")), float(lora["weight"]))
-            for lora in spec.get("loras") or []
+            for lora in single_loras(spec)
         ]
         inputs = spec["inputs"]
         images = [_open(ctx.blob(ref)) for ref in [inputs["source"], *inputs.get("refs", [])]]

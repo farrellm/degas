@@ -7,12 +7,25 @@ import contextlib
 import json
 import sqlite3
 import uuid
-from collections.abc import Iterable, Iterator, Sequence
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
+from degas.db.rows import (
+    AssetRow,
+    Cleared,
+    JobRow,
+    LibraryItem,
+    PushSubscriptionRow,
+    ResultRow,
+    SavedConfig,
+    SavedPrompt,
+    SessionRow,
+    TransformRecord,
+)
 from degas.db.schema import migrate
+from degas_worker.spec import Spec
 
 ACTIVE_SESSION_STATES = ("starting", "ready", "busy", "stopping")
 RUNNING_SESSION_STATES = ("ready", "busy")  # the worker is up
@@ -51,19 +64,20 @@ def _decode(row: sqlite3.Row, json_cols: Sequence[str] = ()) -> dict[str, Any]:
     return d
 
 
-def _row(row: sqlite3.Row | None, json_cols: Sequence[str] = ()) -> dict[str, Any] | None:
-    return None if row is None else _decode(row, json_cols)
+def _row[T](row: sqlite3.Row | None, kind: type[T], json_cols: Sequence[str] = ()) -> T | None:
+    """A fetched row as its TypedDict (`kind` is only for the type checker)."""
+    return None if row is None else cast("T", _decode(row, json_cols))
 
 
-def _rows(rows: Iterable[sqlite3.Row], json_cols: Sequence[str] = ()) -> list[dict[str, Any]]:
-    return [_decode(row, json_cols) for row in rows]
+def _rows[T](rows: Iterable[sqlite3.Row], kind: type[T], json_cols: Sequence[str] = ()) -> list[T]:
+    return [cast("T", _decode(row, json_cols)) for row in rows]
 
 
-def _session(row: sqlite3.Row | None) -> dict[str, Any] | None:
-    d = _row(row)
-    if d is not None:
-        d["high_mem"] = bool(d["high_mem"])
-    return d
+def _session(row: sqlite3.Row | None) -> SessionRow | None:
+    session = _row(row, SessionRow)
+    if session is not None:
+        session["high_mem"] = bool(session["high_mem"])
+    return session
 
 
 def _escape_like(text: str) -> str:
@@ -95,7 +109,7 @@ class Database:
 
     # -- sessions --------------------------------------------------------------------------
 
-    def create_session(self, gpu: str, high_mem: bool) -> dict[str, Any]:
+    def create_session(self, gpu: str, high_mem: bool) -> SessionRow:
         id_, ts = new_id(), now()
         self.conn.execute(
             "INSERT INTO sessions (id, gpu, high_mem, state, started_at, last_activity_at)"
@@ -106,11 +120,11 @@ class Database:
         assert session is not None
         return session
 
-    def get_session(self, id_: str) -> dict[str, Any] | None:
+    def get_session(self, id_: str) -> SessionRow | None:
         row = self.conn.execute("SELECT * FROM sessions WHERE id = ?", (id_,)).fetchone()
         return _session(row)
 
-    def latest_session(self) -> dict[str, Any] | None:
+    def latest_session(self) -> SessionRow | None:
         row = self.conn.execute(
             "SELECT * FROM sessions ORDER BY started_at DESC LIMIT 1"
         ).fetchone()
@@ -132,7 +146,7 @@ class Database:
 
     # -- jobs ------------------------------------------------------------------------------
 
-    def insert_job(self, spec: dict[str, Any], seeds: list[int]) -> dict[str, Any]:
+    def insert_job(self, spec: Spec, seeds: list[int]) -> JobRow:
         id_ = new_id()
         (pos,) = self.conn.execute(
             "SELECT COALESCE(MAX(queue_position), 0) + 1 FROM jobs"
@@ -146,11 +160,11 @@ class Database:
         assert job is not None
         return job
 
-    def get_job(self, id_: str) -> dict[str, Any] | None:
+    def get_job(self, id_: str) -> JobRow | None:
         row = self.conn.execute("SELECT * FROM jobs WHERE id = ?", (id_,)).fetchone()
-        return _row(row, JOB_JSON)
+        return _row(row, JobRow, JOB_JSON)
 
-    def list_jobs(self, limit: int = 50) -> list[dict[str, Any]]:
+    def list_jobs(self, limit: int = 50) -> list[JobRow]:
         """Queued and running jobs (in queue order), then the most recent finished ones."""
         active = self.conn.execute(
             "SELECT * FROM jobs WHERE status IN ('queued', 'running')"
@@ -161,19 +175,19 @@ class Database:
             " ORDER BY finished_at DESC LIMIT ?",
             (limit,),
         ).fetchall()
-        return _rows([*active, *done], JOB_JSON)
+        return _rows([*active, *done], JobRow, JOB_JSON)
 
-    def jobs_with_status(self, status: str) -> list[dict[str, Any]]:
+    def jobs_with_status(self, status: str) -> list[JobRow]:
         rows = self.conn.execute(
             "SELECT * FROM jobs WHERE status = ? ORDER BY queue_position", (status,)
         ).fetchall()
-        return _rows(rows, JOB_JSON)
+        return _rows(rows, JobRow, JOB_JSON)
 
-    def next_queued(self) -> dict[str, Any] | None:
+    def next_queued(self) -> JobRow | None:
         row = self.conn.execute(
             "SELECT * FROM jobs WHERE status = 'queued' ORDER BY queue_position LIMIT 1"
         ).fetchone()
-        return _row(row, JOB_JSON)
+        return _row(row, JobRow, JOB_JSON)
 
     def move_job(self, id_: str, index: int) -> list[str]:
         """Move a queued job to `index` in the queue (0 is next). Returns the queue's ids.
@@ -218,8 +232,8 @@ class Database:
         width: int | None,
         height: int | None,
         duration: float | None = None,
-        segments: list[dict[str, Any]] | None = None,
-    ) -> dict[str, Any]:
+        segments: list[SavedConfig] | None = None,
+    ) -> ResultRow:
         """`segments`: for a stitched video, the configs of the clips it chains (design §6.4)."""
         id_ = new_id()
         self.conn.execute(
@@ -244,15 +258,15 @@ class Database:
         assert result is not None
         return result
 
-    def get_result(self, id_: str) -> dict[str, Any] | None:
+    def get_result(self, id_: str) -> ResultRow | None:
         row = self.conn.execute(RESULTS_QUERY + " AND r.id = ?", (id_,)).fetchone()
-        return _row(row, RESULT_JSON)
+        return _row(row, ResultRow, RESULT_JSON)
 
-    def result_for_blob(self, sha: str) -> dict[str, Any] | None:
+    def result_for_blob(self, sha: str) -> ResultRow | None:
         row = self.conn.execute(
             RESULTS_QUERY + " AND r.blob_sha = ? ORDER BY r.created_at DESC LIMIT 1", (sha,)
         ).fetchone()
-        return _row(row, RESULT_JSON)
+        return _row(row, ResultRow, RESULT_JSON)
 
     def has_result(self, job_id: str, item_index: int) -> bool:
         row = self.conn.execute(
@@ -262,7 +276,7 @@ class Database:
 
     def list_results(
         self, before: str | None = None, limit: int = 60, job_id: str | None = None
-    ) -> list[dict[str, Any]]:
+    ) -> list[ResultRow]:
         """Newest first. `before` is a `created_at` cursor."""
         query = RESULTS_QUERY
         args: list[Any] = []
@@ -275,7 +289,7 @@ class Database:
         query += " ORDER BY r.created_at DESC, r.item_index DESC LIMIT ?"
         args.append(limit)
         rows = self.conn.execute(query, args).fetchall()
-        return _rows(rows, RESULT_JSON)
+        return _rows(rows, ResultRow, RESULT_JSON)
 
     def add_blob_ref(
         self, sha: str, ref_type: str, ref_id: str, expires_at: str | None = None
@@ -305,7 +319,7 @@ class Database:
             (derived, original, json.dumps(ops)),
         )
 
-    def get_transform(self, derived: str) -> dict[str, Any] | None:
+    def get_transform(self, derived: str) -> TransformRecord | None:
         row = self.conn.execute(
             "SELECT original_sha, ops FROM blob_transforms WHERE derived_sha = ?", (derived,)
         ).fetchone()
@@ -365,7 +379,7 @@ class Database:
             ).rowcount
         return {"results": len(results), "jobs": len(jobs), "refs": refs}
 
-    def clear_results(self) -> dict[str, Any]:
+    def clear_results(self) -> Cleared:
         """Delete every finished job and its results now, without waiting for them to expire.
 
         Queued and running jobs stay. Kept images hold their own refs in the library.
@@ -386,7 +400,7 @@ class Database:
             ]
             return self._release(jobs, results)
 
-    def delete_job_results(self, job_id: str, chain: bool) -> dict[str, Any]:
+    def delete_job_results(self, job_id: str, chain: bool) -> Cleared:
         """Delete one finished job's results now: its stitched chain, or everything else.
 
         The job goes too once nothing is left to show. Returns the counts and the blobs
@@ -411,7 +425,7 @@ class Database:
             ]
             return self._release(jobs, results)
 
-    def _release(self, jobs: list[str], results: list[str]) -> dict[str, Any]:
+    def _release(self, jobs: list[str], results: list[str]) -> Cleared:
         """Drop deleted jobs' and results' blob refs; returns the counts and those blobs."""
         shas: set[str] = set()
         for ref_type, ids in (("job", jobs), ("result", results)):
@@ -422,8 +436,8 @@ class Database:
     # -- library ---------------------------------------------------------------------------
 
     def insert_library_item(
-        self, result: dict[str, Any], config: dict[str, Any], inputs: Iterable[str] = ()
-    ) -> dict[str, Any]:
+        self, result: ResultRow, config: SavedConfig, inputs: Iterable[str] = ()
+    ) -> LibraryItem:
         """Keep a result: the item holds its own refs to the image and every input."""
         id_ = new_id()
         kind = "video" if result["media_type"].startswith("video/") else "image"
@@ -451,26 +465,26 @@ class Database:
         assert item is not None
         return item
 
-    def get_library_item(self, id_: str) -> dict[str, Any] | None:
+    def get_library_item(self, id_: str) -> LibraryItem | None:
         row = self.conn.execute("SELECT * FROM library_items WHERE id = ?", (id_,)).fetchone()
-        return _row(row, LIBRARY_JSON)
+        return _row(row, LibraryItem, LIBRARY_JSON)
 
-    def library_item_for_blob(self, sha: str) -> dict[str, Any] | None:
+    def library_item_for_blob(self, sha: str) -> LibraryItem | None:
         row = self.conn.execute(
             "SELECT * FROM library_items WHERE blob_sha = ? ORDER BY created_at DESC LIMIT 1",
             (sha,),
         ).fetchone()
-        return _row(row, LIBRARY_JSON)
+        return _row(row, LibraryItem, LIBRARY_JSON)
 
-    def library_item_for_result(self, result_id: str) -> dict[str, Any] | None:
+    def library_item_for_result(self, result_id: str) -> LibraryItem | None:
         row = self.conn.execute(
             "SELECT * FROM library_items WHERE source_result_id = ?", (result_id,)
         ).fetchone()
-        return _row(row, LIBRARY_JSON)
+        return _row(row, LibraryItem, LIBRARY_JSON)
 
     def list_library(
         self, query: str | None = None, before: str | None = None, limit: int = 60
-    ) -> list[dict[str, Any]]:
+    ) -> list[LibraryItem]:
         """Newest first, optionally matching prompt text, title or tags."""
         sql = "SELECT * FROM library_items WHERE 1 = 1"
         args: list[Any] = []
@@ -488,7 +502,7 @@ class Database:
         sql += " ORDER BY created_at DESC LIMIT ?"
         args.append(limit)
         rows = self.conn.execute(sql, args).fetchall()
-        return _rows(rows, LIBRARY_JSON)
+        return _rows(rows, LibraryItem, LIBRARY_JSON)
 
     def update_library_item(self, id_: str, **fields: Any) -> None:
         if "tags" in fields:
@@ -510,7 +524,7 @@ class Database:
         negative_prompt: str,
         family: str | None,
         tags: list[str],
-    ) -> dict[str, Any]:
+    ) -> SavedPrompt:
         id_ = new_id()
         self.conn.execute(
             "INSERT INTO prompts (id, name, prompt, negative_prompt, family, tags, created_at)"
@@ -529,11 +543,11 @@ class Database:
         assert saved is not None
         return saved
 
-    def get_prompt(self, id_: str) -> dict[str, Any] | None:
+    def get_prompt(self, id_: str) -> SavedPrompt | None:
         row = self.conn.execute("SELECT * FROM prompts WHERE id = ?", (id_,)).fetchone()
-        return _row(row, PROMPT_JSON)
+        return _row(row, SavedPrompt, PROMPT_JSON)
 
-    def list_prompts(self, query: str | None = None) -> list[dict[str, Any]]:
+    def list_prompts(self, query: str | None = None) -> list[SavedPrompt]:
         sql = "SELECT * FROM prompts WHERE 1 = 1"
         args: list[Any] = []
         for word in (query or "").split():
@@ -545,7 +559,7 @@ class Database:
             args += [like] * 4
         sql += " ORDER BY created_at DESC"
         rows = self.conn.execute(sql, args).fetchall()
-        return _rows(rows, PROMPT_JSON)
+        return _rows(rows, SavedPrompt, PROMPT_JSON)
 
     def update_prompt(self, id_: str, **fields: Any) -> None:
         if "tags" in fields:
@@ -557,7 +571,7 @@ class Database:
 
     # -- assets ----------------------------------------------------------------------------
 
-    def replace_assets(self, assets: Iterable[dict[str, Any]]) -> int:
+    def replace_assets(self, assets: Iterable[Mapping[str, Any]]) -> int:
         """Replace the Drive index. Preview images are held by `asset` blob refs."""
         ts = now()
         rows = [
@@ -595,9 +609,7 @@ class Database:
         self.set_setting("drive.indexed_at", ts)
         return len(rows)
 
-    def list_assets(
-        self, family: str | None = None, kind: str | None = None
-    ) -> list[dict[str, Any]]:
+    def list_assets(self, family: str | None = None, kind: str | None = None) -> list[AssetRow]:
         query = "SELECT * FROM assets WHERE 1 = 1"
         args: list[Any] = []
         if family:
@@ -608,7 +620,7 @@ class Database:
             args.append(kind)
         query += " ORDER BY path"
         rows = self.conn.execute(query, args).fetchall()
-        return _rows(rows, ASSET_JSON)
+        return _rows(rows, AssetRow, ASSET_JSON)
 
     def delete_assets(self, paths: Iterable[str]) -> list[str]:
         """Drop assets from the index; returns the preview blobs they held."""
@@ -619,9 +631,9 @@ class Database:
                 shas += self.remove_blob_refs("asset", path)
         return shas
 
-    def get_asset(self, path: str) -> dict[str, Any] | None:
+    def get_asset(self, path: str) -> AssetRow | None:
         row = self.conn.execute("SELECT * FROM assets WHERE path = ?", (path,)).fetchone()
-        return _row(row, ASSET_JSON)
+        return _row(row, AssetRow, ASSET_JSON)
 
     # -- push subscriptions ----------------------------------------------------------------
 
@@ -636,9 +648,9 @@ class Database:
         cur = self.conn.execute("DELETE FROM push_subscriptions WHERE endpoint = ?", (endpoint,))
         return cur.rowcount > 0
 
-    def list_push_subscriptions(self) -> list[dict[str, Any]]:
+    def list_push_subscriptions(self) -> list[PushSubscriptionRow]:
         rows = self.conn.execute("SELECT * FROM push_subscriptions ORDER BY created_at").fetchall()
-        return _rows(rows, ("keys",))
+        return _rows(rows, PushSubscriptionRow, ("keys",))
 
     # -- settings --------------------------------------------------------------------------
 

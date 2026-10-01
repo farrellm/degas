@@ -20,8 +20,9 @@ from PIL import Image
 from degas_worker import masks
 from degas_worker.degrid import degrid
 from degas_worker.families.base import Output, RunContext
-from degas_worker.families.lora import plan_loras
+from degas_worker.families.lora import plan_loras, single_loras
 from degas_worker.families.offload import loaded_bytes, module_bytes, place
+from degas_worker.spec import Spec
 
 # Keep in sync with the server descriptor (degas/families/qwen21.py).
 SCHEDULES: dict[str, dict[str, Any]] = {"default": {}, "beta": {"use_beta_sigmas": True}}
@@ -47,7 +48,7 @@ class Qwen21Runner:
         self.adapters: dict[str, str] = {}  # LoRA asset path → loaded adapter name
         self._scheduler_config: Any = None
 
-    def run(self, spec: dict[str, Any], seeds: list[int], ctx: RunContext) -> Iterator[Output]:
+    def run(self, spec: Spec, seeds: list[int], ctx: RunContext) -> Iterator[Output]:
         mode = spec.get("mode", "t2i")
         if mode not in ("t2i", "edit", "inpaint"):
             raise ValueError(f"Qwen-Image 2.1 can't do {mode!r}")
@@ -55,7 +56,7 @@ class Qwen21Runner:
         path = ctx.fetch_asset(model["path"], model.get("size"))
         loras = [
             (lora["path"], ctx.fetch_asset(lora["path"], lora.get("size")), float(lora["weight"]))
-            for lora in spec.get("loras") or []
+            for lora in single_loras(spec)
         ]
         inputs = spec.get("inputs") or {}
         images: list[Image.Image] = []

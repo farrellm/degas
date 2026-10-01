@@ -7,6 +7,7 @@ from typing import Any
 import httpx2
 
 from degas.errors import DegasError
+from degas_worker.spec import Spec
 
 
 class WorkerError(DegasError):
@@ -54,7 +55,7 @@ class WorkerClient:
     async def put_blob(self, sha: str, data: bytes) -> None:
         await self._json("PUT", f"/blobs/{sha}", content=data)
 
-    async def start_job(self, job_id: str, spec: dict[str, Any], seeds: list[int]) -> None:
+    async def start_job(self, job_id: str, spec: Spec, seeds: list[int]) -> None:
         await self._json("POST", "/jobs", json={"job_id": job_id, "spec": spec, "seeds": seeds})
 
     async def events(self, job_id: str) -> AsyncIterator[dict[str, Any]]:

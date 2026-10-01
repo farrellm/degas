@@ -32,6 +32,7 @@ from degas.families.validation import (
     validate_place,
     validate_single_loras,
 )
+from degas_worker.spec import ImagePromptUnit, Spec
 
 # Keep in sync with the worker runner (degas_worker/families/sdxl.py).
 SCHEDULERS = {
@@ -172,7 +173,7 @@ class Sdxl:
         props.update(_mode_params(variant, mode))
         return params_schema(props)
 
-    def validate(self, spec: dict[str, Any]) -> dict[str, Any]:
+    def validate(self, spec: dict[str, Any]) -> Spec:
         variant = spec.get("variant", "base")
         mode = spec.get("mode", "t2i")
         v = find_variant(self, variant, mode)
@@ -188,7 +189,7 @@ class Sdxl:
         inputs = validate_inputs(spec.get("inputs"), mode)
         if mode == "outpaint":
             inputs["place"] = validate_place(inputs.get("place"), params)
-        out = {
+        out: Spec = {
             "family": self.id,
             "variant": variant,
             "mode": mode,
@@ -224,17 +225,22 @@ def is_faceid(adapter: str) -> bool:
     return "faceid" in adapter.rsplit("/", 1)[-1].lower()
 
 
-def faceid_unit(n: int, unit: dict[str, Any]) -> dict[str, Any]:
+def faceid_unit(n: int, unit: ImagePromptUnit) -> ImagePromptUnit:
     """A FaceID unit gets its structure and LoRA weight; other units don't have them."""
-    unit = {k: v for k, v in unit.items() if k != "downsample"}  # Redux only
+    unit = unit.copy()
+    unit.pop("downsample", None)  # Redux only
     if not is_faceid(unit["adapter"]["path"]):
-        return {k: v for k, v in unit.items() if k not in FACE_DEFAULTS}
+        unit.pop("structure", None)
+        unit.pop("lora_weight", None)
+        return unit
     if unit["purpose"] != "all":
         raise SpecError(f"Image prompt {n}: a FaceID model reads a face, so it acts everywhere")
-    return {**FACE_DEFAULTS, **unit}
+    unit.setdefault("structure", FACE_DEFAULTS["structure"])
+    unit.setdefault("lora_weight", FACE_DEFAULTS["lora_weight"])
+    return unit
 
 
-def image_encoder(prompts: list[dict[str, Any]]) -> str:
+def image_encoder(prompts: list[ImagePromptUnit]) -> str:
     """The one image encoder a job's image prompts share (the pipeline holds one)."""
     kinds = {encoder_of(unit["adapter"]["path"]) for unit in prompts}
     if len(kinds) > 1:
