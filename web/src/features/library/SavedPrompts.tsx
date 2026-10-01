@@ -42,6 +42,7 @@ function PromptRow({ p, onUse }: { p: SavedPrompt; onUse: () => void }) {
   const qc = useQueryClient()
   const [mode, setMode] = useState<'view' | 'rename' | 'delete'>('view')
   const [name, setName] = useState(p.name)
+  const [expanded, setExpanded] = useState(false)
   const onSettled = () => qc.invalidateQueries({ queryKey: queryKeys.prompts })
   const rename = useMutation({
     mutationFn: () => api.editPrompt(p.id, { name: name.trim() }),
@@ -86,7 +87,16 @@ function PromptRow({ p, onUse }: { p: SavedPrompt; onUse: () => void }) {
           </button>
         </form>
       ) : (
-        <SavedPromptText p={p} />
+        <button
+          type="button"
+          className={expanded ? 'prompt-toggle expanded' : 'prompt-toggle'}
+          aria-expanded={expanded}
+          onClick={() => {
+            setExpanded(!expanded)
+          }}
+        >
+          <SavedPromptText p={p} />
+        </button>
       )}
       {mode === 'delete' ? (
         <div className="row-buttons" role="group" aria-label="Confirm delete">

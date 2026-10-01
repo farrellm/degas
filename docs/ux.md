@@ -138,7 +138,7 @@ Built. Notes on what shipped: *Kept* in the viewer is a toggle, so tapping it ag
 - **Keep.** In the viewer, *Keep* becomes the primary action and *Save to Photos* moves to second place. Kept tiles carry a small rose corner mark in the feed. A group whose images are all kept shows *Kept* instead of the time left, and the time left turns ochre under 2 hours.
 - **Library tab** (the third tab). It has a search field for prompt text and tags, and an *Images / Prompts* switch. The images grid is by date, and opens the same viewer and wall label with *Remix*, *Delete* and (from Phase 4) *Use as source*.
 - **Remix** replaces *Reuse settings*. It restores LoRAs and inputs as well as parameters. Any asset that's no longer in the Drive index is flagged on its row: *Not found in Drive. Pick another model.*
-- **Saved prompts.** A *Prompts* button at the top right of the prompt block opens a sheet listing saved prompts. Tapping one replaces the prompt fields, and *Save this prompt* sits at the top of the sheet. The Library's Prompts view lists the same items with rename and delete.
+- **Saved prompts.** A *Prompts* button at the top right of the prompt block opens a sheet listing saved prompts. Tapping one replaces the prompt fields, and *Save this prompt* sits at the top of the sheet. The Library's Prompts view lists the same items with rename and delete. There a prompt is cut at three lines; tapping it shows the whole text, and tapping again folds it.
 - The empty-state copy changes to *Images you don't keep are deleted 24 hours after the GPU session ends.*
 
 ### Phase 4: Wan 2.2 video, image picker, crop editor
