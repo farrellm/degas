@@ -111,3 +111,5 @@ export function useSelection({
     },
   }
 }
+
+export type SelectionState = ReturnType<typeof useSelection>

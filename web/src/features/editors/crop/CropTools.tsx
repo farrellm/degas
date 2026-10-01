@@ -1,3 +1,5 @@
+import { ChoiceChips } from '@/components/ChoiceChips'
+
 import type { Aspect } from './crop'
 
 export interface CropToolsProps {
@@ -31,21 +33,14 @@ export function CropTools({
 }: CropToolsProps) {
   return (
     <>
-      <div className="aspect-chips" role="group" aria-label="Shape">
-        {aspects.map((a) => (
-          <button
-            key={a.id}
-            type="button"
-            aria-pressed={aspect === a.id}
-            disabled={disabled}
-            onClick={() => {
-              onAspect(a.id)
-            }}
-          >
-            {a.label}
-          </button>
-        ))}
-      </div>
+      <ChoiceChips
+        label="Shape"
+        className="aspect-chips"
+        options={aspects}
+        value={aspect}
+        disabled={disabled}
+        onChoose={onAspect}
+      />
       <div className="editor-tools">
         <button type="button" className="tool" disabled={disabled} onClick={onRotate}>
           <svg viewBox="0 0 20 20" aria-hidden>

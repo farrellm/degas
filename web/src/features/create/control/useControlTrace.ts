@@ -135,8 +135,6 @@ export function useControlTrace({
     clearNote: () => {
       setNote(null)
     },
-    /** The unit's trace when it's an edge trace, which the Detail slider retraces. */
-    cannyTrace,
     detail,
     setDetail,
     trace: trace.mutate,
