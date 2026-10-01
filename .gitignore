@@ -29,6 +29,9 @@ drive_client.json
 # Phase 0 spike artifacts
 spike/*.bin
 
+# Browser automation logs and snapshots (Playwright MCP)
+.playwright-mcp/
+
 # Editors / OS
 .idea/
 .vscode/*
