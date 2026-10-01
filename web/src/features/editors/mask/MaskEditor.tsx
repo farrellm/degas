@@ -1,26 +1,18 @@
-import { useMutation, useQuery } from '@tanstack/react-query'
-import {
-  type KeyboardEvent as ReactKeyboardEvent,
-  type PointerEvent as ReactPointerEvent,
-  useMemo,
-  useRef,
-  useState,
-} from 'react'
+import { useMutation } from '@tanstack/react-query'
+import { type KeyboardEvent as ReactKeyboardEvent, useMemo, useRef, useState } from 'react'
 
 import { api } from '@/api/client'
-import { queries } from '@/api/queries'
 import type { BlobInfo } from '@/api/types'
 import { blobUrl } from '@/api/urls'
+import { ChoiceChips } from '@/components/ChoiceChips'
 import { zoomAt } from '@/features/editors/crop/crop'
-import { pinch, stagePoint } from '@/features/editors/gestures'
-import { useAssets } from '@/hooks/useAssets'
-import { useDialog } from '@/hooks/useDialog'
+import { EditorDialog } from '@/features/editors/EditorDialog'
+import { keyMove, stagePoint } from '@/features/editors/gestures'
 import { useElementSize } from '@/hooks/useElementSize'
 import type { Size, View } from '@/lib/geometry'
 import type { Source } from '@/lib/image'
-import { isActive, isGpuReady } from '@/lib/session'
 
-import type { Action, Stroke } from './canvas'
+import type { Action } from './canvas'
 import {
   clampView,
   emptyHistory,
@@ -28,16 +20,16 @@ import {
   type History,
   push,
   redo,
-  toImage,
   undo,
   workingSize,
 } from './mask'
 import { MaskTools } from './MaskTools'
+import { RangeRow } from './RangeRow'
 import { SelectControls } from './SelectControls'
 import { useMaskCanvas } from './useMaskCanvas'
+import { useMaskPointers } from './useMaskPointers'
 import { useSelection } from './useSelection'
-
-export const SAM_ASSET = 'preprocessors/sam3'
+import { useSelectNote } from './useSelectNote'
 
 export interface MaskEditorProps {
   /** The image the mask is painted over, and its pixel size. */
@@ -56,13 +48,16 @@ export interface MaskEditorProps {
   onCancel: () => void
 }
 
-type Tool = 'brush' | 'erase' | 'select'
+const TOOLS = [
+  { id: 'brush', label: 'Brush' },
+  { id: 'erase', label: 'Erase' },
+  { id: 'select', label: 'Select' },
+] as const
+type Tool = (typeof TOOLS)[number]['id']
 
 // Used until the stage has been measured (and in tests, which have no layout).
 const FALLBACK_STAGE: Size = { w: 360, h: 480 }
 const HATCH_GAP = 7 // screen px between hatching strokes at the fitted zoom, like a sketch tile
-const TAP_SLOP = 8
-const LONG_PRESS_MS = 500
 
 /** Full-screen mask painting over the source (design §8.2, ux.md Phase 6). */
 export function MaskEditor({
@@ -86,26 +81,10 @@ export function MaskEditor({
   const [history, setHistory] = useState<History<Action>>(emptyHistory)
   const [imageOpacity, setImageOpacity] = useState(1)
   const [showBlur, setShowBlur] = useState(false)
-  const [ring, setRing] = useState<{ x: number; y: number } | null>(null)
-
-  const ref = useDialog(onCancel)
   const stageRef = useRef<HTMLDivElement>(null)
   const stage = useElementSize(stageRef, FALLBACK_STAGE)
-  const stroke = useRef<Stroke | null>(null)
-  const pointers = useRef(new Map<number, { x: number; y: number }>())
-  const tap = useRef<{ x: number; y: number; long: boolean; timer: number } | null>(null)
 
-  const session = useQuery(queries.session())
-  const assets = useAssets()
-  const gpuReady = isGpuReady(session.data)
-  const samIndexed = assets.data?.some((a) => a.path === SAM_ASSET) ?? false
-  const selectNote = !samIndexed
-    ? `Put SAM 3 in Drive under degas/${SAM_ASSET}/ and rescan to use Select.`
-    : !gpuReady
-      ? isActive(session.data)
-        ? 'Select works once the GPU session is ready.'
-        : 'Start a session to use Select.'
-      : null
+  const selectNote = useSelectNote()
 
   const maxBrush = Math.round(Math.max(work.w, work.h) / 3)
   const fitted = fitView(stage, work)
@@ -133,94 +112,43 @@ export function MaskEditor({
     },
   })
 
-  // Pointers -------------------------------------------------------------------------------
-
-  const point = (e: { clientX: number; clientY: number }) => stagePoint(stageRef.current, e)
-
   const moveView = (change: (view: View) => View) => {
     setView((prev) => clampView(change(prev ? clampView(prev, stage, work) : fitted), stage, work))
   }
 
-  const cancelTap = () => {
-    if (tap.current) window.clearTimeout(tap.current.timer)
-    tap.current = null
-  }
-
-  const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
-    if (!ready || (e.pointerType === 'mouse' && e.button !== 0)) return
-    e.currentTarget.setPointerCapture(e.pointerId)
-    const p = point(e)
-    pointers.current.set(e.pointerId, p)
-    if (pointers.current.size > 1) {
-      // A second finger: this is a pinch, not paint.
-      cancelTap()
-      if (stroke.current) {
-        stroke.current = null
-        render(history.done)
-      }
-      return
-    }
-    if (tool === 'select') {
-      const timer = window.setTimeout(() => {
-        if (tap.current) tap.current.long = true
-      }, LONG_PRESS_MS)
-      tap.current = { ...p, long: false, timer }
-      return
-    }
-    const at = toImage(v, p.x, p.y)
-    stroke.current = {
-      kind: 'stroke',
-      erase: tool === 'erase',
-      size: brush,
-      points: [[at.x, at.y]],
-    }
-    paint(stroke.current, 0)
-  }
-
-  const onPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
-    const p = point(e)
-    if (tool !== 'select') setRing(p)
-    const prev = pointers.current.get(e.pointerId)
-    if (!prev) return
-    const other = [...pointers.current].find(([id]) => id !== e.pointerId)?.[1]
-    pointers.current.set(e.pointerId, p)
-    if (other) {
-      moveView((view) => pinch(view, prev, p, other))
-      return
-    }
-    if (tap.current && Math.hypot(p.x - tap.current.x, p.y - tap.current.y) > TAP_SLOP) {
-      cancelTap()
-    }
-    const s = stroke.current
-    if (s) {
-      const at = toImage(v, p.x, p.y)
-      s.points.push([at.x, at.y])
-      paint(s, s.points.length - 1)
-    }
-  }
-
-  const onPointerUp = (e: ReactPointerEvent<HTMLDivElement>) => {
-    pointers.current.delete(e.pointerId)
-    const s = stroke.current
-    if (s) {
-      stroke.current = null
-      setHistory((h) => push(h, s))
-    }
-    const t = tap.current
-    if (t && tool === 'select' && gpuReady && samIndexed && !sam.pending) {
-      const at = toImage(v, t.x, t.y)
+  const pointers = useMaskPointers({
+    stageRef,
+    ready,
+    selecting: tool === 'select',
+    erase: tool === 'erase',
+    brush,
+    view: v,
+    moveView,
+    paint,
+    onAbandon: () => {
+      render(history.done)
+    },
+    onStroke: (stroke) => {
+      setHistory((h) => push(h, stroke))
+    },
+    onTap: (at, long) => {
+      if (selectNote !== null || sam.pending) return
       if (at.x >= 0 && at.y >= 0 && at.x <= work.w && at.y <= work.h) {
-        sam.addPoint(at.x, at.y, !(sam.exclude || t.long))
+        sam.addPoint(at.x, at.y, !(sam.exclude || long))
       }
-    }
-    cancelTap()
-  }
+    },
+  })
 
   const onKeyDown = (e: ReactKeyboardEvent) => {
-    const cx = stage.w / 2
-    const cy = stage.h / 2
     const mod = e.metaKey || e.ctrlKey
-    const keys: Record<string, () => void> = {
+    if (mod && e.key.toLowerCase() === 'z') {
+      e.preventDefault()
+      setHistory(e.shiftKey ? redo : undo)
+      return
+    }
+    if (mod) return
+    const move = keyMove(e.key, 40, 1.25, { x: stage.w / 2, y: stage.h / 2 })
+    const keys: Record<string, (() => void) | undefined> = {
       b: () => {
         setTool('brush')
       },
@@ -233,34 +161,12 @@ export function MaskEditor({
       ']': () => {
         setBrush((b) => Math.min(maxBrush, Math.round(b * 1.25)))
       },
-      '+': () => {
-        moveView((view) => zoomAt(view, 1.25, cx, cy))
-      },
-      '=': () => {
-        moveView((view) => zoomAt(view, 1.25, cx, cy))
-      },
-      '-': () => {
-        moveView((view) => zoomAt(view, 1 / 1.25, cx, cy))
-      },
-      ArrowLeft: () => {
-        moveView((view) => ({ ...view, tx: view.tx + 40 }))
-      },
-      ArrowRight: () => {
-        moveView((view) => ({ ...view, tx: view.tx - 40 }))
-      },
-      ArrowUp: () => {
-        moveView((view) => ({ ...view, ty: view.ty + 40 }))
-      },
-      ArrowDown: () => {
-        moveView((view) => ({ ...view, ty: view.ty - 40 }))
-      },
     }
-    if (mod && e.key.toLowerCase() === 'z') {
-      e.preventDefault()
-      setHistory(e.shiftKey ? redo : undo)
-      return
-    }
-    const action = mod ? undefined : keys[e.key]
+    const action = move
+      ? () => {
+          moveView(move)
+        }
+      : keys[e.key]
     if (action) {
       e.preventDefault()
       action()
@@ -287,19 +193,11 @@ export function MaskEditor({
   const onStage = (x: number, y: number) => ({ left: v.tx + x * v.s, top: v.ty + y * v.s })
 
   return (
-    <div
-      ref={ref}
-      className="editor mask-editor"
-      role="dialog"
-      aria-modal="true"
-      aria-label={title}
-      tabIndex={-1}
-    >
-      <div className="editor-bar">
-        <button type="button" className="btn quiet small" onClick={onCancel}>
-          Cancel
-        </button>
-        <h2>{title}</h2>
+    <EditorDialog
+      title={title}
+      className="mask-editor"
+      onCancel={onCancel}
+      action={
         <button
           type="button"
           className="btn small"
@@ -310,8 +208,8 @@ export function MaskEditor({
         >
           {save.isPending ? 'Saving…' : 'Done'}
         </button>
-      </div>
-
+      }
+    >
       <div
         ref={stageRef}
         className={`crop-stage mask-stage tool-${tool}`}
@@ -322,16 +220,14 @@ export function MaskEditor({
             : `Image. Drag to ${tool === 'erase' ? 'erase' : 'paint'} the mask; pinch, or press + and −, to zoom.`
         }
         tabIndex={0}
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onPointerCancel={onPointerUp}
-        onPointerLeave={() => {
-          setRing(null)
-        }}
+        onPointerDown={pointers.onPointerDown}
+        onPointerMove={pointers.onPointerMove}
+        onPointerUp={pointers.onPointerUp}
+        onPointerCancel={pointers.onPointerCancel}
+        onPointerLeave={pointers.onPointerLeave}
         onKeyDown={onKeyDown}
         onWheel={(e) => {
-          const p = point(e)
+          const p = stagePoint(stageRef.current, e)
           moveView((view) => zoomAt(view, Math.exp(-e.deltaY / 400), p.x, p.y))
         }}
       >
@@ -353,10 +249,15 @@ export function MaskEditor({
             aria-hidden
           />
         ))}
-        {ring && tool !== 'select' && (
+        {pointers.ring && (
           <span
             className="brush-ring"
-            style={{ left: ring.x, top: ring.y, width: brush * v.s, height: brush * v.s }}
+            style={{
+              left: pointers.ring.x,
+              top: pointers.ring.y,
+              width: brush * v.s,
+              height: brush * v.s,
+            }}
             aria-hidden
           />
         )}
@@ -364,55 +265,26 @@ export function MaskEditor({
       </div>
 
       <div className="editor-controls">
-        <div className="segmented tabs-3" role="group" aria-label="Tool">
-          {(['brush', 'erase', 'select'] as const).map((t) => (
-            <button
-              key={t}
-              type="button"
-              aria-pressed={tool === t}
-              onClick={() => {
-                setTool(t)
-              }}
-            >
-              {t === 'brush' ? 'Brush' : t === 'erase' ? 'Erase' : 'Select'}
-            </button>
-          ))}
-        </div>
+        <ChoiceChips
+          label="Tool"
+          className="segmented tabs-3"
+          options={TOOLS}
+          value={tool}
+          onChoose={setTool}
+        />
 
         {tool === 'select' ? (
-          <SelectControls
-            note={selectNote}
-            points={sam.points}
-            exclude={sam.exclude}
-            onExclude={sam.setExclude}
-            text={sam.text}
-            onText={sam.setText}
-            onFind={sam.find}
-            pending={sam.pending}
-            error={sam.error}
-            selection={sam.selection}
-            shown={sam.shown}
-            onShown={sam.setShown}
-            growBy={sam.growBy}
-            onGrow={sam.setGrowBy}
-            onCombine={sam.combine}
-            onClear={sam.clear}
-          />
+          <SelectControls note={selectNote} sam={sam} />
         ) : (
-          <div className="mask-row">
-            <label htmlFor="brush-size">Size</label>
-            <input
-              id="brush-size"
-              type="range"
-              min={2}
-              max={maxBrush}
-              value={brush}
-              onChange={(e) => {
-                setBrush(Number(e.target.value))
-              }}
-            />
-            <output htmlFor="brush-size">{Math.round(brush / toWork)} px</output>
-          </div>
+          <RangeRow
+            id="brush-size"
+            label="Size"
+            min={2}
+            max={maxBrush}
+            value={brush}
+            output={`${String(Math.round(brush / toWork))} px`}
+            onChange={setBrush}
+          />
         )}
 
         <MaskTools
@@ -434,23 +306,18 @@ export function MaskEditor({
           }}
           onShowBlur={setShowBlur}
         />
-        <div className="mask-row">
-          <label htmlFor="image-opacity">Image</label>
-          <input
-            id="image-opacity"
-            type="range"
-            min={0.15}
-            max={1}
-            step={0.05}
-            value={imageOpacity}
-            onChange={(e) => {
-              setImageOpacity(Number(e.target.value))
-            }}
-          />
-          <output htmlFor="image-opacity">{Math.round(imageOpacity * 100)}%</output>
-        </div>
+        <RangeRow
+          id="image-opacity"
+          label="Image"
+          min={0.15}
+          max={1}
+          step={0.05}
+          value={imageOpacity}
+          output={`${String(Math.round(imageOpacity * 100))}%`}
+          onChange={setImageOpacity}
+        />
         {save.error && <p role="alert">{save.error.message}</p>}
       </div>
-    </div>
+    </EditorDialog>
   )
 }

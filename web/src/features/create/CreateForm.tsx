@@ -19,9 +19,9 @@ import { LoraPicker } from './LoraPicker'
 import { MediaSwitch } from './MediaSwitch'
 import { ModeChips } from './ModeChips'
 import { ModelPicker } from './ModelPicker'
+import { AreaRow } from './rows/AreaRow'
 import { FitRow } from './rows/FitRow'
 import { LoraList } from './rows/LoraList'
-import { MaskRow } from './rows/MaskRow'
 import { ModelRow } from './rows/ModelRow'
 import { RefList } from './rows/RefList'
 import { SourceRow } from './rows/SourceRow'
@@ -91,11 +91,13 @@ export function CreateForm({ familyId, onFamily, onOpenSession, onShowResults }:
         />
       )}
       {mode === 'inpaint' && source && !input.gone && (
-        <MaskRow
-          source={source.sha}
-          mask={maskFits && mask ? mask.sha : null}
-          note={input.maskNote}
-          onPaint={() => {
+        <AreaRow
+          label="Mask"
+          area={maskFits && mask ? { source: source.sha, mask: mask.sha } : null}
+          editText="Edit mask"
+          emptyText="Paint the area to redraw"
+          before={input.maskNote && <p className="row-note">{input.maskNote}</p>}
+          onOpen={() => {
             setPainting(true)
           }}
           onClear={() => {

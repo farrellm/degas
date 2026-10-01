@@ -3,33 +3,25 @@ import { useState } from 'react'
 
 import { queries } from '@/api/queries'
 import type { Asset, Variant } from '@/api/types'
-import { blobUrl } from '@/api/urls'
-import { AssetPicker } from '@/components/AssetPicker/AssetPicker'
 import { FitSelect } from '@/components/FitSelect'
 import { ImagePicker } from '@/components/ImagePicker/ImagePicker'
 import { Sheet } from '@/components/Sheet'
 import { SliderRow } from '@/components/SliderRow'
 import { StepRange } from '@/components/StepRange'
+import { AreaRow } from '@/features/create/rows/AreaRow'
+import { UnitModelRow } from '@/features/create/rows/UnitModelRow'
 import { CropEditor } from '@/features/editors/crop/CropEditor'
 import { MaskEditor } from '@/features/editors/mask/MaskEditor'
-import { MaskThumb } from '@/features/editors/mask/MaskThumb'
 import { assetLabel } from '@/lib/assets'
 import { ratioDiffers, type Size } from '@/lib/geometry'
 import { type Source, toSource } from '@/lib/image'
 import { isActive, isGpuReady } from '@/lib/session'
 import { stepFraction } from '@/lib/steps'
 
-import {
-  controlKind,
-  type ControlUnit,
-  edgeParams,
-  mismatch,
-  photoOf,
-  sameSize,
-  traceInfo,
-  TRACES,
-  underlay,
-} from './control'
+import { type ControlUnit, edgeParams, mismatch, photoOf, sameSize, underlay } from './control'
+import { ControlNetPicker } from './ControlNetPicker'
+import { ControlPicture } from './ControlPicture'
+import { TracePicker } from './TracePicker'
 import { useControlTrace } from './useControlTrace'
 
 type Overlay = 'image' | 'crop' | 'area' | 'model' | null
@@ -73,8 +65,11 @@ export function ControlEditor({
   const session = useQuery(queries.session())
   const gpuReady = isGpuReady(session.data)
 
-  const { busy, error, note, clearNote, cannyTrace, detail, setDetail, trace, takePicture } =
-    useControlTrace({ unit, controlnets, onChange })
+  const { busy, error, note, clearNote, detail, setDetail, trace, takePicture } = useControlTrace({
+    unit,
+    controlnets,
+    onChange,
+  })
 
   if (overlay === 'image') {
     return (
@@ -132,21 +127,10 @@ export function ControlEditor({
   }
   if (overlay === 'model') {
     return (
-      <AssetPicker
-        title="ControlNet"
-        noun="ControlNets"
-        assets={controlnets}
-        selected={new Set([unit.model])}
-        describe={(a) => {
-          const kind = controlKind(a)
-          return kind ? `Reads ${traceInfo(kind).image}` : null
-        }}
-        empty={
-          <p>
-            No ControlNets found. Put them in Drive under <code>degas/controlnets/{familyId}/</code>
-            , then rescan.
-          </p>
-        }
+      <ControlNetPicker
+        controlnets={controlnets}
+        familyId={familyId}
+        selected={unit.model}
         onPick={(a) => {
           onChange((u) => ({ ...u, model: a.path }))
           setOverlay(null)
@@ -158,17 +142,12 @@ export function ControlEditor({
     )
   }
 
-  const photo = photoOf(unit)
   const model = controlnets.find((a) => a.path === unit.model)
-  const modelMissing = !!unit.model && !model
   const warning = unit.image && mismatch(model, unit.model, unit.trace?.id ?? null)
   const misfit =
     !!unit.image &&
     unit.image.height > 0 &&
     ratioDiffers(unit.image.width / unit.image.height, target.w / target.h)
-  const photoUnder = underlay(unit)
-  const canOverlay = !!unit.trace && !!photoUnder && photoUnder !== unit.image?.sha
-  const chosen = unit.trace?.id ?? 'as-is'
   const span = { a: Math.round(unit.start * steps), b: Math.round(unit.end * steps) }
   const setSpan = (a: number, b: number) => {
     onChange((u) => ({ ...u, start: stepFraction(a, steps), end: stepFraction(b, steps) }))
@@ -177,188 +156,58 @@ export function ControlEditor({
   return (
     <Sheet title="ControlNet" onClose={onClose}>
       <div className="control-editor">
-        {unit.image ? (
-          <div className="control-preview">
-            <div
-              className={busy ? 'control-picture sketch indeterminate' : 'control-picture'}
-              style={{
-                aspectRatio: `${String(unit.image.width || 1)} / ${String(unit.image.height || 1)}`,
-              }}
-            >
-              {overPhoto && canOverlay && photoUnder && (
-                <img src={blobUrl(photoUnder)} alt="" className="control-photo" />
-              )}
-              <img
-                src={blobUrl(unit.image.sha)}
-                alt={unit.trace ? `${traceInfo(unit.trace.id).label} trace` : 'Control image'}
-                className={overPhoto && canOverlay ? 'control-trace over' : 'control-trace'}
-              />
-            </div>
-            <div className="row-buttons control-picture-actions">
-              {canOverlay && (
-                <button
-                  type="button"
-                  className="btn quiet small"
-                  aria-pressed={overPhoto}
-                  onClick={() => {
-                    setOverPhoto(!overPhoto)
-                  }}
-                >
-                  Over the picture
-                </button>
-              )}
-              <span className="spacer" />
-              <button
-                type="button"
-                className="btn quiet small"
-                disabled={busy || !photo}
-                onClick={() => {
-                  if (!photo) return
-                  setCropping(photo.sha)
-                  setOverlay('crop')
-                }}
-              >
-                Crop
-              </button>
-              <button
-                type="button"
-                className="btn quiet small"
-                disabled={busy}
-                onClick={() => {
-                  setOverlay('image')
-                }}
-              >
-                Change
-              </button>
-            </div>
-          </div>
-        ) : (
-          <div className="control-empty">
-            <p>Choose the picture whose layout the image should follow.</p>
-            <div className="row-buttons">
-              {source && (
-                <button
-                  type="button"
-                  className="btn small"
-                  disabled={busy}
-                  onClick={() => {
-                    takePicture(source, false)
-                  }}
-                >
-                  Use the source
-                </button>
-              )}
-              <button
-                type="button"
-                className={source ? 'btn quiet small' : 'btn small'}
-                disabled={busy}
-                onClick={() => {
-                  setOverlay('image')
-                }}
-              >
-                Choose image
-              </button>
-            </div>
-          </div>
-        )}
-        {unit.image && source && photo?.sha !== source.sha && (
-          <p className="row-note">
-            <button
-              type="button"
-              className="link"
-              disabled={busy}
-              onClick={() => {
-                takePicture(source, false)
-              }}
-            >
-              Use the source
-            </button>{' '}
-            instead of this picture.
-          </p>
-        )}
+        <ControlPicture
+          unit={unit}
+          source={source}
+          busy={busy}
+          overPhoto={overPhoto}
+          onOverPhoto={setOverPhoto}
+          onCrop={(sha) => {
+            setCropping(sha)
+            setOverlay('crop')
+          }}
+          onChoose={() => {
+            setOverlay('image')
+          }}
+          onUseSource={(picture) => {
+            takePicture(picture, false)
+          }}
+        />
 
-        <div className="control-traces" role="group" aria-label="Trace">
-          <button
-            type="button"
-            aria-pressed={!!unit.image && chosen === 'as-is'}
-            disabled={!unit.image || busy}
-            onClick={() => {
-              if (!unit.trace) return
-              const from = unit.trace.from
-              onChange((u) => ({
-                ...u,
-                image: from,
-                trace: null,
-                area: sameSize(u.image, from) ? u.area : null,
-              }))
-            }}
-          >
-            As is
-          </button>
-          {TRACES.map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              aria-pressed={chosen === t.id}
-              disabled={!photo || busy || !gpuReady}
-              onClick={() => {
-                if (!photo) return
-                const params = t.id === 'canny' ? edgeParams(detail) : {}
-                trace({ id: t.id, params, from: photo })
-              }}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
-        {busy && (
-          <p className="row-note" role="status">
-            Tracing on the GPU…
-          </p>
-        )}
-        {!gpuReady && photo && (
-          <p className="row-note">
-            {isActive(session.data)
-              ? 'Tracing works once the GPU session is ready.'
-              : 'Tracing runs on the GPU. Start a session to trace depth, poses or edges.'}
-          </p>
-        )}
-        {error && (
-          <p className="row-warning" role="alert">
-            {error.message}
-          </p>
-        )}
-        {note && <p className="row-note">{note}</p>}
-        {cannyTrace && (
-          <SliderRow
-            id="edge-detail"
-            label="Detail"
-            min={0}
-            max={1}
-            value={detail}
-            format={(v) => `${String(Math.round(v * 100))}%`}
-            onChange={setDetail}
-          />
-        )}
+        <TracePicker
+          unit={unit}
+          busy={busy}
+          gpuReady={gpuReady}
+          sessionActive={isActive(session.data)}
+          error={error?.message ?? null}
+          note={note}
+          detail={detail}
+          onDetail={setDetail}
+          onAsIs={() => {
+            if (!unit.trace) return
+            const from = unit.trace.from
+            onChange((u) => ({
+              ...u,
+              image: from,
+              trace: null,
+              area: sameSize(u.image, from) ? u.area : null,
+            }))
+          }}
+          onTrace={(id) => {
+            const photo = photoOf(unit)
+            if (photo) trace({ id, params: id === 'canny' ? edgeParams(detail) : {}, from: photo })
+          }}
+        />
 
-        <div className={modelMissing ? 'model-row missing' : 'model-row'}>
-          <button
-            type="button"
-            className="setting setting-button"
-            onClick={() => {
-              setOverlay('model')
-            }}
-          >
-            <span className="setting-label">Model</span>{' '}
-            <span className={unit.model ? 'setting-value' : 'setting-value none'}>
-              {unit.model ? assetLabel(unit.model, controlnets) : 'Choose a ControlNet'}
-            </span>
-          </button>
-          {modelMissing && (
-            <p className="row-warning">Not found in Drive. Pick another ControlNet.</p>
-          )}
-          {warning && !modelMissing && <p className="row-warning">{warning}</p>}
-        </div>
+        <UnitModelRow
+          value={unit.model ? assetLabel(unit.model, controlnets) : null}
+          placeholder="Choose a ControlNet"
+          missing={unit.model && !model ? 'Not found in Drive. Pick another ControlNet.' : null}
+          warning={warning}
+          onPick={() => {
+            setOverlay('model')
+          }}
+        />
 
         <SliderRow
           id="control-weight"
@@ -374,40 +223,18 @@ export function ControlEditor({
         <StepRange steps={steps} a={span.a} b={span.b} onChange={setSpan} />
 
         {unit.image && (
-          <div className="source-row">
-            <button
-              type="button"
-              className="setting setting-button"
-              onClick={() => {
-                setOverlay('area')
-              }}
-            >
-              <span className="setting-label">Area</span>{' '}
-              <span className={unit.area ? 'setting-value' : 'setting-value none'}>
-                {unit.area ? (
-                  <>
-                    <MaskThumb source={photoUnder ?? unit.image.sha} mask={unit.area} />
-                    Edit area
-                  </>
-                ) : (
-                  'Limit to an area'
-                )}
-              </span>
-            </button>
-            {unit.area && (
-              <div className="row-buttons source-actions">
-                <button
-                  type="button"
-                  className="btn quiet small"
-                  onClick={() => {
-                    onChange((u) => ({ ...u, area: null }))
-                  }}
-                >
-                  Clear
-                </button>
-              </div>
-            )}
-          </div>
+          <AreaRow
+            label="Area"
+            area={unit.area ? { source: underlay(unit) ?? unit.image.sha, mask: unit.area } : null}
+            editText="Edit area"
+            emptyText="Limit to an area"
+            onOpen={() => {
+              setOverlay('area')
+            }}
+            onClear={() => {
+              onChange((u) => ({ ...u, area: null }))
+            }}
+          />
         )}
 
         {misfit && (

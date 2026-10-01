@@ -26,3 +26,32 @@ export function pinch(view: View, prev: Point, next: Point, other: Point): View 
   const z = before > 0 ? zoomAt(view, after / before, mid.x, mid.y) : view
   return { ...z, tx: z.tx + (next.x - prev.x) / 2, ty: z.ty + (next.y - prev.y) / 2 }
 }
+
+/**
+ * What a key does to the view: the arrows pan by `step` stage px, and + (or =) and − zoom
+ * by `factor` about `centre`. Null for any other key.
+ */
+export function keyMove(
+  key: string,
+  step: number,
+  factor: number,
+  centre: Point,
+): ((view: View) => View) | null {
+  switch (key) {
+    case 'ArrowLeft':
+      return (v) => ({ ...v, tx: v.tx + step })
+    case 'ArrowRight':
+      return (v) => ({ ...v, tx: v.tx - step })
+    case 'ArrowUp':
+      return (v) => ({ ...v, ty: v.ty + step })
+    case 'ArrowDown':
+      return (v) => ({ ...v, ty: v.ty - step })
+    case '+':
+    case '=':
+      return (v) => zoomAt(v, factor, centre.x, centre.y)
+    case '-':
+      return (v) => zoomAt(v, 1 / factor, centre.x, centre.y)
+    default:
+      return null
+  }
+}
