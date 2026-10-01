@@ -8,12 +8,8 @@ Read `README.md` for layout/setup, `docs/design.md` for architecture and the pha
 
 ```sh
 make check        # lint + typecheck + test; run before declaring done (CI adds `pnpm build`)
-make fmt          # ruff format/fix + prettier
-make dev-server   # FastAPI on 127.0.0.1:8420
-make dev-web      # Vite; proxies /api to dev-server
 uv run pytest server/tests/test_api.py -k name   # single Python test
 cd web && pnpm vitest run src/lib/schema.test.ts # single web test
-make deploy / make logs   # prod: systemd user unit + `tailscale serve --https=8448`
 ```
 
 ## Architecture
@@ -22,12 +18,9 @@ make deploy / make logs   # prod: systemd user unit + `tailscale serve --https=8
   (`colab/`: CLI wrapper, SSH tunnel, worker client, bundle).
 - `worker/src/degas_worker` (runs on the Colab VM, behind the SSH tunnel): tarred by
   `degas/colab/bundle.py` and scp'd over — must never import `degas`.
-- `web/`: React 19 + Vite + TanStack Query. `src/features/<name>/` holds each part of the app
-  (create, editors, results, library, session); `src/{api,lib,hooks,components}` are shared and
-  must not import a feature (lint enforces it). Import across folders as `@/…`. Server reads
-  go through `queries` in `api/queries.ts`, not hand-written query keys. The Create form is
-  rendered from each family's JSON Schema (`features/create/schema-form/`), so new families
-  usually need no frontend changes.
+- `web/`: React 19 + Vite + TanStack Query; its conventions are in `web/CLAUDE.md`. The Create
+  form is rendered from each family's JSON Schema (`features/create/schema-form/`), so new
+  families usually need no frontend changes.
 
 ## Gotchas
 
@@ -40,17 +33,11 @@ make deploy / make logs   # prod: systemd user unit + `tailscale serve --https=8
   import a runner module eagerly — tests and the worker app must load without GPU deps.
 - Tests fake the Colab CLI and tunnel but run the real worker app over ASGI
   (`server/tests/conftest.py`); no GPU needed.
-- Web feature tests (`*.test.tsx`) render the whole `<App />` over a fake `fetch`
-  (`web/src/test/`: `mockApi.ts`, `fixtures.ts`, `render.tsx`; shared setup in `setup.ts`).
-  Pure logic has plain unit tests beside its module.
 - `spike/` is a frozen Phase 0 record — excluded from lint; don't edit.
 - The prod service serves `web/dist` from disk, so `pnpm build` / `make build` changes what
   the phone gets at once, with no restart. To check a build without deploying, build in a
   scratch `git worktree`. To check the UI live, run `cd web && pnpm dev --port 5199`: it
   proxies `/api` to the running server (real data) and leaves `dist` alone.
-- A custom hook must not return a ref inside its result object: `react-hooks/refs` then
-  flags every read of that object during render. Create the ref in the component and pass
-  it in.
 - Pre-commit: hooks fix staged files on commit; `make check` runs in GitHub CI only.
 
 ## Workflow
