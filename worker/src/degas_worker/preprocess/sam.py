@@ -4,7 +4,6 @@ Only one of the two models is resident at a time. The tracker's image embedding 
 per image, so after the first tap on an image each tap only runs the mask decoder.
 """
 
-import gc
 from collections import OrderedDict
 from pathlib import Path
 from typing import Any
@@ -15,6 +14,7 @@ from PIL import Image
 from transformers import Sam3Model, Sam3Processor, Sam3TrackerModel, Sam3TrackerProcessor
 
 from degas_worker import masks
+from degas_worker.families.runtime import free_gpu_memory
 
 EMBEDDINGS_KEPT = 4
 THRESHOLD = 0.5
@@ -137,8 +137,7 @@ class Sam3:
         self.model_dir = None
         self.kind = None
         self.embeddings.clear()
-        gc.collect()
-        torch.cuda.empty_cache()
+        free_gpu_memory()
 
 
 def _image(mask: Any) -> Image.Image:

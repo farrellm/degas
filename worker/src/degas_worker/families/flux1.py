@@ -13,8 +13,6 @@ each grid shrunk by its unit's `downsample` so the prompt keeps a say, and scale
 """
 
 import contextlib
-import gc
-import io
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -28,8 +26,17 @@ from transformers import SiglipImageProcessor, SiglipVisionModel
 
 from degas_worker.families import ip_adapter
 from degas_worker.families.base import Output, RunContext
-from degas_worker.families.lora import plan_loras, single_loras, strip_text_model
+from degas_worker.families.lora import strip_text_model
 from degas_worker.families.offload import OFFLOAD_ABOVE, place
+from degas_worker.families.runtime import (
+    LoraFile,
+    fetch_loras,
+    free_gpu_memory,
+    png_output,
+    seeded,
+    step_callback,
+    sync_loras,
+)
 from degas_worker.safetensors_info import stored_float8
 from degas_worker.spec import ImagePromptUnit, Spec
 
@@ -53,10 +60,7 @@ class Flux1Runner:
         base = None
         if spec.get("config"):
             base = ctx.fetch_asset(spec["config"]["path"], spec["config"].get("size"))
-        loras = [
-            (lora["path"], ctx.fetch_asset(lora["path"], lora.get("size")), float(lora["weight"]))
-            for lora in single_loras(spec)
-        ]
+        loras = fetch_loras(spec, ctx)
         prompts = spec.get("image_prompts") or []
         folders = {ctx.fetch_asset(u["adapter"]["path"], u["adapter"].get("size")) for u in prompts}
         if len(folders) > 1:
@@ -81,25 +85,13 @@ class Flux1Runner:
             ctx.check_cancelled()
             ctx.progress(item, "denoise", 0, steps)
 
-            def on_step(
-                _pipe: Any, i: int, _t: Any, kw: dict[str, Any], item: int = item
-            ) -> dict[str, Any]:
-                ctx.check_cancelled()
-                done = i + 1
-                ctx.progress(item, "denoise" if done < steps else "decode", done, steps)
-                return kw
-
             result = self.pipe(
                 **kwargs,
-                generator=torch.Generator("cpu").manual_seed(seed),
-                callback_on_step_end=on_step,
+                generator=seeded(seed),
+                callback_on_step_end=step_callback(ctx, item, steps),
             )
             ctx.progress(item, "encode", steps, steps)
-            buf = io.BytesIO()
-            result.images[0].save(buf, format="PNG")
-            yield Output(
-                item=item, seed=seed, data=buf.getvalue(), media_type="image/png", ext="png"
-            )
+            yield png_output(item, seed, result.images[0])
 
     def _prompt(
         self, prompt: str, prompts: list[ImagePromptUnit], ctx: RunContext
@@ -145,8 +137,7 @@ class Flux1Runner:
         if folder is None:
             if self.redux is not None:
                 self.redux = None
-                gc.collect()
-                torch.cuda.empty_cache()
+                free_gpu_memory()
             return
         if self.redux is not None and self.redux[0] == folder:
             return
@@ -208,24 +199,14 @@ class Flux1Runner:
         self.float8 = storage is not None
         self.adapters = {}
 
-    def _apply_loras(self, loras: list[tuple[str, Path, float]]) -> None:
+    def _apply_loras(self, loras: list[LoraFile]) -> None:
         """Load only new adapters, delete ones no longer requested, then set the weights."""
-        plan = plan_loras(self.adapters, [(path, weight) for path, _, weight in loras])
-        if plan.remove:
-            self.pipe.delete_adapters(plan.remove)
-            self.adapters = {p: n for p, n in self.adapters.items() if n not in plan.remove}
-        local = {path: file for path, file, _ in loras}
-        for path, name in plan.add:
-            try:
-                with _adapters_in_bf16(self.float8):
-                    self._load_lora(local[path], name)
-            except Exception as e:
-                with contextlib.suppress(Exception):
-                    self.pipe.delete_adapters([name])
-                raise ValueError(f"Could not load LoRA {path}: {e}") from e
-            self.adapters[path] = name
-        if plan.names:
-            self.pipe.set_adapters(plan.names, adapter_weights=plan.weights)
+
+        def load(file: Path, name: str) -> None:
+            with _adapters_in_bf16(self.float8):
+                self._load_lora(file, name)
+
+        sync_loras(self.pipe, self.adapters, loras, load)
 
     def _load_lora(self, file: Path, name: str) -> None:
         """`load_lora_weights`, but with the CLIP keys matched to transformers 5's flattened
@@ -257,8 +238,7 @@ class Flux1Runner:
         self.model_path = None
         self.adapters = {}
         self.redux = None
-        gc.collect()
-        torch.cuda.empty_cache()
+        free_gpu_memory()
 
 
 def _shrink(tokens: Any, grid: int) -> Any:

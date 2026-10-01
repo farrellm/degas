@@ -5,9 +5,6 @@ pipeline's condition images, and an inpaint is an edit whose result is pasted ba
 source through the blurred mask. The model is the official diffusers folder, in bf16.
 """
 
-import contextlib
-import gc
-import io
 import math
 from collections.abc import Iterator
 from pathlib import Path
@@ -20,8 +17,15 @@ from PIL import Image
 from degas_worker import masks
 from degas_worker.degrid import degrid
 from degas_worker.families.base import Output, RunContext
-from degas_worker.families.lora import plan_loras, single_loras
 from degas_worker.families.offload import loaded_bytes, module_bytes, place
+from degas_worker.families.runtime import (
+    fetch_loras,
+    free_gpu_memory,
+    png_output,
+    seeded,
+    step_callback,
+    sync_loras,
+)
 from degas_worker.spec import Spec
 
 # Keep in sync with the server descriptor (degas/families/qwen21.py).
@@ -54,10 +58,7 @@ class Qwen21Runner:
             raise ValueError(f"Qwen-Image 2.1 can't do {mode!r}")
         model = spec["model"]
         path = ctx.fetch_asset(model["path"], model.get("size"))
-        loras = [
-            (lora["path"], ctx.fetch_asset(lora["path"], lora.get("size")), float(lora["weight"]))
-            for lora in single_loras(spec)
-        ]
+        loras = fetch_loras(spec, ctx)
         inputs = spec.get("inputs") or {}
         images: list[Image.Image] = []
         keep: Image.Image | None = None
@@ -70,7 +71,7 @@ class Qwen21Runner:
         ctx.check_cancelled()
         ctx.progress(0, "load", 0, 1)
         self._load(path)
-        self._apply_loras(loras)
+        sync_loras(self.pipe, self.adapters, loras)
         ctx.progress(0, "load", 1, 1)
 
         extra = SCHEDULES.get(params.get("schedule", "default"))
@@ -100,18 +101,10 @@ class Qwen21Runner:
             ctx.check_cancelled()
             ctx.progress(item, "denoise", 0, steps)
 
-            def on_step(
-                _pipe: Any, i: int, _t: Any, kw: dict[str, Any], item: int = item
-            ) -> dict[str, Any]:
-                ctx.check_cancelled()
-                done = i + 1
-                ctx.progress(item, "denoise" if done < steps else "decode", done, steps)
-                return kw
-
             result = self.pipe(
                 **kwargs,
-                generator=torch.Generator("cpu").manual_seed(seed),
-                callback_on_step_end=on_step,
+                generator=seeded(seed),
+                callback_on_step_end=step_callback(ctx, item, steps),
             )
             ctx.progress(item, "encode", steps, steps)
             image = result.images[0]
@@ -119,11 +112,7 @@ class Qwen21Runner:
                 image = degrid(image)
             if keep is not None:
                 image = masks.composite(images[0], image, keep)
-            buf = io.BytesIO()
-            image.save(buf, format="PNG")
-            yield Output(
-                item=item, seed=seed, data=buf.getvalue(), media_type="image/png", ext="png"
-            )
+            yield png_output(item, seed, image)
 
     def _load(self, path: Path) -> None:
         if self.pipe is not None and self.model_path == path:
@@ -173,24 +162,6 @@ class Qwen21Runner:
         need = resident + cache + tokens * ACTIVATION_BYTES_PER_TOKEN
         return bool(need <= total * GPU_BUDGET)
 
-    def _apply_loras(self, loras: list[tuple[str, Path, float]]) -> None:
-        """Load only new adapters, delete ones no longer requested, then set the weights."""
-        plan = plan_loras(self.adapters, [(path, weight) for path, _, weight in loras])
-        if plan.remove:
-            self.pipe.delete_adapters(plan.remove)
-            self.adapters = {p: n for p, n in self.adapters.items() if n not in plan.remove}
-        local = {path: file for path, file, _ in loras}
-        for path, name in plan.add:
-            try:
-                self.pipe.load_lora_weights(str(local[path]), adapter_name=name)
-            except Exception as e:
-                with contextlib.suppress(Exception):
-                    self.pipe.delete_adapters([name])
-                raise ValueError(f"Could not load LoRA {path}: {e}") from e
-            self.adapters[path] = name
-        if plan.names:
-            self.pipe.set_adapters(plan.names, adapter_weights=plan.weights)
-
     def unload(self) -> None:
         if self.pipe is None:
             return
@@ -198,8 +169,7 @@ class Qwen21Runner:
         self.model_path = None
         self.offloaded = False
         self.adapters = {}
-        gc.collect()
-        torch.cuda.empty_cache()
+        free_gpu_memory()
 
 
 def _open(path: Path) -> Image.Image:
