@@ -1,13 +1,26 @@
 """Qwen-Image 2.1 descriptor: text-to-image and editing from up to 10 images (design §4.3)."""
 
-from typing import Any, Literal
+from typing import Any
 
 from degas.families.base import (
     JsonSchema,
+    LoraFormat,
+    MediaKind,
     SizeConstraints,
     SpecError,
     Variant,
     find_variant,
+)
+from degas.families.schema import (
+    choice_prop,
+    negative_prompt_prop,
+    params_schema,
+    prompt_prop,
+    seed_prop,
+    size_props,
+    steps_prop,
+)
+from degas.families.validation import (
     snap_size,
     validate_inputs,
     validate_model,
@@ -49,8 +62,8 @@ SIZE = SizeConstraints(
 class Qwen21:
     id = "qwen21"
     label = "Qwen-Image 2.1"
-    media: Literal["image", "video"] = "image"
-    lora_format: Literal["single", "paired_hi_lo"] = "single"
+    media: MediaKind = "image"
+    lora_format: LoraFormat = "single"
     supports_control = False
     supports_image_prompts = False
     image_prompt_options = None
@@ -70,40 +83,10 @@ class Qwen21:
     def param_schema(self, variant: str, mode: str) -> JsonSchema:
         find_variant(self, variant, mode)
         props: dict[str, JsonSchema] = {
-            "prompt": {"type": "string", "title": "Prompt", "minLength": 1, "x-widget": "prompt"},
-            "negative_prompt": {
-                "type": "string",
-                "title": "Negative prompt",
-                "description": "Used when CFG is above 1.",
-                "default": "",
-                "x-widget": "prompt",
-            },
-            "width": {
-                "type": "integer",
-                "title": "Width",
-                "default": 2048,
-                "minimum": 512,
-                "maximum": 2752,
-                "multipleOf": 32,
-                "x-widget": "aspect",
-            },
-            "height": {
-                "type": "integer",
-                "title": "Height",
-                "default": 2048,
-                "minimum": 512,
-                "maximum": 2752,
-                "multipleOf": 32,
-                "x-widget": "aspect",
-            },
-            "steps": {
-                "type": "integer",
-                "title": "Steps",
-                "default": 40,
-                "minimum": 1,
-                "maximum": 80,
-                "x-widget": "slider",
-            },
+            "prompt": prompt_prop(),
+            "negative_prompt": negative_prompt_prop("Used when CFG is above 1."),
+            **size_props((2048, 2048), minimum=512, maximum=2752, multiple_of=32),
+            "steps": steps_prop(40, 80),
             "cfg": {
                 "type": "number",
                 "title": "CFG",
@@ -114,23 +97,8 @@ class Qwen21:
                 "multipleOf": 0.5,
                 "x-widget": "slider",
             },
-            "seed": {
-                "type": "integer",
-                "title": "Seed",
-                "default": -1,
-                "minimum": -1,
-                "maximum": 2**32 - 1,
-                "x-widget": "seed",
-            },
-            "schedule": {
-                "type": "string",
-                "title": "Schedule",
-                "default": "default",
-                "enum": list(SCHEDULES),
-                "x-enum-labels": list(SCHEDULES.values()),
-                "x-widget": "select",
-                "x-advanced": True,
-            },
+            "seed": seed_prop(),
+            "schedule": choice_prop("Schedule", SCHEDULES, "default", advanced=True),
             "degrid": {
                 "type": "boolean",
                 "title": "Remove VAE grid",
@@ -149,7 +117,7 @@ class Qwen21:
                 "x-widget": "slider",
                 "x-advanced": True,
             }
-        return {"type": "object", "required": ["prompt"], "properties": props}
+        return params_schema(props)
 
     def validate(self, spec: dict[str, Any]) -> dict[str, Any]:
         variant = spec.get("variant", "base")
