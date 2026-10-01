@@ -1,7 +1,7 @@
-import { isPair, type Asset, type LoraEntry, type LoraRef } from '../api'
-import { loraAssets, loraKey, loraLabel } from '../assets'
+import type { Asset, LoraEntry, LoraRef } from '@/api/types'
+import { isPair, loraAssets, loraKey, loraLabel } from '@/lib/loras'
 
-interface Props {
+export interface LoraListProps {
   loras: LoraEntry[]
   /** The family's LoRAs in the Drive index, for labels and trigger words. */
   index: Asset[] | undefined
@@ -14,7 +14,7 @@ interface Props {
  * The LoRAs row in Create: each LoRA with its weight, and trigger words to tap into the
  * prompt. A Wan A14B pair has one weight per expert.
  */
-export function LoraList({ loras, index, onChange, onAdd, onTrigger }: Props) {
+export function LoraList({ loras, index, onChange, onAdd, onTrigger }: LoraListProps) {
   const update = (i: number, lora: LoraEntry | null) => {
     onChange(lora ? loras.with(i, lora) : loras.toSpliced(i, 1))
   }

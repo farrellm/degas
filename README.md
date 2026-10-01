@@ -14,6 +14,7 @@ Personal generative image/video web app: an iPhone PWA over Tailscale, with infe
 |  | `colab/` CLI wrapper, SSH tunnel, worker client, session manager · `dispatcher.py` job loop · `drive.py` OAuth + index · `families/` descriptors |
 | `worker/` | GPU worker (FastAPI) that runs on the Colab VM — package `degas_worker` (`jobs.py`, `cache.py` rclone, `families/` runners) |
 | `web/` | React + Vite PWA |
+|  | `src/app` shell · `src/features/` create, editors, results, library, session · `src/api` typed client and query options · `src/{lib,hooks,components}` shared · `src/styles` |
 | `spike/` | Throwaway Phase 0 scripts, kept for reference (not linted) |
 
 ## Running

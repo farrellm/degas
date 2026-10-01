@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+
 import { insertWord } from './prompt'
 
 describe('insertWord', () => {

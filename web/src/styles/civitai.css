@@ -1,0 +1,89 @@
+/* Import from Civitai, at the foot of the LoRA picker */
+.civitai {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--rule);
+  font-size: 0.9375rem;
+}
+
+.civitai-link,
+.civitai-plan {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-self: stretch;
+}
+
+.civitai-plan {
+  gap: 4px;
+}
+
+.civitai p {
+  margin: 0;
+}
+
+.civitai-warn {
+  color: var(--warn);
+}
+
+.civitai-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.civitai progress {
+  align-self: stretch;
+  height: 6px;
+  border: none;
+  border-radius: 3px;
+  background: var(--well);
+  appearance: none;
+}
+
+.civitai progress::-webkit-progress-bar {
+  border-radius: 3px;
+  background: var(--well);
+}
+
+.civitai progress::-webkit-progress-value {
+  border-radius: 3px;
+  background: var(--accent);
+}
+
+.civitai progress::-moz-progress-bar {
+  border-radius: 3px;
+  background: var(--accent);
+}
+
+.cached {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.9375rem;
+}
+
+.cached li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.cached li span:first-child {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.cached .size {
+  flex: none;
+  color: var(--ink-muted);
+  font-variant-numeric: tabular-nums;
+}

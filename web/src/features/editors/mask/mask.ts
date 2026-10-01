@@ -1,6 +1,6 @@
 // Pure helpers for the mask editor (design §8.2): working size, the view, the undo
 // history, and turning a stored mask (white = redraw) into canvas alpha and back.
-import type { Rect, Size, View } from './crop'
+import type { Rect, Size, View } from '@/lib/geometry'
 
 /** Masks are painted at most this big on a side; iOS limits canvas memory. */
 export const MAX_WORKING = 2048

@@ -70,7 +70,7 @@ self.addEventListener('fetch', (event) => {
   )
 })
 
-// Discretion mode (web/src/discretion.ts): notifications leave out the prompt.
+// Discretion mode (web/src/lib/discretion.ts): notifications leave out the prompt.
 self.addEventListener('message', (event) => {
   if (!event.data || event.data.type !== 'discretion') return
   event.waitUntil(

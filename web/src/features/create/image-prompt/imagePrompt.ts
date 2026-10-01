@@ -1,14 +1,14 @@
-import {
-  unref,
-  type AdapterKind,
-  type Asset,
-  type Fit,
-  type ImagePromptOptions,
-  type ImagePromptSpec,
-  type Purpose,
-} from './api'
-import { stepSpan } from './control'
-import type { Source } from './draft'
+import type {
+  AdapterKind,
+  Asset,
+  Fit,
+  ImagePromptOptions,
+  ImagePromptSpec,
+  Purpose,
+} from '@/api/types'
+import { ratioDiffers, type Size } from '@/lib/geometry'
+import { ref, type Source, unref } from '@/lib/image'
+import { stepSpan } from '@/lib/steps'
 
 /**
  * What to take from an image prompt's pictures, as its chips say. Each picks the blocks the
@@ -17,7 +17,7 @@ import type { Source } from './draft'
 export type Take = Purpose | 'face'
 
 /** An image prompt (IP-Adapter) in the Create form. */
-export interface PromptUnit {
+export interface ImagePromptUnit {
   /** Stable within the form, for React keys. */
   key: string
   /** The IP-Adapter's Drive path. */
@@ -188,7 +188,7 @@ export function mismatch(model: Asset | undefined, path: string, take: Take): st
 }
 
 /** A new unit; Redux (a family with `detail`) starts at full weight. */
-export function newPrompt(options: ImagePromptOptions = SDXL_OPTIONS): PromptUnit {
+export function newPrompt(options: ImagePromptOptions = SDXL_OPTIONS): ImagePromptUnit {
   return {
     key: Math.random().toString(36).slice(2),
     model: '',
@@ -206,14 +206,14 @@ export function newPrompt(options: ImagePromptOptions = SDXL_OPTIONS): PromptUni
 }
 
 /** A unit from a saved draft, which may predate fields added since (FaceID's, Redux's). */
-export const restorePrompt = (saved: Partial<PromptUnit>): PromptUnit => ({
+export const restorePrompt = (saved: Partial<ImagePromptUnit>): ImagePromptUnit => ({
   ...newPrompt(),
   ...saved,
 })
 
 /** The unit's row in Create: what it takes, its weight, and its steps when not all. */
 export function promptSummary(
-  unit: PromptUnit,
+  unit: ImagePromptUnit,
   steps: number,
   options: ImagePromptOptions = SDXL_OPTIONS,
 ): string {
@@ -230,26 +230,26 @@ export function promptSummary(
 }
 
 /** Whether a unit is complete enough to submit. */
-export const promptReady = (unit: PromptUnit) =>
+export const promptReady = (unit: ImagePromptUnit) =>
   !!unit.model && unit.pictures.length > 0 && unit.start < unit.end
 
 /** Whether any picture isn't square, so the Fit choice matters. */
-export const anyOblong = (unit: PromptUnit) =>
-  unit.pictures.some((p) => p.height > 0 && Math.abs(p.width / p.height - 1) > 0.01)
+export const anyOblong = (unit: ImagePromptUnit) =>
+  unit.pictures.some((p) => p.height > 0 && ratioDiffers(p.width / p.height, 1))
 
 export function promptSpec(
-  unit: PromptUnit,
+  unit: ImagePromptUnit,
   options: ImagePromptOptions = SDXL_OPTIONS,
 ): ImagePromptSpec {
   return {
     adapter: { path: unit.model },
-    images: unit.pictures.map((p) => `sha256:${p.sha}`),
+    images: unit.pictures.map((p) => ref(p.sha)),
     fit: unit.fit,
     purpose: purposeOf(unit.take),
     weight: unit.weight,
     start: unit.start,
     end: unit.end,
-    ...(unit.area && { mask: `sha256:${unit.area.sha}` }),
+    ...(unit.area && { mask: ref(unit.area.sha) }),
     ...(isFaceid(unit.model) && { structure: unit.structure, lora_weight: unit.loraWeight }),
     ...(options.detail && { downsample: unit.downsample }),
   }
@@ -260,7 +260,7 @@ export function promptSpec(
  * recorded (0 × 0), and its area was fitted to the output, which it's shown over. An
  * everything-unit with a face model was chosen as Face.
  */
-export function promptFromSpec(p: ImagePromptSpec, output: { w: number; h: number }): PromptUnit {
+export function promptFromSpec(p: ImagePromptSpec, output: Size): ImagePromptUnit {
   const kind = adapterKind(undefined, p.adapter.path)
   const face = p.purpose === 'all' && (kind === 'face' || kind === 'faceid')
   const mask = p.mask ? unref(p.mask) : null

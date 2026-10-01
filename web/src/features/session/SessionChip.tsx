@@ -1,6 +1,9 @@
 import { useQuery } from '@tanstack/react-query'
-import { api, isActive } from '../api'
-import { countdown, useNow } from '../time'
+
+import { queries } from '@/api/queries'
+import { useNow } from '@/hooks/useNow'
+import { isActive } from '@/lib/session'
+import { countdown } from '@/lib/time'
 
 const STATE_TEXT: Record<string, string> = {
   starting: 'starting',
@@ -10,7 +13,7 @@ const STATE_TEXT: Record<string, string> = {
 
 /** Header chip: which GPU is running and how long until it stops for idleness. */
 export function SessionChip({ onOpen }: { onOpen: () => void }) {
-  const session = useQuery({ queryKey: ['session'], queryFn: api.session })
+  const session = useQuery(queries.session())
   const now = useNow(1000)
   const snap = session.data
   const s = snap?.session

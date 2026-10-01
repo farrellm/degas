@@ -1,0 +1,78 @@
+/* ---------- Shell ---------- */
+
+.app-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: calc(env(safe-area-inset-top) + 8px) var(--gutter) 8px;
+  background: var(--paper);
+}
+
+.wordmark {
+  font-family: var(--serif);
+  font-style: italic;
+  font-weight: 420;
+  font-size: var(--step-2);
+  letter-spacing: -0.01em;
+  line-height: 1;
+}
+
+.app-main {
+  max-width: var(--measure);
+  margin: 0 auto;
+  padding: 4px var(--gutter) calc(var(--tabbar) + env(safe-area-inset-bottom) + 132px);
+}
+
+.app-main.results-main {
+  padding-bottom: calc(var(--tabbar) + env(safe-area-inset-bottom) + 24px);
+}
+
+.tabbar {
+  position: fixed;
+  inset: auto 0 0;
+  z-index: 10;
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  height: calc(var(--tabbar) + env(safe-area-inset-bottom));
+  padding: 6px var(--gutter) env(safe-area-inset-bottom);
+  background: var(--paper);
+  border-top: 1px solid var(--rule);
+}
+
+.tabbar button {
+  flex: 0 1 160px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 40px;
+  border-radius: 10px;
+  color: var(--ink-muted);
+  font-weight: 520;
+}
+
+.tabbar button[aria-current='page'] {
+  color: var(--ink);
+  background: var(--paper-raised);
+}
+
+.tabbar .count {
+  min-width: 20px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 0.75rem;
+  font-weight: 650;
+}
+
+.server-down {
+  margin: 0 var(--gutter) 8px;
+  color: var(--danger);
+  font-size: var(--step--1);
+}

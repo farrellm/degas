@@ -1,9 +1,11 @@
 import type { CSSProperties } from 'react'
-import { isVideo, thumbUrl } from '../api'
-import { useCover } from '../discretion'
-import { clock } from '../format'
 
-interface Props {
+import { thumbUrl } from '@/api/urls'
+import { useCover } from '@/hooks/useDiscretion'
+import { formatClock } from '@/lib/format'
+import { isVideo } from '@/lib/image'
+
+export interface TileProps {
   /** What uncovers together: the result or library item id. */
   id: string
   blobSha: string
@@ -28,7 +30,7 @@ export function Tile({
   label,
   coveredLabel,
   onOpen,
-}: Props) {
+}: TileProps) {
   const { covered, peek, press, tap } = useCover(id)
   const classes = ['tile', kept && 'kept', covered && 'covered', peek && 'peek']
   return (
@@ -44,7 +46,7 @@ export function Tile({
     >
       <img src={thumbUrl(blobSha)} alt="" loading="lazy" draggable={false} />
       {isVideo(mediaType) && duration != null && (
-        <span className="tile-duration">{clock(duration)}</span>
+        <span className="tile-duration">{formatClock(duration)}</span>
       )}
     </button>
   )

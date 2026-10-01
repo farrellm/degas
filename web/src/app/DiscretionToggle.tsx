@@ -1,4 +1,5 @@
-import { setDiscretion, useDiscretion } from '../discretion'
+import { useDiscretion } from '@/hooks/useDiscretion'
+import { setDiscretion } from '@/lib/discretion'
 
 /** The header switch for discretion mode: covers images and prompts until tapped. */
 export function DiscretionToggle() {

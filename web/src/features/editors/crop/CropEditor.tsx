@@ -1,25 +1,35 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import {
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
   type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
+  useRef,
+  useState,
 } from 'react'
-import { api, blobUrl, type BlobInfo } from '../api'
+
+import { api } from '@/api/client'
+import { queries } from '@/api/queries'
+import type { BlobInfo } from '@/api/types'
+import { blobUrl } from '@/api/urls'
+import { pinch, stagePoint } from '@/features/editors/gestures'
+import { useDialog } from '@/hooks/useDialog'
+import { useElementSize } from '@/hooks/useElementSize'
+import { formatSize } from '@/lib/format'
+import { ratioDiffers, ratioMatches, type Rect, type Size, type View } from '@/lib/geometry'
+
 import {
+  type Aspect,
   ASPECTS,
   buildOps,
   centered,
   clampView,
+  type Constraints,
   cropOf,
   dragCorner,
   exactCrop,
   frameFor,
-  FREE_ASPECTS,
   frameOf,
+  FREE_ASPECTS,
   intersect,
   mirror,
   modelUpscale,
@@ -28,20 +38,15 @@ import {
   ratio,
   reshape,
   rotated,
+  type Rotation,
   upscale,
   UPSCALE_WARN,
   viewFor,
   zoomAt,
-  type Aspect,
-  type Constraints,
-  type Rect,
-  type Rotation,
-  type Size,
-  type View,
-} from '../crop'
-import { size } from '../format'
+} from './crop'
+import { CropTools } from './CropTools'
 
-interface Props {
+export interface CropEditorProps {
   /** The image in the slot; a derived image reopens on its original with its crop. */
   sha: string
   /** The form's output size. */
@@ -101,20 +106,16 @@ export function CropEditor({
   square = false,
   onApply,
   onCancel,
-}: Props) {
+}: CropEditorProps) {
   const free = freeCrop || square
-  const history = useQuery({
-    queryKey: ['transform', sha],
-    queryFn: () => api.getTransform(sha),
-    staleTime: Infinity,
-  })
+  const history = useQuery(queries.transform(sha))
   const original = history.data?.original
   const [natural, setNatural] = useState<Size | null>(null)
-  const [stage, setStage] = useState<Size>(FALLBACK_STAGE)
   const [edited, setEdit] = useState<Edit | null>(null)
   const [corner, setCorner] = useState<CornerDrag | null>(null)
   const stageRef = useRef<HTMLDivElement>(null)
-  const ref = useRef<HTMLDivElement>(null)
+  const stage = useElementSize(stageRef, FALLBACK_STAGE)
+  const ref = useDialog(onCancel)
   const pointers = useRef(new Map<number, { x: number; y: number }>())
 
   const apply = useMutation({
@@ -124,35 +125,6 @@ export function CropEditor({
       onApply(image, out)
     },
   })
-
-  useEffect(() => {
-    const opener = document.activeElement as HTMLElement | null
-    ref.current?.focus()
-    const overflow = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onCancel()
-    }
-    document.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('keydown', onKey)
-      document.body.style.overflow = overflow
-      opener?.focus()
-    }
-  }, [onCancel])
-
-  useLayoutEffect(() => {
-    const el = stageRef.current
-    if (!el || typeof ResizeObserver === 'undefined') return
-    const observer = new ResizeObserver(([entry]) => {
-      const r = entry?.contentRect
-      if (r && r.width > 0 && r.height > 0) setStage({ w: r.width, h: r.height })
-    })
-    observer.observe(el)
-    return () => {
-      observer.disconnect()
-    }
-  }, [])
 
   const targetRatio = target.w / target.h
 
@@ -171,7 +143,7 @@ export function CropEditor({
     const { rot, flip, crop, resized } = parseOps(history.data.ops)
     const img = rotated(natural, rot)
     if (crop) {
-      const match = !free && Math.abs(crop.w / crop.h / targetRatio - 1) < 0.01
+      const match = !free && ratioMatches(crop.w / crop.h, targetRatio)
       edit = { rot, flip, aspect: match ? 'match' : 'free', crop, resize: resized }
     } else {
       edit = { rot, flip, resize: true, ...initial(img) }
@@ -256,10 +228,7 @@ export function CropEditor({
     setEdit({ rot: 0, flip: false, resize: true, ...initial(natural) })
   }
 
-  const point = (e: ReactPointerEvent) => {
-    const r = stageRef.current?.getBoundingClientRect()
-    return { x: e.clientX - (r?.left ?? 0), y: e.clientY - (r?.top ?? 0) }
-  }
+  const point = (e: ReactPointerEvent) => stagePoint(stageRef.current, e)
 
   const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
     const handle = (e.target as HTMLElement).dataset.corner as Corner | undefined
@@ -295,14 +264,7 @@ export function CropEditor({
       pan(p.x - prev.x, p.y - prev.y)
       return
     }
-    // Pinch: zoom about the midpoint by the change in spread, and follow the midpoint.
-    const before = Math.hypot(prev.x - other.x, prev.y - other.y)
-    const after = Math.hypot(p.x - other.x, p.y - other.y)
-    const mid = { x: (p.x + other.x) / 2, y: (p.y + other.y) / 2 }
-    moveView((v) => {
-      const z = before > 0 ? zoomAt(v, after / before, mid.x, mid.y) : v
-      return { ...z, tx: z.tx + (p.x - prev.x) / 2, ty: z.ty + (p.y - prev.y) / 2 }
-    })
+    moveView((v) => pinch(v, prev, p, other))
   }
 
   const onPointerUp = (e: ReactPointerEvent<HTMLDivElement>) => {
@@ -434,76 +396,33 @@ export function CropEditor({
       </div>
 
       <div className="editor-controls">
-        <div className="aspect-chips" role="group" aria-label="Shape">
-          {(free ? FREE_ASPECTS : ASPECTS).map((a) => (
-            <button
-              key={a.id}
-              type="button"
-              aria-pressed={edit?.aspect === a.id}
-              disabled={!edit}
-              onClick={() => {
-                setAspect(a.id)
-              }}
-            >
-              {a.id === 'match' ? `Match ${size(target.w, target.h)}` : a.label}
-            </button>
-          ))}
-        </div>
-        <div className="editor-tools">
-          <button type="button" className="tool" disabled={!edit} onClick={rotate}>
-            <svg viewBox="0 0 20 20" aria-hidden>
-              <path d="M6 4.5 3.5 7 6 9.5" />
-              <path d="M3.8 7H12a4.5 4.5 0 0 1 0 9H8" />
-            </svg>
-            Rotate
-          </button>
-          <button
-            type="button"
-            className="tool"
-            aria-pressed={edit?.flip ?? false}
-            disabled={!edit}
-            onClick={flip}
-          >
-            <svg viewBox="0 0 20 20" aria-hidden>
-              <path d="M10 2.5v15" strokeDasharray="2 2" />
-              <path d="M7.5 5 3 14.5h4.5z" />
-              <path d="M12.5 5 17 14.5h-4.5z" />
-            </svg>
-            Flip
-          </button>
-          {!free && (
-            <button
-              type="button"
-              className="tool"
-              aria-pressed={edit?.resize ?? true}
-              disabled={!edit}
-              onClick={() => {
-                if (edit) setEdit({ ...edit, resize: !edit.resize })
-              }}
-            >
-              <svg viewBox="0 0 20 20" aria-hidden>
-                <path d="M3 8V3h5" />
-                <path d="M17 12v5h-5" />
-                <path d="M3 3l14 14" />
-              </svg>
-              Resize
-            </button>
+        <CropTools
+          aspects={(free ? FREE_ASPECTS : ASPECTS).map((a) =>
+            a.id === 'match' ? { ...a, label: `Match ${formatSize(target.w, target.h)}` } : a,
           )}
-          <button type="button" className="tool" disabled={!edit} onClick={reset}>
-            Reset
-          </button>
-        </div>
+          aspect={edit?.aspect}
+          disabled={!edit}
+          flipped={edit?.flip ?? false}
+          resize={free ? undefined : (edit?.resize ?? true)}
+          onAspect={setAspect}
+          onRotate={rotate}
+          onFlip={flip}
+          onResize={(resize) => {
+            if (edit) setEdit({ ...edit, resize })
+          }}
+          onReset={reset}
+        />
         {out && crop && natural && edit && (
           <p className={scale > UPSCALE_WARN ? 'readout warn' : 'readout'} aria-live="polite">
-            {edit.resize ? size(out.w, out.h) : size(crop.w, crop.h)} from{' '}
-            {size(natural.w, natural.h)}
+            {edit.resize ? formatSize(out.w, out.h) : formatSize(crop.w, crop.h)} from{' '}
+            {formatSize(natural.w, natural.h)}
             {!edit.resize && !free && (out.w !== crop.w || out.h !== crop.h) && (
               <>
                 <br />
-                Kept at its own size; it’s fitted to {size(out.w, out.h)} when it’s used.
+                Kept at its own size; it’s fitted to {formatSize(out.w, out.h)} when it’s used.
               </>
             )}
-            {square && Math.abs(out.w / out.h - 1) > 0.01 && (
+            {square && ratioDiffers(out.w / out.h, 1) && (
               <>
                 <br />
                 The model sees the middle square.

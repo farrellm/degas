@@ -1,0 +1,121 @@
+/* ---------- Queue: reorder and undo ---------- */
+
+.group {
+  position: relative;
+}
+
+/*
+ * A lifted group is a sheet picked up off the table: raised paper extends
+ * past its edges (a spread, not a shadow) and it follows the finger.
+ */
+.group.lifted {
+  z-index: 5;
+  border-radius: 6px;
+  background: var(--paper-raised);
+  box-shadow: 0 0 0 10px var(--paper-raised);
+  touch-action: none;
+}
+
+/* Where the lifted group will land, in rose: "what will change". */
+.group.drop-before::before,
+.group.drop-after::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--accent);
+}
+
+.group.drop-before::before {
+  top: -15px;
+}
+
+.group.drop-after::after {
+  bottom: -15px;
+}
+
+.group-caption.queued {
+  grid-template-columns: auto 1fr auto;
+}
+
+.group-caption.queued .meta {
+  grid-column: 2;
+}
+
+.group-caption.queued .aside {
+  grid-column: 3;
+}
+
+/* The grip is three strokes of hatching: a queued job isn't drawn yet. */
+.drag-handle {
+  grid-row: 1 / span 3;
+  align-self: start;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 44px;
+  margin: -6px 0 0 -6px;
+  color: var(--ink-muted);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.group.lifted .drag-handle {
+  color: var(--accent);
+  cursor: grabbing;
+}
+
+.drag-handle svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentcolor;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+}
+
+.undo-toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--tabbar) + env(safe-area-inset-bottom) + 12px);
+  z-index: 11;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-height: 44px;
+  padding: 0 18px;
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 0.9375rem;
+  transform: translateX(-50%);
+  animation: rise 0.2s ease-out;
+}
+
+.undo-toast .link {
+  min-height: 44px;
+  color: var(--paper);
+}
+
+.feed-clear {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 36px;
+  padding-top: 20px;
+  border-top: 1px solid var(--rule);
+}
+
+.feed-clear > .btn {
+  align-self: center;
+}
+
+.feed-error {
+  margin-top: 16px;
+  font-size: var(--step--1);
+}

@@ -1,5 +1,7 @@
 import type { ReactNode } from 'react'
-import { reveal, useCovered } from '../discretion'
+
+import { useCovered } from '@/hooks/useDiscretion'
+import { reveal } from '@/lib/discretion'
 
 /**
  * A prompt under glassine in discretion mode; a tap uncovers it. `shown` uncovers

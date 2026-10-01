@@ -1,0 +1,196 @@
+/* ---------- Phase 7: ControlNet ---------- */
+
+/* ControlNet units: a header row, then one indented row per unit. */
+.control-group {
+  border-bottom: 1px solid var(--rule);
+}
+
+.control-group > .setting {
+  border-bottom: none;
+}
+
+.control-unit {
+  padding: 0 0 8px 14px;
+}
+
+.control-open {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) 6px;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 48px;
+  text-align: left;
+}
+
+.control-open::after {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-right: 1.5px solid var(--ink-muted);
+  border-bottom: 1.5px solid var(--ink-muted);
+  transform: rotate(-45deg);
+}
+
+.control-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.control-name {
+  overflow: hidden;
+  font-weight: 540;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.control-name.none {
+  color: var(--ink-muted);
+  font-weight: 450;
+}
+
+.control-meta {
+  color: var(--ink-muted);
+  font-size: var(--step--1);
+}
+
+.control-unit.missing .control-name {
+  color: var(--warn);
+}
+
+.control-unit .row-warning {
+  margin: 0 0 4px;
+}
+
+/*
+ * A control image is a study, not a picture: in the row it's drawn in chalk on the
+ * paper (charcoal on the light paper), so edges read as line drawing and depth as tone.
+ */
+.control-thumb {
+  display: block;
+  width: 34px;
+  height: 34px;
+  border-radius: 3px;
+  box-shadow: inset 0 0 0 1px var(--rule);
+}
+
+.control-thumb canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 3px;
+  filter: grayscale(1) invert(1) contrast(1.15);
+  mix-blend-mode: multiply;
+}
+
+.control-thumb.empty {
+  background: repeating-linear-gradient(-58deg, var(--hatch) 0 1px, transparent 1px 6px);
+  opacity: 0.5;
+}
+
+@media (prefers-color-scheme: dark) {
+  .control-thumb canvas {
+    filter: grayscale(1) contrast(1.15);
+    mix-blend-mode: screen;
+  }
+}
+
+/* The editor: what the model will read, in its own colours, on the well. */
+.control-preview {
+  margin-bottom: 4px;
+}
+
+.control-picture {
+  position: relative;
+  max-width: 100%;
+  max-height: 42vh;
+  margin: 0 auto;
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--well);
+}
+
+.control-picture img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+/* Over the picture: the trace laid on the photo it came from, to check they line up.
+ * The photo is dimmed so a trace's thin lines stay legible over its bright areas. */
+.control-photo {
+  opacity: 0.5;
+}
+
+.control-trace.over {
+  mix-blend-mode: screen;
+  opacity: 0.9;
+}
+
+.control-picture.sketch::before,
+.control-picture.sketch::after {
+  z-index: 1;
+}
+
+.control-picture-actions .spacer {
+  flex: 1;
+}
+
+.control-empty {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 20px 16px;
+  border-radius: 3px;
+  background:
+    repeating-linear-gradient(
+      -58deg,
+      color-mix(in srgb, var(--hatch) 35%, transparent) 0 1px,
+      transparent 1px 7px
+    ),
+    var(--well);
+}
+
+.control-empty p {
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: var(--step-0);
+}
+
+.control-traces {
+  display: flex;
+  gap: 6px;
+  margin: 12px 0 10px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.control-traces button {
+  flex: none;
+  min-height: 36px;
+  padding: 0 14px;
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 1px var(--rule);
+  color: var(--ink-muted);
+  font-size: 0.9375rem;
+  font-weight: 520;
+}
+
+.control-traces button[aria-pressed='true'] {
+  background: var(--paper-raised);
+  box-shadow: inset 0 0 0 1.5px var(--ink-muted);
+  color: var(--ink);
+}
+
+.control-traces + .row-note,
+.control-traces + .row-warning {
+  margin-top: 0;
+}
+
+.control-remove {
+  justify-content: end;
+  margin: 16px 0 8px;
+}

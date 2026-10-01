@@ -1,5 +1,7 @@
-import { unref, type Asset, type ControlSpec, type Fit, type Params, type TraceId } from './api'
-import type { Source } from './draft'
+import type { Asset, ControlSpec, Fit, Params, TraceId } from '@/api/types'
+import type { Size } from '@/lib/geometry'
+import { ref, type Source, unref } from '@/lib/image'
+import { stepSpan } from '@/lib/steps'
 
 /** A ControlNet unit in the Create form. */
 export interface ControlUnit {
@@ -53,28 +55,6 @@ export const restoreUnit = (saved: Partial<ControlUnit>): ControlUnit => ({
   ...newUnit(),
   ...saved,
 })
-
-/**
- * The steps (1-based, inclusive) a unit guides out of `steps`. diffusers runs a unit on step
- * i (0-based) when i / n ≥ start and (i + 1) / n ≤ end; null when that's no step at all.
- */
-export function stepSpan(
-  start: number,
-  end: number,
-  steps: number,
-): { first: number; last: number } | null {
-  const first = Math.ceil(start * steps - 1e-9) + 1
-  const last = Math.floor(end * steps + 1e-9)
-  return steps > 0 && last >= first ? { first, last } : null
-}
-
-/** "Steps 1–24 of 30". */
-export function stepsLabel(start: number, end: number, steps: number): string {
-  const span = stepSpan(start, end, steps)
-  if (!span) return 'No steps. Widen the range.'
-  if (span.first === span.last) return `Step ${String(span.first)} of ${String(steps)}`
-  return `Steps ${String(span.first)}–${String(span.last)} of ${String(steps)}`
-}
 
 /** The kind of control image a ControlNet reads: from its sidecar, else its file name. */
 export function controlKind(asset: Asset | undefined, path = asset?.path ?? ''): TraceId | null {
@@ -140,16 +120,16 @@ export function unitSpec(unit: ControlUnit): ControlSpec {
   if (!unit.image) throw new Error('Choose a control image.')
   return {
     controlnet: { path: unit.model },
-    image: `sha256:${unit.image.sha}`,
+    image: ref(unit.image.sha),
     fit: unit.fit,
     scale: unit.scale,
     start: unit.start,
     end: unit.end,
-    ...(unit.area && { mask: `sha256:${unit.area}` }),
+    ...(unit.area && { mask: ref(unit.area) }),
     ...(unit.trace && {
       preprocessor: {
         id: unit.trace.id,
-        source: `sha256:${unit.trace.from.sha}`,
+        source: ref(unit.trace.from.sha),
         params: unit.trace.params,
       },
     }),
@@ -160,7 +140,7 @@ export function unitSpec(unit: ControlUnit): ControlSpec {
  * A unit from a spec, for Remix. The spec's control image was fitted to the output size, so
  * that's its size; the size of the picture it was traced from isn't recorded (0 × 0).
  */
-export function unitFromSpec(c: ControlSpec, size: { w: number; h: number }): ControlUnit {
+export function unitFromSpec(c: ControlSpec, size: Size): ControlUnit {
   return {
     ...newUnit(),
     model: c.controlnet.path,
@@ -178,3 +158,9 @@ export function unitFromSpec(c: ControlSpec, size: { w: number; h: number }): Co
     end: c.end,
   }
 }
+
+export const sameSize = (a: Source | null, b: Source | null) =>
+  !!a && !!b && a.width === b.width && a.height === b.height
+
+/** The picture a unit's image came from: what it was traced from, or itself. */
+export const photoOf = (unit: ControlUnit) => unit.trace?.from ?? unit.image

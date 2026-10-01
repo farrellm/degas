@@ -1,6 +1,8 @@
 import { useEffect, useRef } from 'react'
-import { blobUrl, thumbUrl } from '../api'
-import { lumaToAlpha } from '../mask'
+
+import { blobUrl, thumbUrl } from '@/api/urls'
+
+import { lumaToAlpha } from './mask'
 
 const SIZE = 68 // drawn at 2× the 34 px slot
 

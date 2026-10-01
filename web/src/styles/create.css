@@ -1,0 +1,641 @@
+/* ---------- Create ---------- */
+
+.create {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.prompt-block {
+  display: flex;
+  flex-direction: column;
+  padding: 14px 16px 6px;
+  border-radius: 6px;
+  background: var(--paper-raised);
+}
+
+.prompt-block label {
+  color: var(--ink-muted);
+  font-size: var(--step--1);
+}
+
+.prompt-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: -12px 0 -10px; /* the aside's tap target reaches into the block's padding */
+}
+
+.prompt-aside {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding-left: 16px;
+  font-size: var(--step--1);
+  font-weight: 560;
+}
+
+.prompt-aside::after {
+  content: '';
+  width: 5px;
+  height: 5px;
+  border-right: 1.5px solid var(--ink-muted);
+  border-bottom: 1.5px solid var(--ink-muted);
+  transform: rotate(-45deg);
+}
+
+.prompt-block textarea {
+  display: block;
+  width: 100%;
+  margin: 4px 0 8px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  resize: none;
+  field-sizing: content;
+  font-family: var(--serif);
+  font-size: var(--step-1);
+  line-height: 1.45;
+  font-variation-settings: 'opsz' 18;
+}
+
+.prompt-block textarea#param-prompt {
+  min-height: calc(3 * 1.45em);
+}
+
+.prompt-block textarea.secondary-prompt {
+  min-height: 1.45em;
+  font-size: var(--step-0);
+  color: var(--ink-muted);
+}
+
+.prompt-block textarea:focus {
+  outline: none;
+}
+
+.prompt-block:focus-within {
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+}
+
+.prompt-block hr {
+  width: 100%;
+  margin: 0 0 10px;
+  border: none;
+  border-top: 1px solid var(--rule);
+}
+
+textarea::placeholder,
+input::placeholder {
+  color: var(--ink-muted);
+  opacity: 0.7;
+}
+
+/* Settings list: label left, control right. */
+.settings {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--rule);
+}
+
+.setting {
+  display: grid;
+  grid-template-columns: 6.5rem 1fr;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.setting > .setting-label {
+  color: var(--ink-muted);
+  font-size: 0.9375rem;
+}
+
+.setting > .setting-label > label {
+  display: block;
+}
+
+/* "Reset to 28": only there once a value has left the family's default. */
+.setting-reset {
+  display: block;
+  margin: -6px -8px -8px;
+  padding: 6px 8px 8px;
+  color: var(--ink-muted);
+  font-size: var(--step--1);
+  text-align: left;
+  text-decoration: underline;
+  text-decoration-color: var(--rule);
+  text-underline-offset: 3px;
+}
+
+.setting-reset:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  border-radius: 6px;
+}
+
+.setting.check {
+  grid-template-columns: 1fr auto;
+}
+
+.setting.check input {
+  width: 22px;
+  height: 22px;
+  accent-color: var(--accent);
+}
+
+.setting.check small {
+  display: block;
+  font-size: var(--step--1);
+}
+
+.setting > .setting-note {
+  grid-column: 1 / -1;
+  margin-top: -6px;
+  color: var(--ink-muted);
+  font-size: var(--step--1);
+}
+
+.setting.stacked {
+  grid-template-columns: 1fr auto;
+  row-gap: 8px;
+  padding: 12px 0;
+}
+
+.setting.stacked > .setting-control {
+  grid-column: 1 / -1;
+}
+
+.setting-value {
+  justify-self: end;
+  font-weight: 540;
+}
+
+.setting select,
+.setting input[type='number'],
+.setting input[type='text'] {
+  width: 100%;
+  min-height: 40px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  font-size: 16px; /* keeps iOS from zooming on focus */
+  font-weight: 540;
+  text-align: right;
+  text-align-last: right;
+}
+
+.setting select {
+  appearance: none;
+  padding-right: 18px;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--ink-muted) 50%),
+    linear-gradient(135deg, var(--ink-muted) 50%, transparent 50%);
+  background-position:
+    right 6px center,
+    right 1px center;
+  background-size:
+    5px 5px,
+    5px 5px;
+  background-repeat: no-repeat;
+  text-overflow: ellipsis;
+}
+
+.setting input:focus,
+.setting select:focus {
+  outline: none;
+}
+
+.setting:focus-within {
+  border-bottom-color: var(--accent);
+}
+
+.slider-control {
+  display: grid;
+  grid-template-columns: 1fr 3rem;
+  align-items: center;
+  gap: 12px;
+}
+
+.slider-track {
+  position: relative;
+  display: block;
+}
+
+/* The default, as a tick under the track; 22px is the thumb's width. */
+.slider-track.notched::after {
+  content: '';
+  position: absolute;
+  top: calc(50% + 4px);
+  left: calc(11px + (100% - 22px) * var(--default));
+  width: 1.5px;
+  height: 6px;
+  margin-left: -0.75px;
+  border-radius: 1px;
+  background: var(--ink-muted);
+  pointer-events: none;
+}
+
+.slider-control output {
+  text-align: right;
+  font-weight: 540;
+}
+
+input[type='range'] {
+  width: 100%;
+  height: 28px;
+  margin: 0;
+  background: transparent;
+  accent-color: var(--accent);
+  appearance: none;
+}
+
+input[type='range']::-webkit-slider-runnable-track {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--rule);
+}
+
+input[type='range']::-moz-range-track {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--rule);
+}
+
+input[type='range']::-webkit-slider-thumb {
+  appearance: none;
+  width: 22px;
+  height: 22px;
+  margin-top: -9.5px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 3px solid var(--paper);
+}
+
+input[type='range']::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 3px solid var(--paper);
+}
+
+.seed-control {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.seed-control input {
+  flex: 1;
+}
+
+.seed-batch {
+  align-items: start;
+  padding: 10px 0;
+}
+
+.seed-batch > .setting-label {
+  line-height: 36px;
+}
+
+.seed-batch-control {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.seed-modes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.seed-from {
+  color: var(--ink-muted);
+  font-size: 0.9375rem;
+}
+
+.aspects {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  margin: 0 calc(-1 * var(--gutter));
+  padding: 0 var(--gutter);
+}
+
+.aspect {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 8px;
+}
+
+.aspect[aria-pressed='true'] {
+  background: var(--paper-raised);
+}
+
+/* The family's default size, ticked like a slider's default. */
+.aspect.default {
+  position: relative;
+}
+
+.aspect.default::after {
+  content: '';
+  position: absolute;
+  bottom: 3px;
+  left: 50%;
+  width: 1.5px;
+  height: 5px;
+  margin-left: -0.75px;
+  border-radius: 1px;
+  background: var(--ink-muted);
+}
+
+.aspect-box {
+  display: block;
+  height: 26px;
+  max-width: 34px;
+  border: 1.5px solid var(--ink-muted);
+  border-radius: 2px;
+}
+
+.aspect.wide .aspect-box {
+  width: 30px;
+  height: auto;
+}
+
+.aspect[aria-pressed='true'] .aspect-box {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.more {
+  margin-top: 4px;
+}
+
+.more summary {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--ink-muted);
+  cursor: pointer;
+  list-style: none;
+}
+
+.more summary::-webkit-details-marker {
+  display: none;
+}
+
+.more summary::after {
+  content: '';
+  width: 6px;
+  height: 6px;
+  margin-left: 10px;
+  border-right: 1.5px solid currentcolor;
+  border-bottom: 1.5px solid currentcolor;
+  transform: rotate(45deg) translateY(-2px);
+}
+
+.more[open] summary::after {
+  transform: rotate(-135deg) translateY(-1px);
+}
+
+/* A settings row that opens a sheet: the value carries a chevron. */
+.setting-button {
+  width: 100%;
+  text-align: left;
+}
+
+.setting-button:focus-visible,
+.row-action:focus-visible,
+.asset-row:focus-visible {
+  outline-offset: -2px;
+}
+
+/* Names, not numbers: this face's tabular punctuation is wide ("Wan 2.2"). */
+.setting-button .setting-value {
+  font-variant-numeric: normal;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.setting-button .setting-value::after,
+.row-action::after {
+  content: '';
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-right: 1.5px solid var(--ink-muted);
+  border-bottom: 1.5px solid var(--ink-muted);
+  transform: rotate(-45deg);
+}
+
+.setting-value.none {
+  color: var(--ink-muted);
+  font-weight: 450;
+}
+
+.row-action {
+  justify-self: end;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding-left: 16px;
+  font-weight: 540;
+}
+
+/* LoRAs: a header row, then one indented row per LoRA with its weight. */
+.lora-group {
+  border-bottom: 1px solid var(--rule);
+}
+
+.lora-group > .setting {
+  border-bottom: none;
+}
+
+.lora {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(84px, 1.15fr) 2.6rem 40px;
+  align-items: center;
+  column-gap: 10px;
+  padding: 0 0 6px 14px;
+}
+
+.lora-name {
+  overflow: hidden;
+  font-weight: 540;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.lora output {
+  text-align: right;
+  font-weight: 540;
+}
+
+.lora-remove {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 44px;
+  color: var(--ink-muted);
+}
+
+.lora-remove svg {
+  width: 11px;
+  height: 11px;
+  fill: none;
+  stroke: currentcolor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+}
+
+.lora-remove:hover {
+  color: var(--ink);
+}
+
+.model-row .setting {
+  border-bottom: none;
+}
+
+.model-row {
+  border-bottom: 1px solid var(--rule);
+}
+
+.row-warning {
+  margin: -8px 0 10px;
+  color: var(--warn);
+  font-size: var(--step--1);
+}
+
+.model-row.missing .setting-value {
+  color: var(--warn);
+}
+
+.lora-missing {
+  grid-column: 1 / -1;
+  margin-top: -4px;
+  color: var(--warn);
+  font-size: var(--step--1);
+}
+
+/* Trigger words are prompt words, so they're set like the prompt. */
+.chips {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: 6px;
+  margin-top: -8px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+}
+
+.chip span {
+  padding: 2px 12px 3px;
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 1px var(--rule);
+  font-family: var(--serif);
+  font-size: 0.9375rem;
+  line-height: 1.35;
+}
+
+.chip:hover span,
+.chip:active span {
+  background: var(--paper-raised);
+}
+
+.chip:focus-visible {
+  outline: none;
+}
+
+.chip:focus-visible span {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+code {
+  font-size: 0.9em;
+  overflow-wrap: anywhere;
+}
+
+/* Generate bar, sticky above the tab bar. */
+.generate-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: calc(var(--tabbar) + env(safe-area-inset-bottom));
+  z-index: 9;
+  padding: 10px var(--gutter) 10px;
+  background: var(--paper);
+  border-top: 1px solid var(--rule);
+}
+
+.generate-bar-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: calc(var(--measure) - 2 * var(--gutter));
+  margin: 0 auto;
+}
+
+.generate-row {
+  display: flex;
+  gap: 10px;
+}
+
+.generate-row .btn {
+  flex: 1;
+  min-height: 50px;
+  font-size: 1.0625rem;
+}
+
+.stepper {
+  display: flex;
+  align-items: center;
+  border-radius: 12px;
+  box-shadow: inset 0 0 0 1px var(--rule);
+}
+
+.stepper button {
+  width: 40px;
+  height: 50px;
+  font-size: 1.25rem;
+  color: var(--ink-muted);
+}
+
+.stepper output {
+  min-width: 1.5ch;
+  text-align: center;
+  font-weight: 600;
+}
+
+.bar-note {
+  font-size: var(--step--1);
+  color: var(--ink-muted);
+}
+
+.bar-note.error {
+  color: var(--danger);
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: var(--step--1);
+}

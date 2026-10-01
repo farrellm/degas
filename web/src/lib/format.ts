@@ -1,4 +1,4 @@
-import type { Job } from './api'
+import type { Job } from '@/api/types'
 
 /** "models/sdxl/juggernautXL_v10.safetensors" → "juggernautXL v10". */
 export function modelName(path: string): string {
@@ -6,18 +6,18 @@ export function modelName(path: string): string {
   return file.replace(/\.(safetensors|ckpt|pt|bin)$/, '').replaceAll('_', ' ')
 }
 
-export function size(w: unknown, h: unknown): string {
+export function formatSize(w: unknown, h: unknown): string {
   return `${String(w)} × ${String(h)}`
 }
 
 /** "0:05": a clip's length, as on a video tile. */
-export function clock(seconds: number): string {
+export function formatClock(seconds: number): string {
   const s = Math.max(1, Math.round(seconds))
   return `${String(Math.floor(s / 60))}:${String(s % 60).padStart(2, '0')}`
 }
 
 /** "5.0 s" or "12 s": a clip's length in running text. */
-export function duration(seconds: number): string {
+export function formatDuration(seconds: number): string {
   return seconds < 10 ? `${seconds.toFixed(1)} s` : `${String(Math.round(seconds))} s`
 }
 
@@ -55,24 +55,11 @@ export function itemFraction(job: Job): number | null {
   return null
 }
 
-export const GiB = 1024 ** 3
+const GB = 1000 ** 3
+export const MB = 1000 ** 2
 
-/** Colab GPUs, ascending capability (matches the server's `GPUS`). */
-export const GPUS = ['T4', 'L4', 'A100', 'H100']
-
-/** Whether `gpu` is below `min`, i.e. a model needing `min` may run slowly on it or not at all. */
-export function belowGpu(gpu: string, min: string): boolean {
-  return GPUS.indexOf(gpu) < GPUS.indexOf(min)
-}
-
-/** "needs an L4": a model's minimum GPU, or null when any GPU runs it. */
-export function needsGpu(min: string): string | null {
-  return GPUS.indexOf(min) > 0 ? `needs an ${min}` : null
-}
-
-export const GPU_VRAM: Record<string, string> = {
-  T4: '16 GB',
-  L4: '24 GB',
-  A100: '40–80 GB',
-  H100: '80 GB',
+/** "6.9 GB", "144 MB". */
+export function formatBytes(n: number): string {
+  if (n >= GB) return `${(n / GB).toFixed(n >= 100 * GB ? 0 : 1)} GB`
+  return `${String(Math.max(1, Math.round(n / MB)))} MB`
 }
