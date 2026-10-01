@@ -13,6 +13,7 @@ from degas.civitai.client import CivitaiError
 from degas.civitai.importer import ImportBusyError
 from degas.civitai.plan import PlanError
 from degas.colab.session import SessionError
+from degas.db import PENDING_JOB_STATUSES
 from degas.drive import DriveError
 from degas.families import FAMILIES
 from degas.families.base import SpecError, describe, lora_files, spec_assets
@@ -410,7 +411,7 @@ async def delete_job_results(svc: Svc, job_id: str, chain: bool = False) -> dict
     job = svc.db.get_job(job_id)
     if job is None:
         raise HTTPException(404, "Unknown job")
-    if job["status"] in ("queued", "running"):
+    if job["status"] in PENDING_JOB_STATUSES:
         raise HTTPException(409, "Cancel the job before deleting it")
     deleted = svc.db.delete_job_results(job_id, chain)
     release(svc.db, svc.blobs, deleted["blobs"])

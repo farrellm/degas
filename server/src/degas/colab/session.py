@@ -18,8 +18,9 @@ from degas.colab.cli import Colab, ColabError
 from degas.colab.tunnel import Tunnel, TunnelError
 from degas.colab.worker_client import WorkerClient, WorkerError
 from degas.config import Config
-from degas.db import ACTIVE_SESSION_STATES, Database, now
+from degas.db import ACTIVE_SESSION_STATES, RUNNING_SESSION_STATES, Database, now
 from degas.drive import DriveAuth, DriveError
+from degas.errors import DegasError
 from degas.events import EventBus
 from degas.families.base import GPUS
 
@@ -57,7 +58,7 @@ print("{STARTED_MARKER}", _p.pid)
 IDLE_WARNING = timedelta(minutes=2)
 
 
-class SessionError(RuntimeError):
+class SessionError(DegasError):
     pass
 
 
@@ -139,11 +140,16 @@ class SessionManager:
         return self.state in ACTIVE_SESSION_STATES
 
     @property
+    def running(self) -> bool:
+        """Ready or busy: the worker is up."""
+        return self.state in RUNNING_SESSION_STATES
+
+    @property
     def idle_timeout(self) -> timedelta:
         return timedelta(minutes=self.config.idle_timeout_min)
 
     def idle_deadline(self) -> datetime | None:
-        if self.state not in ("ready", "busy") or self.session is None:
+        if not self.running or self.session is None:
             return None
         last = datetime.fromisoformat(self.session["last_activity_at"])
         return last + self.idle_timeout
@@ -167,7 +173,7 @@ class SessionManager:
         assert self.session is not None
         self.db.update_session(self.session["id"], **fields)
         self.session = self.db.get_session(self.session["id"])
-        if self.state in ("ready", "busy") and self.worker is not None:
+        if self.running and self.worker is not None:
             if not self._ready.is_set():
                 self._ready.set()
                 for cb in self.on_ready:
@@ -186,11 +192,11 @@ class SessionManager:
 
     def touch(self) -> None:
         """User interaction or job activity: resets the idle countdown."""
-        if self.state in ("ready", "busy", "starting"):
+        if self.running or self.state == "starting":
             self._update(last_activity_at=now())
 
     def set_busy(self, busy: bool) -> None:
-        if self.state in ("ready", "busy"):
+        if self.running:
             self._update(state="busy" if busy else "ready", last_activity_at=now())
 
     # -- start / stop ----------------------------------------------------------------------
@@ -228,7 +234,7 @@ class SessionManager:
     async def reset_worker(self) -> None:
         """Force reset: kill the worker process and start a fresh one (models reload)."""
         async with self._lock:
-            if self.state not in ("ready", "busy") or self.tunnel is None:
+            if not self.running or self.tunnel is None:
                 raise SessionError("No running session")
             await self._cancel_tasks()
             self._update(state="starting")
@@ -405,7 +411,7 @@ class SessionManager:
 
     async def refresh_health(self) -> None:
         """Re-read the worker's health now (e.g. after a job changed the model cache)."""
-        if self.worker is None or self.state not in ("ready", "busy"):
+        if self.worker is None or not self.running:
             return
         try:
             self.health = await self.worker.health()

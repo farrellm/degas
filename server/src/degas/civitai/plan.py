@@ -10,7 +10,9 @@ from typing import Any
 
 import yaml
 
+from degas.blobs import SHA256
 from degas.civitai.client import still_url
+from degas.errors import DegasError
 
 # Civitai's `baseModel` → (family, the Wan 2.2 variants its LoRAs are for). Pony, Illustrious
 # and NoobAI are SDXL fine-tunes: their LoRAs load on any SDXL checkpoint but look right only on
@@ -43,7 +45,7 @@ NAME_MAX = 60
 HALF = re.compile(r"(?:^|[^a-z])(high|low)(?:[^a-z]|$)")
 
 
-class PlanError(ValueError):
+class PlanError(DegasError, ValueError):
     pass
 
 
@@ -177,7 +179,7 @@ def _planned(
     f: dict[str, Any], version: dict[str, Any], path: str, half: str | None
 ) -> PlannedFile:
     sha = str((f.get("hashes") or {}).get("SHA256") or "").lower()
-    if not re.fullmatch(r"[0-9a-f]{64}", sha):
+    if not SHA256.fullmatch(sha):
         raise PlanError(f"Civitai lists no SHA-256 for {f['name']}")
     return PlannedFile(
         civitai_name=str(f["name"]),

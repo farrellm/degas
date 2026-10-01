@@ -3,10 +3,11 @@
 Single-user and low volume: one connection, used from the event loop thread.
 """
 
+import contextlib
 import json
 import sqlite3
 import uuid
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Iterator, Sequence
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -139,9 +140,24 @@ WHERE json_extract({col}, '$.family') = 'sdxl'
 """
 
 ACTIVE_SESSION_STATES = ("starting", "ready", "busy", "stopping")
+RUNNING_SESSION_STATES = ("ready", "busy")  # the worker is up
+PENDING_JOB_STATUSES = ("queued", "running")
 RESULT_TTL = timedelta(hours=24)
 # Uploads, URL imports, frames and transformed images that no job or kept item holds yet.
 INPUT_TTL = timedelta(hours=24)
+
+# Columns stored as JSON text.
+JOB_JSON = ("spec", "seeds", "runtime")
+LIBRARY_JSON = ("config", "tags")
+RESULT_JSON = ("segments",)
+ASSET_JSON = ("sidecar",)
+PROMPT_JSON = ("tags",)
+
+# Results with the library item that keeps each one, if any.
+RESULTS_QUERY = (
+    "SELECT r.*, l.id AS library_id FROM results r"
+    " LEFT JOIN library_items l ON l.source_result_id = r.id WHERE 1 = 1"
+)
 
 
 def now() -> str:
@@ -152,14 +168,31 @@ def new_id() -> str:
     return uuid.uuid4().hex
 
 
-def _row(row: sqlite3.Row | None, json_cols: Sequence[str] = ()) -> dict[str, Any] | None:
-    if row is None:
-        return None
+def _decode(row: sqlite3.Row, json_cols: Sequence[str] = ()) -> dict[str, Any]:
     d = dict(row)
     for col in json_cols:
         if d.get(col) is not None:
             d[col] = json.loads(d[col])
     return d
+
+
+def _row(row: sqlite3.Row | None, json_cols: Sequence[str] = ()) -> dict[str, Any] | None:
+    return None if row is None else _decode(row, json_cols)
+
+
+def _rows(rows: Iterable[sqlite3.Row], json_cols: Sequence[str] = ()) -> list[dict[str, Any]]:
+    return [_decode(row, json_cols) for row in rows]
+
+
+def _session(row: sqlite3.Row | None) -> dict[str, Any] | None:
+    d = _row(row)
+    if d is not None:
+        d["high_mem"] = bool(d["high_mem"])
+    return d
+
+
+def _escape_like(text: str) -> str:
+    return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
 class Database:
@@ -177,6 +210,13 @@ class Database:
 
     def close(self) -> None:
         self.conn.close()
+
+    @contextlib.contextmanager
+    def _transaction(self) -> Iterator[None]:
+        """Several statements as one atomic change (the connection autocommits otherwise)."""
+        with self.conn:
+            self.conn.execute("BEGIN")
+            yield
 
     def _update(self, table: str, id_: str, fields: dict[str, Any]) -> None:
         if not fields:
@@ -252,13 +292,13 @@ class Database:
             " ORDER BY finished_at DESC LIMIT ?",
             (limit,),
         ).fetchall()
-        return [_job(r) for r in [*active, *done]]
+        return _rows([*active, *done], JOB_JSON)
 
     def jobs_with_status(self, status: str) -> list[dict[str, Any]]:
         rows = self.conn.execute(
             "SELECT * FROM jobs WHERE status = ? ORDER BY queue_position", (status,)
         ).fetchall()
-        return [_job(r) for r in rows]
+        return _rows(rows, JOB_JSON)
 
     def next_queued(self) -> dict[str, Any] | None:
         row = self.conn.execute(
@@ -279,8 +319,7 @@ class Database:
             return ids
         ids.remove(id_)
         ids.insert(max(0, min(index, len(ids))), id_)
-        with self.conn:
-            self.conn.execute("BEGIN")
+        with self._transaction():
             self.conn.executemany(
                 "UPDATE jobs SET queue_position = ? WHERE id = ?",
                 [(r["queue_position"], job) for r, job in zip(rows, ids, strict=True)],
@@ -367,7 +406,7 @@ class Database:
         query += " ORDER BY r.created_at DESC, r.item_index DESC LIMIT ?"
         args.append(limit)
         rows = self.conn.execute(query, args).fetchall()
-        return [r for row in rows if (r := _row(row, RESULT_JSON)) is not None]
+        return _rows(rows, RESULT_JSON)
 
     def add_blob_ref(
         self, sha: str, ref_type: str, ref_id: str, expires_at: str | None = None
@@ -433,8 +472,7 @@ class Database:
         """
         at = at or now()
         cutoff = (datetime.fromisoformat(at) - RESULT_TTL).isoformat(timespec="milliseconds")
-        with self.conn:
-            self.conn.execute("BEGIN")
+        with self._transaction():
             results = self.conn.execute(
                 "DELETE FROM results WHERE expires_at IS NOT NULL AND expires_at <= ? RETURNING id",
                 (at,),
@@ -464,8 +502,7 @@ class Database:
         Queued and running jobs stay. Kept images hold their own refs in the library.
         Returns the counts and the blobs that lost a reference.
         """
-        with self.conn:
-            self.conn.execute("BEGIN")
+        with self._transaction():
             jobs = [
                 r[0]
                 for r in self.conn.execute(
@@ -478,11 +515,7 @@ class Database:
                     "DELETE FROM results WHERE job_id NOT IN (SELECT id FROM jobs) RETURNING id"
                 ).fetchall()
             ]
-            shas: set[str] = set()
-            for ref_type, ids in (("job", jobs), ("result", results)):
-                for id_ in ids:
-                    shas.update(self.remove_blob_refs(ref_type, id_))
-        return {"results": len(results), "jobs": len(jobs), "blobs": sorted(shas)}
+            return self._release(jobs, results)
 
     def delete_job_results(self, job_id: str, chain: bool) -> dict[str, Any]:
         """Delete one finished job's results now: its stitched chain, or everything else.
@@ -490,8 +523,7 @@ class Database:
         The job goes too once nothing is left to show. Returns the counts and the blobs
         that lost a reference.
         """
-        with self.conn:
-            self.conn.execute("BEGIN")
+        with self._transaction():
             results = [
                 r[0]
                 for r in self.conn.execute(
@@ -508,10 +540,14 @@ class Database:
                     (job_id,),
                 ).fetchall()
             ]
-            shas: set[str] = set()
-            for ref_type, ids in (("job", jobs), ("result", results)):
-                for id_ in ids:
-                    shas.update(self.remove_blob_refs(ref_type, id_))
+            return self._release(jobs, results)
+
+    def _release(self, jobs: list[str], results: list[str]) -> dict[str, Any]:
+        """Drop deleted jobs' and results' blob refs; returns the counts and those blobs."""
+        shas: set[str] = set()
+        for ref_type, ids in (("job", jobs), ("result", results)):
+            for id_ in ids:
+                shas.update(self.remove_blob_refs(ref_type, id_))
         return {"results": len(results), "jobs": len(jobs), "blobs": sorted(shas)}
 
     # -- library ---------------------------------------------------------------------------
@@ -522,8 +558,7 @@ class Database:
         """Keep a result: the item holds its own refs to the image and every input."""
         id_ = new_id()
         kind = "video" if result["media_type"].startswith("video/") else "image"
-        with self.conn:
-            self.conn.execute("BEGIN")
+        with self._transaction():
             self.conn.execute(
                 "INSERT INTO library_items (id, kind, blob_sha, media_type, width, height,"
                 " duration, config, title, tags, created_at, source_result_id)"
@@ -584,7 +619,7 @@ class Database:
         sql += " ORDER BY created_at DESC LIMIT ?"
         args.append(limit)
         rows = self.conn.execute(sql, args).fetchall()
-        return [i for r in rows if (i := _row(r, LIBRARY_JSON)) is not None]
+        return _rows(rows, LIBRARY_JSON)
 
     def update_library_item(self, id_: str, **fields: Any) -> None:
         if "tags" in fields:
@@ -593,8 +628,7 @@ class Database:
 
     def delete_library_item(self, id_: str) -> list[str]:
         """Delete a kept item; returns the blobs it held."""
-        with self.conn:
-            self.conn.execute("BEGIN")
+        with self._transaction():
             self.conn.execute("DELETE FROM library_items WHERE id = ?", (id_,))
             return self.remove_blob_refs("library", id_)
 
@@ -628,7 +662,7 @@ class Database:
 
     def get_prompt(self, id_: str) -> dict[str, Any] | None:
         row = self.conn.execute("SELECT * FROM prompts WHERE id = ?", (id_,)).fetchone()
-        return _row(row, ("tags",))
+        return _row(row, PROMPT_JSON)
 
     def list_prompts(self, query: str | None = None) -> list[dict[str, Any]]:
         sql = "SELECT * FROM prompts WHERE 1 = 1"
@@ -642,7 +676,7 @@ class Database:
             args += [like] * 4
         sql += " ORDER BY created_at DESC"
         rows = self.conn.execute(sql, args).fetchall()
-        return [p for r in rows if (p := _row(r, ("tags",))) is not None]
+        return _rows(rows, PROMPT_JSON)
 
     def update_prompt(self, id_: str, **fields: Any) -> None:
         if "tags" in fields:
@@ -675,8 +709,7 @@ class Database:
             )
             for a in assets
         ]
-        with self.conn:
-            self.conn.execute("BEGIN")
+        with self._transaction():
             self.conn.execute("DELETE FROM assets")
             self.conn.executemany(
                 "INSERT INTO assets (path, family, kind, drive_file_id, size, mtime, md5,"
@@ -706,13 +739,12 @@ class Database:
             args.append(kind)
         query += " ORDER BY path"
         rows = self.conn.execute(query, args).fetchall()
-        return [a for r in rows if (a := _row(r, ("sidecar",))) is not None]
+        return _rows(rows, ASSET_JSON)
 
     def delete_assets(self, paths: Iterable[str]) -> list[str]:
         """Drop assets from the index; returns the preview blobs they held."""
         shas: list[str] = []
-        with self.conn:
-            self.conn.execute("BEGIN")
+        with self._transaction():
             for path in paths:
                 self.conn.execute("DELETE FROM assets WHERE path = ?", (path,))
                 shas += self.remove_blob_refs("asset", path)
@@ -720,7 +752,7 @@ class Database:
 
     def get_asset(self, path: str) -> dict[str, Any] | None:
         row = self.conn.execute("SELECT * FROM assets WHERE path = ?", (path,)).fetchone()
-        return _row(row, ("sidecar",))
+        return _row(row, ASSET_JSON)
 
     # -- push subscriptions ----------------------------------------------------------------
 
@@ -737,7 +769,7 @@ class Database:
 
     def list_push_subscriptions(self) -> list[dict[str, Any]]:
         rows = self.conn.execute("SELECT * FROM push_subscriptions ORDER BY created_at").fetchall()
-        return [s for r in rows if (s := _row(r, ("keys",))) is not None]
+        return _rows(rows, ("keys",))
 
     # -- settings --------------------------------------------------------------------------
 
@@ -751,31 +783,3 @@ class Database:
             " ON CONFLICT (key) DO UPDATE SET value = excluded.value",
             (key, value),
         )
-
-
-JOB_JSON = ("spec", "seeds", "runtime")
-LIBRARY_JSON = ("config", "tags")
-RESULT_JSON = ("segments",)
-
-# Results with the library item that keeps each one, if any.
-RESULTS_QUERY = (
-    "SELECT r.*, l.id AS library_id FROM results r"
-    " LEFT JOIN library_items l ON l.source_result_id = r.id WHERE 1 = 1"
-)
-
-
-def _escape_like(text: str) -> str:
-    return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-
-
-def _session(row: sqlite3.Row | None) -> dict[str, Any] | None:
-    d = _row(row)
-    if d is not None:
-        d["high_mem"] = bool(d["high_mem"])
-    return d
-
-
-def _job(row: sqlite3.Row) -> dict[str, Any]:
-    d = _row(row, JOB_JSON)
-    assert d is not None
-    return d

@@ -6,8 +6,10 @@ from typing import Any
 
 import httpx2
 
+from degas.errors import DegasError
 
-class WorkerError(RuntimeError):
+
+class WorkerError(DegasError):
     pass
 
 

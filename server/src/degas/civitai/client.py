@@ -13,12 +13,14 @@ from typing import Any
 
 import httpx2
 
+from degas.errors import DegasError
+
 CHUNK = 1 << 20
 MAX_PREVIEW_BYTES = 32 * 1024 * 1024
 HOSTS = ("civitai.com", "civitai.red", "civitai.green")
 
 
-class CivitaiError(RuntimeError):
+class CivitaiError(DegasError):
     pass
 
 

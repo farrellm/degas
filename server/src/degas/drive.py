@@ -22,6 +22,8 @@ from typing import Any
 import httpx2
 import yaml
 
+from degas.errors import DegasError
+
 log = logging.getLogger(__name__)
 
 SCOPE = "https://www.googleapis.com/auth/drive.readonly"
@@ -58,7 +60,7 @@ MAX_PREVIEW_BYTES = 16 * 1024 * 1024
 StorePreview = Callable[[bytes, str], str]
 
 
-class DriveError(RuntimeError):
+class DriveError(DegasError):
     pass
 
 

@@ -1,9 +1,10 @@
 """Keeping results: saved generation configs (design §6.4) and retention (§6.3)."""
 
 import logging
+from collections.abc import Iterable, Iterator
 from typing import Any
 
-from degas.blobs import BlobStore
+from degas.blobs import REF_PREFIX, BlobStore, unref
 from degas.db import Database
 
 log = logging.getLogger(__name__)
@@ -40,29 +41,43 @@ def saved_config(job: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
 def input_blobs(spec: dict[str, Any]) -> list[str]:
     """Blob shas a spec uses as inputs: source, mask, references, control images, image prompts
     and their originals."""
-    shas: list[str] = []
+    return _shas(_refs(spec, provenance=True))
 
-    def add(value: Any) -> None:
-        if isinstance(value, str) and value.startswith("sha256:"):
-            sha = value.removeprefix("sha256:")
+
+def staged_blobs(spec: dict[str, Any]) -> list[str]:
+    """The input blobs the worker reads: `input_blobs` without what only records where an
+    input came from (the extended clip, originals and traced sources)."""
+    return _shas(_refs(spec, provenance=False))
+
+
+def _refs(spec: dict[str, Any], *, provenance: bool) -> Iterator[Any]:
+    inputs = spec.get("inputs") or {}
+    yield inputs.get("source")
+    yield inputs.get("mask")
+    if provenance:
+        yield inputs.get("extends")
+    yield from inputs.get("refs") or []
+    if provenance:
+        for derived, transform in (inputs.get("transforms") or {}).items():
+            yield derived
+            yield (transform or {}).get("original")
+    for unit in spec.get("control") or []:
+        yield unit.get("image")
+        yield unit.get("mask")
+        if provenance:
+            yield (unit.get("preprocessor") or {}).get("source")
+    for unit in spec.get("image_prompts") or []:
+        yield from unit.get("images", [])
+        yield unit.get("mask")
+
+
+def _shas(values: Iterable[Any]) -> list[str]:
+    shas: list[str] = []
+    for value in values:
+        if isinstance(value, str) and value.startswith(REF_PREFIX):
+            sha = unref(value)
             if sha not in shas:
                 shas.append(sha)
-
-    inputs = spec.get("inputs") or {}
-    for key in ("source", "mask", "extends"):
-        add(inputs.get(key))
-    for value in inputs.get("refs") or []:
-        add(value)
-    for derived, transform in (inputs.get("transforms") or {}).items():
-        add(derived)
-        add((transform or {}).get("original"))
-    for unit in spec.get("control") or []:
-        for key in ("image", "mask"):
-            add(unit.get(key))
-        add((unit.get("preprocessor") or {}).get("source"))
-    for unit in spec.get("image_prompts") or []:
-        for value in [*unit.get("images", []), unit.get("mask")]:
-            add(value)
     return shas
 
 
