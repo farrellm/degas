@@ -1,11 +1,18 @@
 import { useQuery } from '@tanstack/react-query'
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import { api, blobUrl, isPair, isVideo, type Asset, type SavedConfig, type Spec } from '../api'
-import { assetLabel, loraLabel } from '../assets'
-import { coverAll, reveal, useCovered } from '../discretion'
-import { duration, size } from '../format'
-import { enumLabel } from '../schema'
-import { CoveredText } from './CoveredText'
+import { type ReactNode, useCallback, useEffect, useRef } from 'react'
+
+import { queries } from '@/api/queries'
+import type { Asset, SavedConfig, Spec } from '@/api/types'
+import { blobUrl } from '@/api/urls'
+import { CoveredText } from '@/components/CoveredText'
+import { useDialog } from '@/hooks/useDialog'
+import { useCovered } from '@/hooks/useDiscretion'
+import { assetLabel } from '@/lib/assets'
+import { coverAll, reveal } from '@/lib/discretion'
+import { formatDuration, formatSize } from '@/lib/format'
+import { isVideo } from '@/lib/image'
+import { isPair, loraLabel } from '@/lib/loras'
+import { enumLabel } from '@/lib/schema'
 
 /** What the viewer shows: a result from the feed or a kept library item. */
 export interface ViewerItem {
@@ -36,7 +43,7 @@ function loraText(spec: Spec, assets: Asset[] | undefined): string | null {
   return loras.length ? loras.join(' and ') : null
 }
 
-interface Props<T extends ViewerItem> {
+export interface ViewerProps<T extends ViewerItem> {
   items: T[]
   assets: Asset[] | undefined
   index: number
@@ -57,9 +64,9 @@ export function Viewer<T extends ViewerItem>({
   onClose,
   actions,
   extra,
-}: Props<T>) {
+}: ViewerProps<T>) {
   const r = items[index]
-  const ref = useRef<HTMLDivElement>(null)
+  const ref = useDialog()
   const swipe = useRef<number | null>(null)
   // A swipe ends in a click on the cover, which mustn't uncover the next image.
   const swiped = useRef(false)
@@ -69,17 +76,6 @@ export function Viewer<T extends ViewerItem>({
     coverAll()
     onClose()
   }, [onClose])
-
-  useEffect(() => {
-    const opener = document.activeElement as HTMLElement | null
-    ref.current?.focus()
-    const overflow = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-    return () => {
-      document.body.style.overflow = overflow
-      opener?.focus()
-    }
-  }, [])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -96,10 +92,8 @@ export function Viewer<T extends ViewerItem>({
 
   const spec = r?.spec
   const schema = useQuery({
-    queryKey: ['schema', spec?.family, spec?.variant, spec?.mode],
-    queryFn: () => api.schema(spec?.family ?? '', spec?.variant ?? '', spec?.mode ?? ''),
+    ...queries.schema(spec?.family, spec?.variant, spec?.mode),
     enabled: !!spec,
-    staleTime: Infinity,
   })
 
   if (!r) return null
@@ -235,15 +229,15 @@ export function Viewer<T extends ViewerItem>({
             )}
           </span>
           <span>
-            {size(r.width, r.height)}, seed {r.seed}
+            {formatSize(r.width, r.height)}, seed {r.seed}
           </span>
           {video && r.segments ? (
             <span>
-              Extended, {r.segments.length} clips{length ? `, ${duration(length)}` : ''}
+              Extended, {r.segments.length} clips{length ? `, ${formatDuration(length)}` : ''}
             </span>
           ) : video ? (
             <span>
-              {frames} frames at {fps} fps{length ? `, ${duration(length)}` : ''}
+              {frames} frames at {fps} fps{length ? `, ${formatDuration(length)}` : ''}
             </span>
           ) : null}
           <span>{sampling.join(', ')}</span>
@@ -255,63 +249,5 @@ export function Viewer<T extends ViewerItem>({
         </div>
       </div>
     </div>
-  )
-}
-
-const EXTENSIONS: Record<string, string> = {
-  'image/png': 'png',
-  'image/jpeg': 'jpg',
-  'image/webp': 'webp',
-  'video/mp4': 'mp4',
-  'video/webm': 'webm',
-  'video/quicktime': 'mov',
-}
-
-/** Export to the phone: the share sheet where there is one, else a download. */
-export function SaveToPhotos({
-  item,
-  className = 'btn quiet',
-}: {
-  item: ViewerItem
-  className?: string
-}) {
-  const [error, setError] = useState<string | null>(null)
-
-  const share = async () => {
-    setError(null)
-    const blob = await (await fetch(blobUrl(item.blob_sha))).blob()
-    const ext = EXTENSIONS[item.media_type] ?? 'png'
-    const file = new File([blob], `degas-${String(item.seed)}.${ext}`, { type: item.media_type })
-    if ('canShare' in navigator && navigator.canShare({ files: [file] })) {
-      await navigator.share({ files: [file] })
-    } else {
-      const a = document.createElement('a')
-      a.href = blobUrl(item.blob_sha)
-      a.download = file.name
-      a.click()
-    }
-  }
-
-  return (
-    <>
-      <button
-        type="button"
-        className={className}
-        onClick={() => {
-          void share().catch((e: unknown) => {
-            if (!(e instanceof DOMException && e.name === 'AbortError')) {
-              setError('Saving failed. Try again, or long-press the image.')
-            }
-          })
-        }}
-      >
-        Save to Photos
-      </button>
-      {error && (
-        <p className="viewer-note" role="alert">
-          {error}
-        </p>
-      )}
-    </>
   )
 }

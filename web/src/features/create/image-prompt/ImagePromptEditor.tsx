@@ -1,42 +1,46 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
+
+import { queries } from '@/api/queries'
+import type { Asset, ImagePromptOptions, Variant } from '@/api/types'
+import { thumbUrl } from '@/api/urls'
+import { AssetPicker } from '@/components/AssetPicker/AssetPicker'
+import { FitSelect } from '@/components/FitSelect'
+import { ImagePicker } from '@/components/ImagePicker/ImagePicker'
+import { Sheet } from '@/components/Sheet'
+import { SliderRow } from '@/components/SliderRow'
+import { StepRange } from '@/components/StepRange'
+import { CropEditor } from '@/features/editors/crop/CropEditor'
+import { MaskEditor } from '@/features/editors/mask/MaskEditor'
+import { MaskThumb } from '@/features/editors/mask/MaskThumb'
+import { assetLabel } from '@/lib/assets'
+import type { FitOption } from '@/lib/fit'
+import { formatSize } from '@/lib/format'
+import type { Size } from '@/lib/geometry'
+import { type Source, toSource } from '@/lib/image'
+import { isGpuReady } from '@/lib/session'
+import { stepFraction } from '@/lib/steps'
+
+import { blankCanvas } from './blankCanvas'
+import { FaceTile } from './FaceTile'
 import {
-  api,
-  thumbUrl,
-  type Asset,
-  type BlobInfo,
-  type Fit,
-  type ImagePromptOptions,
-  type Variant,
-} from '../api'
-import { assetLabel } from '../assets'
-import type { Source } from '../draft'
-import { size } from '../format'
-import {
-  DETAILS,
-  FACEID_NOTE,
-  MAX_PICTURES,
-  detailInfo,
   adapterKind,
   anyOblong,
+  detailInfo,
+  DETAILS,
+  FACEID_NOTE,
+  type ImagePromptUnit,
   isFaceid,
+  MAX_PICTURES,
   mismatch,
   modelFor,
+  type Take,
   takeInfo,
   takesFor,
   weightFor,
-  type PromptUnit,
-  type Take,
-} from '../imagePrompt'
-import { AssetPicker } from './AssetPicker'
-import { StepRange } from './ControlEditor'
-import { CropEditor } from './CropEditor'
-import { ImagePicker } from './ImagePicker'
-import { MaskEditor } from './MaskEditor'
-import { MaskThumb } from './MaskThumb'
-import { Sheet } from './Sheet'
+} from './imagePrompt'
 
-const FITS: { id: Fit; label: string }[] = [
+const FITS: FitOption[] = [
   { id: 'crop', label: 'The middle square' },
   { id: 'pad', label: 'All of it, letterboxed' },
 ]
@@ -50,47 +54,22 @@ const KIND_LABELS = {
 
 type Overlay = 'image' | 'crop' | 'area' | 'model' | null
 
-interface Props {
-  unit: PromptUnit
+export interface ImagePromptEditorProps {
+  unit: ImagePromptUnit
   /** The family's image prompt models in the Drive index. */
   adapters: Asset[]
   familyId: string
   /** A picture of the output's shape to paint the area over (Create's source), if any. */
   canvasOver: Source | null
   /** The form's output size and step count. */
-  target: { w: number; h: number }
+  target: Size
   steps: number
   constraints: Variant['size_constraints']
   /** What the family's image prompts can do. */
   options: ImagePromptOptions
-  onChange: (update: (unit: PromptUnit) => PromptUnit) => void
+  onChange: (update: (unit: ImagePromptUnit) => ImagePromptUnit) => void
   onRemove: () => void
   onClose: () => void
-}
-
-const toSource = (b: BlobInfo): Source => ({
-  sha: b.sha256,
-  width: b.width ?? 0,
-  height: b.height ?? 0,
-})
-
-const round = (x: number) => Math.round(x * 1000) / 1000
-
-/** A plain grey picture of the output's shape, to paint an area over when there's no source. */
-async function blankCanvas(target: { w: number; h: number }): Promise<Source> {
-  const canvas = document.createElement('canvas')
-  canvas.width = target.w
-  canvas.height = target.h
-  const g = canvas.getContext('2d')
-  if (g) {
-    g.fillStyle = '#80868c'
-    g.fillRect(0, 0, target.w, target.h)
-  }
-  const blob = await new Promise<Blob | null>((resolve) => {
-    canvas.toBlob(resolve, 'image/png')
-  })
-  if (!blob) throw new Error('Couldn’t make a canvas to paint the area on.')
-  return toSource(await api.upload(blob))
 }
 
 /**
@@ -98,7 +77,7 @@ async function blankCanvas(target: { w: number; h: number }): Promise<Source> {
  * model, the weight, the steps it acts on, and the area of the output it's limited to. The
  * image picker, crop and area editors replace the sheet while they're open.
  */
-export function PromptEditor({
+export function ImagePromptEditor({
   unit,
   adapters,
   familyId,
@@ -110,14 +89,14 @@ export function PromptEditor({
   onChange,
   onRemove,
   onClose,
-}: Props) {
+}: ImagePromptEditorProps) {
   const takes = takesFor(options)
   const [overlay, setOverlay] = useState<Overlay>(null)
   // The picture being cropped, and its place in the row (one past the end adds it).
   const [cropping, setCropping] = useState<{ sha: string; at: number } | null>(null)
   const [areaOver, setAreaOver] = useState<Source | null>(null)
-  const session = useQuery({ queryKey: ['session'], queryFn: api.session })
-  const gpuReady = ['ready', 'busy'].includes(session.data?.session?.state ?? '')
+  const session = useQuery(queries.session())
+  const gpuReady = isGpuReady(session.data)
   const faceid = isFaceid(unit.model)
 
   // The area is painted over a picture of the output's shape: the one it was painted over,
@@ -243,7 +222,7 @@ export function PromptEditor({
   const warning = unit.model ? mismatch(model, unit.model, unit.take) : null
   const span = { a: Math.round(unit.start * steps), b: Math.round(unit.end * steps) }
   const setSpan = (a: number, b: number) => {
-    onChange((u) => ({ ...u, start: round(a / steps), end: round(b / steps) }))
+    onChange((u) => ({ ...u, start: stepFraction(a, steps), end: stepFraction(b, steps) }))
   }
 
   return (
@@ -371,30 +350,20 @@ export function PromptEditor({
           {warning && !modelMissing && <p className="row-warning">{warning}</p>}
         </div>
 
-        <div className="setting">
-          <label className="setting-label" htmlFor="prompt-weight">
-            Weight
-          </label>
-          <div className="slider-control">
-            <input
-              id="prompt-weight"
-              type="range"
-              min={0}
-              max={2}
-              step={0.05}
-              value={unit.weight}
-              onChange={(e) => {
-                const weight = Number(e.target.value)
-                onChange((u) => ({ ...u, weight }))
-              }}
-            />
-            <output htmlFor="prompt-weight">{unit.weight.toFixed(2)}</output>
-          </div>
-        </div>
+        <SliderRow
+          id="prompt-weight"
+          label="Weight"
+          min={0}
+          max={2}
+          value={unit.weight}
+          onChange={(weight) => {
+            onChange((u) => ({ ...u, weight }))
+          }}
+        />
 
         {faceid && (
           <>
-            <Slider
+            <SliderRow
               id="prompt-structure"
               label="Face structure"
               min={0}
@@ -405,7 +374,7 @@ export function PromptEditor({
                 onChange((u) => ({ ...u, structure }))
               }}
             />
-            <Slider
+            <SliderRow
               id="prompt-lora"
               label="Face LoRA"
               min={0}
@@ -472,33 +441,23 @@ export function PromptEditor({
             {unit.area &&
               (unit.area.over.width !== target.w || unit.area.over.height !== target.h) && (
                 <p className="row-note">
-                  Painted at {size(unit.area.over.width, unit.area.over.height)}; it will be fitted
-                  to {size(target.w, target.h)}.
+                  Painted at {formatSize(unit.area.over.width, unit.area.over.height)}; it will be
+                  fitted to {formatSize(target.w, target.h)}.
                 </p>
               )}
           </div>
         )}
 
         {anyOblong(unit) && (
-          <div className="setting">
-            <label className="setting-label" htmlFor="prompt-fit">
-              Show it
-            </label>
-            <select
-              id="prompt-fit"
-              value={unit.fit}
-              onChange={(e) => {
-                const fit = e.target.value as Fit
-                onChange((u) => ({ ...u, fit }))
-              }}
-            >
-              {FITS.map((f) => (
-                <option key={f.id} value={f.id}>
-                  {f.label}
-                </option>
-              ))}
-            </select>
-          </div>
+          <FitSelect
+            id="prompt-fit"
+            label="Show it"
+            value={unit.fit}
+            options={FITS}
+            onChange={(fit) => {
+              onChange((u) => ({ ...u, fit }))
+            }}
+          />
         )}
 
         <div className="row-buttons control-remove">
@@ -508,89 +467,5 @@ export function PromptEditor({
         </div>
       </div>
     </Sheet>
-  )
-}
-
-/**
- * A FaceID picture: once the GPU has found its face, the aligned crop the model reads, which
- * shows whether it found the right one.
- */
-function FaceTile({ sha, n, gpuReady }: { sha: string; n: string; gpuReady: boolean }) {
-  const face = useQuery({
-    queryKey: ['face', sha],
-    queryFn: () => api.findFace(sha),
-    enabled: gpuReady,
-    retry: false,
-    staleTime: Infinity,
-  })
-  if (face.data) {
-    const others = face.data.faces - 1
-    return (
-      <>
-        <img src={thumbUrl(face.data.image.sha256)} alt={`The face in picture ${n}`} />
-        {others > 0 && (
-          <span className="prompt-picture-note">
-            The biggest of {String(face.data.faces)} faces
-          </span>
-        )}
-      </>
-    )
-  }
-  return (
-    <>
-      <img
-        src={thumbUrl(sha)}
-        alt={`Picture ${n}`}
-        className={face.isFetching ? 'finding' : undefined}
-      />
-      {face.error && (
-        <span className="prompt-picture-note warn" role="alert">
-          {face.error.message}
-        </span>
-      )}
-    </>
-  )
-}
-
-function Slider({
-  id,
-  label,
-  min,
-  max,
-  value,
-  note,
-  onChange,
-}: {
-  id: string
-  label: string
-  min: number
-  max: number
-  value: number
-  note: string
-  onChange: (value: number) => void
-}) {
-  return (
-    <>
-      <div className="setting">
-        <label className="setting-label" htmlFor={id}>
-          {label}
-        </label>
-        <div className="slider-control">
-          <input
-            id={id}
-            type="range"
-            min={min}
-            max={max}
-            step={0.05}
-            value={value}
-            onChange={(e) => {
-              onChange(Number(e.target.value))
-            }}
-          />
-          <output htmlFor={id}>{value.toFixed(2)}</output>
-        </div>
-      </div>
-      <p className="row-note slider-note">{note}</p>
-    </>
   )
 }

@@ -1,9 +1,11 @@
-import { thumbUrl, type Asset, type ImagePromptOptions } from '../api'
-import { assetLabel } from '../assets'
-import { MAX_PROMPTS, promptSummary, type PromptUnit } from '../imagePrompt'
+import type { Asset, ImagePromptOptions } from '@/api/types'
+import { thumbUrl } from '@/api/urls'
+import { assetLabel } from '@/lib/assets'
 
-interface Props {
-  units: PromptUnit[]
+import { type ImagePromptUnit, MAX_PROMPTS, promptSummary } from './imagePrompt'
+
+export interface ImagePromptListProps {
+  units: ImagePromptUnit[]
   /** The family's image prompt models in the Drive index. */
   index: Asset[] | undefined
   steps: number
@@ -13,7 +15,14 @@ interface Props {
 }
 
 /** The Image prompts rows in Create: each unit's pictures, model and summary; tap to edit. */
-export function PromptList({ units, index, steps, options, onOpen, onAdd }: Props) {
+export function ImagePromptList({
+  units,
+  index,
+  steps,
+  options,
+  onOpen,
+  onAdd,
+}: ImagePromptListProps) {
   return (
     <div className="control-group" role="group" aria-labelledby="prompts-label">
       <div className="setting">

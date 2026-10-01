@@ -1,0 +1,100 @@
+/* ---------- Image prompts (IP-Adapter) ---------- */
+
+/* Two pictures in one unit: the second sits behind the first, like sheets on a pile. */
+.prompt-thumbs {
+  position: relative;
+  display: block;
+  width: 34px;
+  height: 34px;
+}
+
+.prompt-thumbs.stacked .source-thumb {
+  position: absolute;
+  width: 28px;
+  height: 28px;
+}
+
+.prompt-thumbs.stacked .source-thumb:first-child {
+  top: 0;
+  right: 0;
+  opacity: 0.7;
+}
+
+.prompt-thumbs.stacked .source-thumb:last-child {
+  bottom: 0;
+  left: 0;
+  box-shadow: 0 0 0 1.5px var(--paper);
+}
+
+/*
+ * The pictures are cut square because the image encoder sees a square from the middle:
+ * what's in the tile is what the model reads.
+ */
+.prompt-pictures {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
+.prompt-picture {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+}
+
+.prompt-picture img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 3px;
+  background: var(--well);
+  object-fit: cover;
+}
+
+/* A FaceID picture while the GPU looks for its face, and what it found. */
+.prompt-picture img.finding {
+  opacity: 0.55;
+}
+
+.prompt-picture-note {
+  color: var(--ink-muted);
+  font-size: var(--step--1);
+}
+
+.prompt-picture-note.warn {
+  color: var(--warn);
+}
+
+.prompt-editor .slider-note {
+  margin: -4px 0 8px;
+}
+
+.prompt-picture figcaption {
+  justify-content: space-between;
+}
+
+.prompt-add {
+  aspect-ratio: 1;
+  padding: 8px;
+  border-radius: 3px;
+  box-shadow: inset 0 0 0 1px var(--rule);
+  color: var(--ink-muted);
+  font-size: var(--step--1);
+  font-weight: 520;
+}
+
+.prompt-add:only-child {
+  grid-column: 1 / -1;
+  aspect-ratio: auto;
+  min-height: 96px;
+  font-family: var(--serif);
+  font-size: var(--step-0);
+  font-style: italic;
+  font-weight: 400;
+}
+
+.prompt-editor > .row-note {
+  margin: 4px 0 0;
+}

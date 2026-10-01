@@ -13,7 +13,7 @@ The visual language comes from Degas's working materials. He drew in pastel on t
 
 ## 2. Tokens
 
-Defined in `web/src/index.css`. Dark is the default look on the phone; light follows the system setting.
+Defined in `web/src/styles/tokens.css` (the other sheets in `web/src/styles/` use them). Dark is the default look on the phone; light follows the system setting.
 
 | Token | Dark (slate paper) | Light (grey-green paper) | Use |
 |---|---|---|---|
@@ -301,24 +301,24 @@ Built. FLUX.1 gets the same *Image prompts* row and sheet, showing only what Red
 |---|---|---|
 | `Sheet` | Phase 1 | Bottom sheet; Escape and scrim close it; focus returns to the opener |
 | `SessionChip`, `SessionSheet` | Phase 1 | |
-| `SchemaForm` | Phase 1 | Prompt block + settings rows; `leadingRows` slot for non-schema rows; default ticks and *Reset to …* (`resetLabel` in `schema.ts`) |
+| `SchemaForm` | Phase 1 | Prompt block + settings rows; `leadingRows` slot for non-schema rows; default ticks and *Reset to …* (`resetLabel` in `lib/schema.ts`) |
 | Sketch tile | Phase 1 | `.tile.sketch` with `--p` in 0..1; `.waiting` and `.indeterminate` variants |
 | Viewer + wall label | Phase 1 | Shared by Results and Library |
 | `AssetPicker` | Phase 2 | Models and LoRAs (ControlNets in Phase 7); search from 7 rows; a `footer` slot |
 | `CivitaiImport` | Civitai import | The LoRA picker's footer: link, plan, progress (`import` events) |
 | `LoraList` | Phase 2 | Single weight 0–2; paired high/low weights in Phase 4 |
 | `Viewer`, `SaveToPhotos` | Phase 3 | Shared by Results and Library; actions and extra wall-label rows are slots |
-| `PromptSheet` | Phase 3 | Saved prompts from the prompt block |
+| `SavedPromptsSheet` | Phase 3 | Saved prompts from the prompt block |
 | `LibraryScreen` | Phase 3 | Images / Prompts, search, day-grouped grid |
 | `ImagePicker` | Phase 4 | Recent, Library, Photos, Link; frame choice for videos |
-| `CropEditor` | Phase 4 | Full screen; geometry in `crop.ts`; `free` for references (Phase 8) |
-| `MaskEditor`, `MaskThumb` | Phase 6 | Full screen, canvas; helpers in `mask.ts`; SAM 3 Select |
-| `PlaceEditor` | Phase 6 | Outpaint placement; geometry in `place.ts` |
+| `CropEditor` | Phase 4 | Full screen; geometry in `crop/crop.ts`; `free` for references (Phase 8) |
+| `MaskEditor`, `MaskThumb` | Phase 6 | Full screen, canvas; helpers in `mask/mask.ts` and `mask/canvas.ts`; SAM 3 Select |
+| `PlaceEditor` | Phase 6 | Outpaint placement; geometry in `place/place.ts` |
 | `ControlList`, `ControlThumb` | Phase 7 | Unit rows; the chalk-study thumbnail |
-| `ControlEditor` | Phase 7 | Sheet; hosts the image picker, crop, area and model pickers in its place; `StepRange`; helpers in `control.ts` |
+| `ControlEditor` | Phase 7 | Sheet; hosts the image picker, crop, area and model pickers in its place; `StepRange`; helpers in `control/control.ts` |
 | `RefList` | Phase 8 | Ordered reference images for Qwen edits; *Crop*, *Earlier* and *Remove* |
-| `PromptList`, `PromptEditor` | Phase 11 | Image prompt rows and their sheet; helpers in `imagePrompt.ts`; `StepRange` is shared with `ControlEditor`; `CropEditor` has a `square` mode |
-| `Tile`, `CoveredText`, `DiscretionToggle` | Phase 9 | Result/library/picker tile with covering; a covered prompt; the header switch. State, `useCover` and the shield in `discretion.ts` |
+| `ImagePromptList`, `ImagePromptEditor` | Phase 11 | Image prompt rows and their sheet; helpers in `image-prompt/imagePrompt.ts`; `StepRange` is shared with `ControlEditor`; `CropEditor` has a `square` mode |
+| `Tile`, `CoveredText`, `DiscretionToggle` | Phase 9 | Result/library/picker tile with covering; a covered prompt; the header switch. State and the shield in `lib/discretion.ts`; `useCover` in `hooks/useDiscretion.ts` |
 
 ## 6. Quality floor
 

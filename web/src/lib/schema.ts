@@ -1,4 +1,4 @@
-import type { ParamProp, ParamSchema, Params } from './api'
+import type { ParamProp, Params, ParamSchema } from '@/api/types'
 
 /** Default values for every parameter in a schema. */
 export function schemaDefaults(schema: ParamSchema): Params {

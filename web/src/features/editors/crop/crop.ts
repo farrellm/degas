@@ -1,27 +1,9 @@
 // Geometry for the crop editor (design §6.5). The image pans and zooms under a fixed
 // frame; everything here is in stage pixels (CSS px) or image pixels, never both at once.
-import type { Op } from './api'
+import type { Op } from '@/api/types'
+import type { Rect, Size, View } from '@/lib/geometry'
 
 export type Rotation = 0 | 90 | 180 | 270
-
-export interface Size {
-  w: number
-  h: number
-}
-
-export interface Rect {
-  x: number
-  y: number
-  w: number
-  h: number
-}
-
-/** How the (rotated) image sits on the stage: `s` stage px per image px, top-left at `tx, ty`. */
-export interface View {
-  s: number
-  tx: number
-  ty: number
-}
 
 export interface Constraints {
   multiple_of: number

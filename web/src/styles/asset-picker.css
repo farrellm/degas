@@ -1,0 +1,159 @@
+/* Asset picker sheet */
+.asset-search {
+  width: 100%;
+  min-height: 44px;
+  margin-bottom: 6px;
+  padding: 0 14px;
+  border: none;
+  border: none;
+  border-radius: 10px;
+  background: var(--paper-raised);
+  box-shadow: inset 0 0 0 1px var(--rule);
+  font-size: 16px;
+}
+
+.mask-row.describe input:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 0;
+}
+
+.asset-search:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 0;
+}
+
+.asset-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.asset-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) 20px;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  min-height: 60px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--rule);
+  text-align: left;
+}
+
+.asset-row:not(:has(.asset-thumb)) {
+  grid-template-columns: minmax(0, 1fr) 20px;
+}
+
+.asset-thumb {
+  width: 52px;
+  height: 52px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--well);
+}
+
+.asset-thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.asset-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.asset-name {
+  overflow: hidden;
+  font-weight: 540;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.asset-meta {
+  color: var(--ink-muted);
+  font-size: var(--step--1);
+}
+
+.asset-notes {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--ink-muted);
+  font-size: var(--step--1);
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.asset-row[aria-pressed='true'] .asset-check::after {
+  content: '';
+  display: block;
+  width: 6px;
+  height: 12px;
+  margin: 0 auto 3px;
+  border-right: 2px solid var(--accent);
+  border-bottom: 2px solid var(--accent);
+  transform: rotate(45deg);
+}
+
+/* Delete mode: a vermilion ring with a bar where the check was. */
+.asset-row.deleting .asset-check::after {
+  content: '';
+  display: block;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: linear-gradient(var(--danger), var(--danger)) center / 8px 1.5px no-repeat;
+  box-shadow: inset 0 0 0 1.5px var(--danger);
+}
+
+.asset-row.deleting:disabled {
+  cursor: default;
+}
+
+/* Asking to delete a LoRA: it fades back the way a doomed group in Results does. */
+.asset-list .doomed .asset-row {
+  border-bottom-color: transparent;
+}
+
+.asset-list .doomed :is(.asset-thumb img, .asset-text) {
+  opacity: 0.35;
+  filter: grayscale(1);
+  transition:
+    opacity 0.2s ease-out,
+    filter 0.2s ease-out;
+}
+
+.asset-confirm {
+  padding: 4px 0 14px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.asset-confirm [role='alert'] {
+  color: var(--danger);
+}
+
+.asset-deleted:not(:empty) {
+  padding-top: 12px;
+  color: var(--ink-muted);
+  font-size: 0.9375rem;
+}
+
+.asset-empty {
+  padding: 20px 0;
+  color: var(--ink-muted);
+  font-size: 0.9375rem;
+}
+
+.asset-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-top: 14px;
+  color: var(--ink-muted);
+  font-size: 0.9375rem;
+}

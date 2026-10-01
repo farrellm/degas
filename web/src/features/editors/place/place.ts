@@ -1,5 +1,5 @@
 // Where an outpaint puts its source on the canvas (the form's Size), in canvas pixels.
-import type { Rect, Size } from './crop'
+import type { Rect, Size } from '@/lib/geometry'
 
 export type Place = Rect
 

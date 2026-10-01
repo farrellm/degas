@@ -1,8 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { api, type SavedPrompt } from '../api'
-import { Sheet } from './Sheet'
 
-interface Props {
+import { api } from '@/api/client'
+import { queries, queryKeys } from '@/api/queries'
+import type { SavedPrompt } from '@/api/types'
+import { SavedPromptText } from '@/components/SavedPromptText'
+import { Sheet } from '@/components/Sheet'
+
+export interface SavedPromptsSheetProps {
   prompt: string
   negativePrompt: string
   family: string
@@ -11,12 +15,18 @@ interface Props {
 }
 
 /** Saved prompts, opened from the prompt block: save the current one or swap one in. */
-export function PromptSheet({ prompt, negativePrompt, family, onUse, onClose }: Props) {
+export function SavedPromptsSheet({
+  prompt,
+  negativePrompt,
+  family,
+  onUse,
+  onClose,
+}: SavedPromptsSheetProps) {
   const qc = useQueryClient()
-  const prompts = useQuery({ queryKey: ['prompts', ''], queryFn: () => api.prompts() })
+  const prompts = useQuery(queries.prompts())
   const save = useMutation({
     mutationFn: () => api.savePrompt({ prompt, negative_prompt: negativePrompt, family }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['prompts'] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.prompts }),
   })
   const isSaved =
     save.isSuccess ||
@@ -53,22 +63,11 @@ export function PromptSheet({ prompt, negativePrompt, family, onUse, onClose }: 
                 onUse(p)
               }}
             >
-              <PromptText p={p} />
+              <SavedPromptText p={p} />
             </button>
           </li>
         ))}
       </ul>
     </Sheet>
-  )
-}
-
-/** A saved prompt's name, text and negative, as listed in the sheet and the Library. */
-export function PromptText({ p }: { p: SavedPrompt }) {
-  return (
-    <>
-      <span className="prompt-name">{p.name}</span>
-      <span className="prompt-text">{p.prompt}</span>
-      {p.negative_prompt && <span className="prompt-negative">Negative: {p.negative_prompt}</span>}
-    </>
   )
 }

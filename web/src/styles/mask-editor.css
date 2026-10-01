@@ -1,0 +1,191 @@
+/*
+ * The mask editor. The mask is drawn as rose hatching, not a wash: it's the part of the
+ * picture that isn't drawn yet, the same as a sketch tile or an outpaint's margins.
+ */
+.mask-layer {
+  position: absolute;
+  pointer-events: none;
+}
+
+.mask-layer img,
+.mask-layer canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.mask-stage.tool-brush,
+.mask-stage.tool-erase {
+  cursor: none;
+}
+
+.mask-stage.tool-select {
+  cursor: crosshair;
+}
+
+.brush-ring {
+  position: absolute;
+  border-radius: 50%;
+  box-shadow:
+    0 0 0 1px var(--ink),
+    inset 0 0 0 1px var(--well);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+/* SAM taps: an included point is a rose dot, a left-out one a hollow ring. */
+.sam-point {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px var(--well);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.sam-point.exclude {
+  background: none;
+  box-shadow:
+    inset 0 0 0 2.5px var(--accent),
+    0 0 0 2px var(--well);
+}
+
+.mask-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.mask-row > label {
+  font-weight: 520;
+}
+
+.mask-row input[type='range'] {
+  flex: 1;
+  min-width: 60px;
+  accent-color: var(--accent);
+}
+
+.mask-row output {
+  min-width: 4ch;
+  color: var(--ink-muted);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.mask-row.describe input {
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 10px;
+  background: var(--paper-raised);
+  box-shadow: inset 0 0 0 1px var(--rule);
+  font-size: 16px;
+}
+
+.mask-row.describe input:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 0;
+}
+
+.mask-row.combine .btn {
+  flex: 1;
+}
+
+.mask-note {
+  margin: 0;
+}
+
+.mask-tools {
+  flex-wrap: wrap;
+}
+
+.mask-tools .tool:last-child {
+  margin-left: auto;
+}
+
+.fit-row {
+  border-bottom: 1px solid var(--rule);
+}
+
+.fit-row .setting {
+  border-bottom: none;
+}
+
+/*
+ * Outpaint: the canvas is hatched where new pixels will go, and the source sits on it
+ * with a rose edge. Drag it to move it.
+ */
+.place {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.place-canvas {
+  position: relative;
+  margin: 0 auto;
+  border-radius: 3px;
+  background: var(--well);
+  overflow: hidden;
+}
+
+.place-canvas::before,
+.place-canvas::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+}
+
+.place-canvas::before {
+  background: repeating-linear-gradient(-58deg, var(--hatch) 0 1.5px, transparent 1.5px 7px);
+  opacity: 0.85;
+}
+
+.place-canvas::after {
+  background: repeating-linear-gradient(32deg, var(--hatch-cross) 0 1px, transparent 1px 9px);
+}
+
+.place-image {
+  position: absolute;
+  z-index: 1;
+  box-shadow: 0 0 0 1px var(--accent);
+  cursor: grab;
+  touch-action: none;
+}
+
+.place-image:active {
+  cursor: grabbing;
+}
+
+.place-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  pointer-events: none;
+}
+
+.place .setting {
+  border-bottom: none;
+}
+
+/* A sentence, not a counter: proportional figures keep the commas tight. */
+.place .readout {
+  font-variant-numeric: normal;
+}
+
+.place-align button:disabled {
+  opacity: 0.45;
+}
+
+.place-align button {
+  flex: 1;
+}

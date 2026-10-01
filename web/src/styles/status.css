@@ -1,0 +1,8 @@
+.loading {
+  padding: 32px 0;
+  color: var(--ink-muted);
+}
+
+[role='alert'] {
+  color: var(--danger);
+}

@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import type { ParamProp, ParamSchema } from './api'
+
+import type { ParamProp, ParamSchema } from '@/api/types'
+
 import { enumLabel, initialParams, resetLabel } from './schema'
 
 const SCHEMA: ParamSchema = {

@@ -1,0 +1,52 @@
+/* ---------- Session chip (header) ---------- */
+
+.session-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 1px var(--rule);
+  font-size: 0.9375rem;
+  font-weight: 540;
+}
+
+.session-chip .countdown {
+  color: var(--ink-muted);
+  font-weight: 450;
+}
+
+.session-chip.off {
+  color: var(--ink-muted);
+}
+
+.session-chip.off:hover {
+  color: var(--ink);
+}
+
+.dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ink-muted);
+}
+
+.dot.ready,
+.dot.busy {
+  background: var(--ok);
+}
+
+.dot.starting,
+.dot.stopping {
+  background: var(--warn);
+}
+
+.dot.error {
+  background: var(--danger);
+}
+
+.dot.busy {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 30%, transparent);
+}

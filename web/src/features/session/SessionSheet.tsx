@@ -1,22 +1,20 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
-import { api, isActive, type SessionSnapshot } from '../api'
-import { assetLabel, bytes, useAssets } from '../assets'
-import { loadDraft, useDraftVariant } from '../draft'
-import { belowGpu, GiB, GPU_VRAM, GPUS } from '../format'
-import { disablePush, enablePush, isInstalled, pushState, type PushState } from '../push'
-import { ago, countdown, useNow } from '../time'
-import { Sheet } from './Sheet'
 
-const GPU_KEY = 'degas.session.gpu'
+import { api } from '@/api/client'
+import { queries, queryKeys } from '@/api/queries'
+import type { SessionSnapshot } from '@/api/types'
+import { Sheet } from '@/components/Sheet'
+import { loadDraft, useDraftVariant } from '@/features/create/draft'
+import { useNow } from '@/hooks/useNow'
+import { belowGpu, GiB, GPU_VRAM, GPUS } from '@/lib/gpu'
+import { isActive } from '@/lib/session'
+import { countdown } from '@/lib/time'
 
-function lastGpu(): string {
-  try {
-    return localStorage.getItem(GPU_KEY) ?? 'L4'
-  } catch {
-    return 'L4'
-  }
-}
+import { CacheSection } from './CacheSection'
+import { DriveSection } from './DriveSection'
+import { lastGpu, rememberGpu } from './gpuPreference'
+import { NotificationsSection } from './NotificationsSection'
 
 /** Whether the model in the Create draft is a Wan A14B variant. */
 function wantsHighMem(): boolean {
@@ -26,7 +24,7 @@ function wantsHighMem(): boolean {
 
 /** GPU session, Drive and troubleshooting, opened from the header chip. */
 export function SessionSheet({ onClose }: { onClose: () => void }) {
-  const session = useQuery({ queryKey: ['session'], queryFn: api.session })
+  const session = useQuery(queries.session())
   return (
     <Sheet title="GPU session" onClose={onClose}>
       {session.error && <p role="alert">{session.error.message}</p>}
@@ -51,14 +49,10 @@ function SessionBody({ snap }: { snap: SessionSnapshot }) {
   const short = !!min && belowGpu(gpu, min)
   // Wan A14B needs more than the standard 12 GB of system RAM (design §3.1).
   const [highMem, setHighMem] = useState(wantsHighMem)
-  const onSettled = () => qc.invalidateQueries({ queryKey: ['session'] })
+  const onSettled = () => qc.invalidateQueries({ queryKey: queryKeys.session })
   const start = useMutation({
     mutationFn: () => {
-      try {
-        localStorage.setItem(GPU_KEY, gpu)
-      } catch {
-        // not remembered
-      }
+      rememberGpu(gpu)
       return api.startSession(gpu, highMem)
     },
     onSettled,
@@ -205,134 +199,5 @@ function SessionBody({ snap }: { snap: SessionSnapshot }) {
         </section>
       )}
     </>
-  )
-}
-
-type Cache = NonNullable<NonNullable<SessionSnapshot['worker']>['cache']>
-
-/** Models and LoRAs already copied to the VM, so choosing them costs no copy. */
-function CacheSection({ cache }: { cache: Cache }) {
-  const assets = useAssets()
-  return (
-    <section className="sheet-section" aria-labelledby="cache-heading">
-      <h3 id="cache-heading">On the GPU</h3>
-      {cache.files.length === 0 ? (
-        <p>Nothing copied yet. Models and LoRAs copy from Drive the first time a job uses them.</p>
-      ) : (
-        <>
-          <div>
-            <div className="meter" aria-hidden>
-              <span
-                style={{ width: `${String(Math.min(100, (100 * cache.used) / cache.budget))}%` }}
-              />
-            </div>
-            <p className="bar-note">
-              {bytes(cache.used)} of {bytes(cache.budget)} used. The least recently used files are
-              removed above that.
-            </p>
-          </div>
-          <ul className="cached">
-            {cache.files.map((f) => (
-              <li key={f.path}>
-                <span>{assetLabel(f.path, assets.data)}</span>
-                <span className="size">{bytes(f.size)}</span>
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
-    </section>
-  )
-}
-
-/** Web Push for this device: finished jobs and the idle warning. */
-function NotificationsSection() {
-  const qc = useQueryClient()
-  const state = useQuery({ queryKey: ['push'], queryFn: pushState })
-  const toggle = useMutation({
-    mutationFn: (on: boolean): Promise<PushState> => (on ? enablePush() : disablePush()),
-    onSuccess: (next) => {
-      qc.setQueryData(['push'], next)
-    },
-  })
-  const s = state.data
-  if (!s) return null
-
-  return (
-    <section className="sheet-section" aria-labelledby="notify-heading">
-      <h3 id="notify-heading">Notifications</h3>
-      {s === 'unsupported' ? (
-        <p>
-          {isInstalled()
-            ? 'This device can’t show notifications from Degas.'
-            : 'To get notifications, add Degas to the Home Screen: tap Share, then Add to Home Screen.'}
-        </p>
-      ) : s === 'blocked' ? (
-        <p>Notifications for Degas are turned off in Settings.</p>
-      ) : (
-        <label className="switch">
-          <span>
-            When images finish
-            <small>And 2 minutes before an idle session stops.</small>
-          </span>
-          <input
-            type="checkbox"
-            checked={s === 'on'}
-            disabled={toggle.isPending}
-            onChange={(e) => {
-              toggle.mutate(e.target.checked)
-            }}
-          />
-        </label>
-      )}
-      {toggle.error && <p role="alert">{toggle.error.message}</p>}
-    </section>
-  )
-}
-
-function DriveSection({ authorizedHint }: { authorizedHint?: SessionSnapshot['drive'] }) {
-  const qc = useQueryClient()
-  const now = useNow(60_000)
-  const drive = useQuery({ queryKey: ['drive'], queryFn: api.drive })
-  const rescan = useMutation({
-    mutationFn: api.rescan,
-    onSettled: () => qc.invalidateQueries({ queryKey: ['drive'] }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['assets'] }),
-  })
-  const d = drive.data
-  const problem = d?.error ?? authorizedHint?.push_error
-
-  return (
-    <section className="sheet-section" aria-label="Google Drive">
-      <h3>Google Drive</h3>
-      {!d ? null : !d.configured ? (
-        <p>
-          No OAuth client is set. Add <code>drive.client_file</code> to <code>degas.toml</code>.
-        </p>
-      ) : !d.authorized ? (
-        <p>
-          Drive isn't authorized. Run <code>degas auth drive</code> on the server.
-        </p>
-      ) : (
-        <p>
-          Models indexed {d.indexed_at ? ago(d.indexed_at, now) : 'never'}.
-          {rescan.data && ` Found ${String(rescan.data.count)} files.`}
-        </p>
-      )}
-      {problem && <p className="problem">{problem}</p>}
-      <div className="sheet-actions">
-        <button
-          type="button"
-          className="btn quiet"
-          disabled={rescan.isPending || !d?.authorized}
-          onClick={() => {
-            rescan.mutate()
-          }}
-        >
-          {rescan.isPending ? 'Rescanning…' : 'Rescan Drive'}
-        </button>
-      </div>
-      {rescan.error && <p role="alert">{rescan.error.message}</p>}
-    </section>
   )
 }

@@ -1,17 +1,22 @@
-import { useMutation, useQuery } from '@tanstack/react-query'
-import { useRef, useState, type CSSProperties } from 'react'
-import { api, blobUrl, isVideo, type BlobInfo } from '../api'
-import { size } from '../format'
-import { Sheet } from './Sheet'
-import { Tile } from './Tile'
+import { useState } from 'react'
+
+import type { BlobInfo } from '@/api/types'
+import { blobUrl } from '@/api/urls'
+import { Sheet } from '@/components/Sheet'
+import { formatSize } from '@/lib/format'
+import { isVideo } from '@/lib/image'
+
+import { FramePicker } from './FramePicker'
+import { LibraryTab } from './LibraryTab'
+import { LinkTab } from './LinkTab'
+import { PhotosTab } from './PhotosTab'
+import { RecentTab } from './RecentTab'
+import type { Picked } from './types'
 
 const TABS = ['Recent', 'Library', 'Photos', 'Link'] as const
 type Tab = (typeof TABS)[number]
 
-/** A picked image or video, before it goes into the slot. */
-type Picked = BlobInfo
-
-interface Props {
+export interface ImagePickerProps {
   onUse: (image: BlobInfo) => void
   /** Offers Crop when given. */
   onCrop?: (image: BlobInfo) => void
@@ -22,7 +27,7 @@ interface Props {
  * Choose a source image from recent results, the library, the camera roll or a link.
  * A video offers a frame to use (design §8.2).
  */
-export function ImagePicker({ onUse, onCrop, onClose }: Props) {
+export function ImagePicker({ onUse, onCrop, onClose }: ImagePickerProps) {
   const [tab, setTab] = useState<Tab>('Recent')
   const [picked, setPicked] = useState<Picked | null>(null)
 
@@ -46,8 +51,8 @@ export function ImagePicker({ onUse, onCrop, onClose }: Props) {
             ))}
           </div>
           <div className="picker-body" role="tabpanel" aria-label={tab}>
-            {tab === 'Recent' && <RecentGrid onPick={setPicked} />}
-            {tab === 'Library' && <LibraryGrid onPick={setPicked} />}
+            {tab === 'Recent' && <RecentTab onPick={setPicked} />}
+            {tab === 'Library' && <LibraryTab onPick={setPicked} />}
             {tab === 'Photos' && <PhotosTab onPick={setPicked} />}
             {tab === 'Link' && <LinkTab onPick={setPicked} />}
           </div>
@@ -66,7 +71,7 @@ export function ImagePicker({ onUse, onCrop, onClose }: Props) {
             <img src={blobUrl(picked.sha256)} alt="The chosen image" />
           </div>
           <p className="picked-size">
-            {picked.width && picked.height ? size(picked.width, picked.height) : null}
+            {picked.width && picked.height ? formatSize(picked.width, picked.height) : null}
           </p>
           <div className="picked-actions">
             <button
@@ -102,231 +107,5 @@ export function ImagePicker({ onUse, onCrop, onClose }: Props) {
         </div>
       )}
     </Sheet>
-  )
-}
-
-interface GridItem {
-  id: string
-  blob_sha: string
-  media_type: string
-  width: number | null
-  height: number | null
-  duration: number | null
-  label: string
-}
-
-function Grid({
-  items,
-  empty,
-  onPick,
-}: {
-  items: GridItem[]
-  empty: string
-  onPick: (p: Picked) => void
-}) {
-  if (items.length === 0) return <p className="asset-empty">{empty}</p>
-  return (
-    <div className="picker-grid">
-      {items.map((it) => (
-        <Tile
-          key={it.id}
-          id={it.id}
-          blobSha={it.blob_sha}
-          mediaType={it.media_type}
-          duration={it.duration}
-          style={
-            { '--ratio': `${String(it.width ?? 1)} / ${String(it.height ?? 1)}` } as CSSProperties
-          }
-          label={`${isVideo(it.media_type) ? 'Video' : 'Image'}: ${it.label}`}
-          coveredLabel={`Show ${isVideo(it.media_type) ? 'video' : 'image'}`}
-          onOpen={() => {
-            onPick({
-              sha256: it.blob_sha,
-              media_type: it.media_type,
-              width: it.width,
-              height: it.height,
-              duration: it.duration,
-            })
-          }}
-        />
-      ))}
-    </div>
-  )
-}
-
-function RecentGrid({ onPick }: { onPick: (p: Picked) => void }) {
-  const results = useQuery({ queryKey: ['results'], queryFn: () => api.results() })
-  if (results.isPending) return <p className="loading">Loading…</p>
-  if (results.error) return <p role="alert">{results.error.message}</p>
-  const items = results.data.results.map((r) => ({
-    ...r,
-    label: String(r.spec?.params.prompt ?? 'result'),
-  }))
-  return <Grid items={items} empty="No recent results. Generate something first." onPick={onPick} />
-}
-
-function LibraryGrid({ onPick }: { onPick: (p: Picked) => void }) {
-  const library = useQuery({ queryKey: ['library', 'picker'], queryFn: () => api.library('') })
-  if (library.isPending) return <p className="loading">Loading…</p>
-  if (library.error) return <p role="alert">{library.error.message}</p>
-  const items = library.data.items.map((i) => ({
-    ...i,
-    label: String(i.config.params.prompt ?? 'kept item'),
-  }))
-  return <Grid items={items} empty="Nothing kept yet." onPick={onPick} />
-}
-
-function PhotosTab({ onPick }: { onPick: (p: Picked) => void }) {
-  const input = useRef<HTMLInputElement>(null)
-  const upload = useMutation({ mutationFn: api.upload, onSuccess: onPick })
-  return (
-    <div className="picker-source">
-      <input
-        ref={input}
-        type="file"
-        accept="image/*,video/*"
-        className="visually-hidden"
-        aria-label="Photo or video"
-        tabIndex={-1}
-        onChange={(e) => {
-          const file = e.target.files?.[0]
-          if (file) upload.mutate(file)
-          e.target.value = ''
-        }}
-      />
-      <button
-        type="button"
-        className="btn wide-btn"
-        disabled={upload.isPending}
-        onClick={() => input.current?.click()}
-      >
-        {upload.isPending ? 'Uploading…' : 'Choose from Photos'}
-      </button>
-      <p>A photo or a video; for a video you choose the frame next.</p>
-      {upload.error && <p role="alert">{upload.error.message}</p>}
-    </div>
-  )
-}
-
-function LinkTab({ onPick }: { onPick: (p: Picked) => void }) {
-  const [url, setUrl] = useState('')
-  const [pasteFailed, setPasteFailed] = useState(false)
-  const fetchUrl = useMutation({ mutationFn: api.fromUrl, onSuccess: onPick })
-  const canPaste = typeof navigator !== 'undefined' && 'clipboard' in navigator
-  return (
-    <form
-      className="picker-source"
-      onSubmit={(e) => {
-        e.preventDefault()
-        if (url.trim()) fetchUrl.mutate(url.trim())
-      }}
-    >
-      <div className="link-row">
-        <input
-          type="url"
-          inputMode="url"
-          aria-label="Image link"
-          placeholder="https://…"
-          autoCapitalize="none"
-          autoCorrect="off"
-          value={url}
-          onChange={(e) => {
-            setUrl(e.target.value)
-          }}
-        />
-        {canPaste && (
-          <button
-            type="button"
-            className="btn quiet"
-            onClick={() => {
-              setPasteFailed(false)
-              navigator.clipboard
-                .readText()
-                .then((text) => {
-                  setUrl(text.trim())
-                })
-                .catch(() => {
-                  setPasteFailed(true)
-                })
-            }}
-          >
-            Paste
-          </button>
-        )}
-      </div>
-      <button type="submit" className="btn" disabled={!url.trim() || fetchUrl.isPending}>
-        {fetchUrl.isPending ? 'Importing…' : 'Import'}
-      </button>
-      <p>A link to an image, or directly to an MP4 or WebM video.</p>
-      {pasteFailed && <p role="alert">Couldn’t read the clipboard. Paste into the field.</p>}
-      {fetchUrl.error && <p role="alert">{fetchUrl.error.message}</p>}
-    </form>
-  )
-}
-
-function FramePicker({
-  video,
-  onFrame,
-  onBack,
-}: {
-  video: Picked
-  onFrame: (image: BlobInfo) => void
-  onBack: () => void
-}) {
-  const ref = useRef<HTMLVideoElement>(null)
-  const frame = useMutation({
-    mutationFn: (at: 'first' | 'last' | number) => api.frame(video.sha256, at),
-    onSuccess: onFrame,
-  })
-  return (
-    <div className="picked">
-      <div className="picked-image">
-        <video
-          ref={ref}
-          src={blobUrl(video.sha256)}
-          controls
-          playsInline
-          muted
-          preload="metadata"
-        />
-      </div>
-      <p className="picked-size">Pause on a frame, or take the first or last.</p>
-      <div className="picked-actions">
-        <button type="button" className="btn quiet" onClick={onBack}>
-          Back
-        </button>
-        <button
-          type="button"
-          className="btn quiet"
-          disabled={frame.isPending}
-          onClick={() => {
-            frame.mutate('first')
-          }}
-        >
-          First frame
-        </button>
-        <button
-          type="button"
-          className="btn quiet"
-          disabled={frame.isPending}
-          onClick={() => {
-            frame.mutate('last')
-          }}
-        >
-          Last frame
-        </button>
-        <button
-          type="button"
-          className="btn"
-          disabled={frame.isPending}
-          onClick={() => {
-            frame.mutate(ref.current?.currentTime ?? 0)
-          }}
-        >
-          Use this frame
-        </button>
-      </div>
-      {frame.error && <p role="alert">{frame.error.message}</p>}
-    </div>
   )
 }

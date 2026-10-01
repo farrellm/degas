@@ -1,37 +1,28 @@
 import { useQuery } from '@tanstack/react-query'
-import {
-  api,
-  isPair,
-  unref,
-  type BlobInfo,
-  type Fit,
-  type LoraEntry,
-  type Params,
-  type SavedPrompt,
-  type SeedMode,
-  type Spec,
-  type Variant,
-} from './api'
-import { variantFor } from './assets'
-import { restoreUnit, unitFromSpec, type ControlUnit } from './control'
-import { promptFromSpec, restorePrompt, type PromptUnit } from './imagePrompt'
-import type { Place } from './place'
+
+import { queries } from '@/api/queries'
+import type {
+  BlobInfo,
+  Fit,
+  LoraEntry,
+  Params,
+  SavedPrompt,
+  SeedMode,
+  Spec,
+  Variant,
+} from '@/api/types'
+import type { Place } from '@/features/editors/place/place'
+import { type MaskRef, type Source, unref } from '@/lib/image'
+import { isPair } from '@/lib/loras'
+import { readStored, writeStored } from '@/lib/storage'
+
+import { type ControlUnit, restoreUnit, unitFromSpec } from './control/control'
+import { type ImagePromptUnit, promptFromSpec, restorePrompt } from './image-prompt/imagePrompt'
+import { SOURCE_MODES } from './modes'
+import { variantOf } from './selection'
 
 // The Create form's draft, kept across visits and reloads.
 const DRAFT_KEY = 'degas.create.draft'
-
-/** A source image in the form, with its pixel size (for the fit hint and the crop editor). */
-export interface Source {
-  sha: string
-  width: number
-  height: number
-}
-
-/** An inpaint mask, and the source image it was painted over. */
-export interface MaskRef {
-  sha: string
-  source: string
-}
 
 /** What Create remembers for one family, so switching Image ⇄ Video loses nothing. */
 export interface FamilyDraft {
@@ -51,7 +42,7 @@ export interface FamilyDraft {
   /** Edit (and Qwen's inpaint): the images after the source, in the order the model reads them. */
   refs?: Source[]
   /** Image prompts (SDXL). */
-  prompts?: PromptUnit[]
+  prompts?: ImagePromptUnit[]
 }
 
 export interface Draft {
@@ -69,7 +60,7 @@ type Stored = Partial<Draft> & Partial<FamilyDraft>
 export function loadDraft(): Draft {
   let raw: Stored = {}
   try {
-    raw = JSON.parse(localStorage.getItem(DRAFT_KEY) ?? '{}') as Stored
+    raw = JSON.parse(readStored(DRAFT_KEY) ?? '{}') as Stored
   } catch {
     // unreadable: start over
   }
@@ -95,11 +86,8 @@ export function loadDraft(): Draft {
 
 function store(draft: Draft) {
   const recent = [draft.family, ...draft.recent.filter((f) => f !== draft.family)]
-  try {
-    localStorage.setItem(DRAFT_KEY, JSON.stringify({ ...draft, recent }))
-  } catch {
-    // storage unavailable (private mode): the draft just isn't kept
-  }
+  // Where storage is unavailable (private mode) the draft just isn't kept.
+  writeStored(DRAFT_KEY, JSON.stringify({ ...draft, recent }))
 }
 
 /** Save the form for `family`, which becomes the family Create opens with. */
@@ -249,7 +237,7 @@ export function draftWithSource(family: string, mode: string, source: Source) {
  * Families that can't start from an image are skipped.
  */
 export function useSourceTarget(): { family: string; mode: string } | null {
-  const families = useQuery({ queryKey: ['families'], queryFn: api.families })
+  const families = useQuery(queries.families())
   const draft = loadDraft()
   const list = families.data ?? []
   const ordered = [
@@ -272,16 +260,10 @@ export function useSourceTarget(): { family: string; mode: string } | null {
  * the first that does the chosen mode, else the family's first. Undefined until families load.
  */
 export function useDraftVariant(): Variant | undefined {
-  const families = useQuery({ queryKey: ['families'], queryFn: api.families })
+  const families = useQuery(queries.families())
   const draft = loadDraft()
   const family = families.data?.find((f) => f.id === draft.family) ?? families.data?.[0]
   if (!family) return undefined
   const { model, mode } = draft.families[family.id] ?? {}
-  return (
-    (model ? variantFor(model, family) : undefined) ??
-    family.variants.find((v) => !!mode && v.modes.includes(mode)) ??
-    family.variants[0]
-  )
+  return variantOf(family, model, mode)
 }
-
-export const SOURCE_MODES = new Set(['i2i', 'i2v', 'edit', 'inpaint', 'outpaint'])

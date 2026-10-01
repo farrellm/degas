@@ -1,13 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import type { Asset } from './api'
+
+import type { Asset } from '@/api/types'
+import { stepsLabel, stepSpan } from '@/lib/steps'
+
 import {
   controlKind,
   edgeDetail,
   edgeParams,
   mismatch,
   newUnit,
-  stepSpan,
-  stepsLabel,
   underlay,
   unitFromSpec,
   unitSpec,

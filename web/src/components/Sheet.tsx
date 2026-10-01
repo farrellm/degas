@@ -1,6 +1,8 @@
-import { useEffect, useRef, type ReactNode } from 'react'
+import type { ReactNode } from 'react'
 
-interface Props {
+import { useDialog } from '@/hooks/useDialog'
+
+export interface SheetProps {
   title: string
   /** Beside Done in the header (the LoRA picker's Delete LoRAs). */
   actions?: ReactNode
@@ -9,24 +11,8 @@ interface Props {
 }
 
 /** Modal bottom sheet: Escape or the scrim closes it, focus returns to the opener. */
-export function Sheet({ title, actions, onClose, children }: Props) {
-  const ref = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    const opener = document.activeElement as HTMLElement | null
-    ref.current?.focus()
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
-    }
-    document.addEventListener('keydown', onKey)
-    const overflow = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-    return () => {
-      document.removeEventListener('keydown', onKey)
-      document.body.style.overflow = overflow
-      opener?.focus()
-    }
-  }, [onClose])
+export function Sheet({ title, actions, onClose, children }: SheetProps) {
+  const ref = useDialog(onClose)
 
   return (
     <>

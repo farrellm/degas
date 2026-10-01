@@ -1,0 +1,144 @@
+/* ---------- Viewer ---------- */
+
+.viewer {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  background: var(--well);
+  animation: fade 0.18s ease-out;
+}
+
+.viewer-bar {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: calc(env(safe-area-inset-top) + 6px) var(--gutter) 6px;
+  background: var(--well);
+}
+
+.viewer-bar .position {
+  color: var(--ink-muted);
+  font-size: var(--step--1);
+}
+
+.viewer-image {
+  position: relative;
+  flex: 1 0 auto;
+  display: grid;
+  place-items: center;
+  min-height: 50dvh;
+  touch-action: pan-y;
+}
+
+.viewer-image img,
+.viewer-image video {
+  display: block;
+  max-width: 100%;
+  max-height: calc(100dvh - 180px);
+  object-fit: contain;
+}
+
+/* Wall label: title, then the medium and dimensions lines. */
+.wall-label {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 20px max(var(--gutter), (100% - var(--measure)) / 2 + var(--gutter))
+    calc(env(safe-area-inset-bottom) + 24px);
+  background: var(--paper);
+}
+
+.wall-label .title {
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: var(--step-1);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.wall-label .avoid {
+  margin-top: 4px;
+  color: var(--ink-muted);
+  font-size: 0.9375rem;
+}
+
+.wall-label .lines {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 0.9375rem;
+}
+
+.wall-label .lines span:not(:first-child) {
+  color: var(--ink-muted);
+}
+
+.viewer-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.viewer-actions .wide,
+.viewer-note {
+  grid-column: 1 / -1;
+}
+
+/* Kept: the button carries the tile's rose corner beside its label. */
+.btn.kept {
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+}
+
+.btn.kept::before {
+  content: '';
+  width: 10px;
+  height: 10px;
+  background: var(--accent);
+  clip-path: polygon(0 0, 100% 0, 100% 100%);
+}
+
+.confirm {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.confirm p {
+  grid-column: 1 / -1;
+  font-size: 0.9375rem;
+}
+
+.tags-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.tags-field:focus-within {
+  border-bottom-color: var(--accent);
+}
+
+.tags-field label {
+  color: var(--ink-muted);
+  font-size: var(--step--1);
+}
+
+.tags-field input {
+  min-height: 40px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  font-size: 16px;
+}
+
+.tags-field input:focus {
+  outline: none;
+}

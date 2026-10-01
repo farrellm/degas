@@ -1,9 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
-import { api, type Asset, type CivitaiPlan } from '../api'
-import { bytes } from '../assets'
 
-interface Props {
+import { api } from '@/api/client'
+import { queries } from '@/api/queries'
+import type { Asset, CivitaiPlan } from '@/api/types'
+import { formatBytes } from '@/lib/format'
+
+export interface CivitaiImportProps {
   /** The family Create is on: an import for another one says where it went. */
   family: string
   /**
@@ -17,7 +20,7 @@ interface Props {
  * Import from Civitai, at the foot of the LoRA picker: paste a link, check what it is,
  * then copy it into Drive. The copy runs on the server, so closing the sheet doesn't stop it.
  */
-export function CivitaiImport({ family, onImported }: Props) {
+export function CivitaiImport({ family, onImported }: CivitaiImportProps) {
   const qc = useQueryClient()
   const [open, setOpen] = useState(false)
   const [url, setUrl] = useState('')
@@ -26,8 +29,8 @@ export function CivitaiImport({ family, onImported }: Props) {
   const [started, setStarted] = useState<string | null>(null)
   const [added, setAdded] = useState<boolean | null>(null)
   const handled = useRef<string | null>(null)
-  const families = useQuery({ queryKey: ['families'], queryFn: api.families })
-  const job = useQuery({ queryKey: ['civitai-import'], queryFn: api.civitaiImportState }).data
+  const families = useQuery(queries.families())
+  const job = useQuery(queries.civitaiImport()).data
   const check = useMutation({ mutationFn: api.civitaiPlan })
   const start = useMutation({
     mutationFn: api.civitaiImport,
@@ -45,7 +48,7 @@ export function CivitaiImport({ family, onImported }: Props) {
   useEffect(() => {
     if (job?.id !== started || job.state !== 'done' || handled.current === job.id) return
     handled.current = job.id
-    void qc.query({ queryKey: ['assets'], queryFn: api.assets, staleTime: 0 }).then((index) => {
+    void qc.query({ ...queries.assets(), staleTime: 0 }).then((index) => {
       const indexed = index.some((a) => job.paths.includes(a.path))
       setAdded(indexed ? onImported(job.paths, index) : null)
     })
@@ -61,7 +64,7 @@ export function CivitaiImport({ family, onImported }: Props) {
         <p className="asset-meta" aria-live="polite">
           {job.state === 'finishing'
             ? 'Adding its preview and rescanning Drive…'
-            : `Copying to Drive, ${String(pct)}% of ${bytes(job.total)}`}
+            : `Copying to Drive, ${String(pct)}% of ${formatBytes(job.total)}`}
         </p>
       </section>
     )
@@ -189,7 +192,7 @@ function PlanSummary({
           plan.version_name,
           plan.base_model,
           halves.length === 2 ? 'high- and low-noise pair' : halves[0] && `${halves[0]}-noise half`,
-          bytes(size),
+          formatBytes(size),
         ]
           .filter(Boolean)
           .join(', ')}
