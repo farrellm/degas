@@ -1,6 +1,8 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { useEffect } from 'react'
-import type { CivitaiImport, Job, Progress, SessionSnapshot } from './api'
+
+import { queries, queryKeys } from '@/api/queries'
+import type { CivitaiImport, Job, Progress, SessionSnapshot } from '@/api/types'
 
 type ServerEvent =
   | { type: 'hello' }
@@ -30,47 +32,47 @@ export function useServerEvents() {
           break
         case 'session': {
           const { type, ...snapshot } = event
-          qc.setQueryData<SessionSnapshot>(['session'], snapshot)
+          qc.setQueryData(queries.session().queryKey, snapshot)
           break
         }
         case 'job': {
-          const jobs = qc.getQueryData<Job[]>(['jobs'])
+          const jobs = qc.getQueryData(queries.jobs().queryKey)
           if (jobs?.some((j) => j.id === event.job.id)) {
-            qc.setQueryData<Job[]>(['jobs'], (js) =>
+            qc.setQueryData(queries.jobs().queryKey, (js) =>
               js?.map((j) => (j.id === event.job.id ? event.job : j)),
             )
           } else {
-            void qc.invalidateQueries({ queryKey: ['jobs'] })
+            void qc.invalidateQueries({ queryKey: queryKeys.jobs })
           }
           break
         }
         case 'progress': {
           const { type, ...progress } = event
-          qc.setQueryData<Job[]>(['jobs'], (jobs) =>
+          qc.setQueryData(queries.jobs().queryKey, (jobs) =>
             jobs?.map((j) => (j.id === progress.job ? { ...j, progress } : j)),
           )
           break
         }
         case 'result':
-          void qc.invalidateQueries({ queryKey: ['results'] })
+          void qc.invalidateQueries({ queryKey: queryKeys.results })
           break
         case 'library':
-          void qc.invalidateQueries({ queryKey: ['library'] })
-          void qc.invalidateQueries({ queryKey: ['results'] })
+          void qc.invalidateQueries({ queryKey: queryKeys.library })
+          void qc.invalidateQueries({ queryKey: queryKeys.results })
           break
         case 'prompts':
-          void qc.invalidateQueries({ queryKey: ['prompts'] })
+          void qc.invalidateQueries({ queryKey: queryKeys.prompts })
           break
         case 'swept':
-          void qc.invalidateQueries({ queryKey: ['results'] })
-          void qc.invalidateQueries({ queryKey: ['jobs'] })
+          void qc.invalidateQueries({ queryKey: queryKeys.results })
+          void qc.invalidateQueries({ queryKey: queryKeys.jobs })
           break
         case 'assets':
-          void qc.invalidateQueries({ queryKey: ['assets'] })
-          void qc.invalidateQueries({ queryKey: ['drive'] })
+          void qc.invalidateQueries({ queryKey: queryKeys.assets })
+          void qc.invalidateQueries({ queryKey: queryKeys.drive })
           break
         case 'import':
-          qc.setQueryData<CivitaiImport>(['civitai-import'], event.import)
+          qc.setQueryData(queries.civitaiImport().queryKey, event.import)
           break
       }
     }

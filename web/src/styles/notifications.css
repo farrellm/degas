@@ -1,0 +1,27 @@
+/* ---------- Notifications ask ---------- */
+
+.ask {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  max-width: calc(var(--measure) - 2 * var(--gutter));
+  margin: 0 var(--gutter) 12px;
+  padding: 10px 12px 10px 14px;
+  border-radius: 6px;
+  background: var(--paper-raised);
+  font-size: 0.9375rem;
+}
+
+@media (min-width: 640px) {
+  .ask {
+    margin-inline: auto;
+  }
+}
+
+.ask-actions {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}

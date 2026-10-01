@@ -1,7 +1,9 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
-import type { Job } from '../api'
-import { enablePush, isInstalled, markAsked, pushSupported, wasAsked } from '../push'
+
+import type { Job } from '@/api/types'
+
+import { enablePush, isInstalled, markAsked, pushSupported, wasAsked } from './push'
 
 /**
  * Asked once, after the first job finishes while Degas is installed to the home screen.

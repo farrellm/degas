@@ -1,8 +1,8 @@
-import { thumbUrl } from '../api'
-import type { Source } from '../draft'
-import { size } from '../format'
+import { thumbUrl } from '@/api/urls'
+import { formatSize } from '@/lib/format'
+import type { Source } from '@/lib/image'
 
-interface Props {
+export interface RefListProps {
   refs: Source[]
   /** How many images the model reads after the source. */
   max: number
@@ -12,7 +12,7 @@ interface Props {
 }
 
 /** The images an edit reads after the source, numbered from 2 in the order it reads them. */
-export function RefList({ refs, max, onChange, onAdd, onCrop }: Props) {
+export function RefList({ refs, max, onChange, onAdd, onCrop }: RefListProps) {
   return (
     <div className="ref-group" role="group" aria-labelledby="refs-label">
       <div className="setting">
@@ -36,7 +36,9 @@ export function RefList({ refs, max, onChange, onAdd, onCrop }: Props) {
             <img className="source-thumb" src={thumbUrl(ref.sha)} alt="" />
             <span className="ref-text">
               <span className="ref-name">Image {n}</span>
-              {ref.width > 0 && <span className="ref-meta">{size(ref.width, ref.height)}</span>}
+              {ref.width > 0 && (
+                <span className="ref-meta">{formatSize(ref.width, ref.height)}</span>
+              )}
             </span>
             <button
               type="button"

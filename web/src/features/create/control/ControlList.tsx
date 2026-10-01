@@ -1,9 +1,10 @@
-import type { Asset } from '../api'
-import { assetLabel } from '../assets'
-import { MAX_UNITS, unitSummary, type ControlUnit } from '../control'
+import type { Asset } from '@/api/types'
+import { assetLabel } from '@/lib/assets'
+
+import { type ControlUnit, MAX_UNITS, unitSummary } from './control'
 import { ControlThumb } from './ControlThumb'
 
-interface Props {
+export interface ControlListProps {
   units: ControlUnit[]
   /** The family's ControlNets in the Drive index. */
   index: Asset[] | undefined
@@ -13,7 +14,7 @@ interface Props {
 }
 
 /** The ControlNet rows in Create: each unit's image, model and summary; tap to edit. */
-export function ControlList({ units, index, steps, onOpen, onAdd }: Props) {
+export function ControlList({ units, index, steps, onOpen, onAdd }: ControlListProps) {
   return (
     <div className="control-group" role="group" aria-labelledby="control-label">
       <div className="setting">

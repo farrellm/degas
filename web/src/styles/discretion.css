@@ -1,0 +1,119 @@
+/* ---------- Discretion (header switch, glassine, shield) ---------- */
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.discretion-toggle {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 999px;
+  color: var(--ink-muted);
+}
+
+.discretion-toggle[aria-pressed='true'] {
+  background: var(--paper-raised);
+  color: var(--ink);
+}
+
+.discretion-toggle svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentcolor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/*
+ * A covered image lies under glassine, the paper laid over a pastel to protect it:
+ * blurred past recognition and washed with paper. It isn't hatching, which means
+ * "not drawn yet". Scaled so the blur's soft edge stays outside the tile.
+ */
+.tile img,
+.viewer-image img,
+.viewer-image video {
+  transition:
+    filter 0.2s ease,
+    opacity 0.2s ease,
+    transform 0.2s ease;
+}
+
+.tile.covered {
+  background: var(--paper-raised);
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.tile.covered img {
+  filter: blur(18px) saturate(0.5);
+  opacity: 0.55;
+  transform: scale(1.2);
+}
+
+.tile.peek {
+  -webkit-touch-callout: none;
+}
+
+.viewer-image.covered img,
+.viewer-image.covered video {
+  filter: blur(40px) saturate(0.5);
+  opacity: 0.55;
+}
+
+.cover-button {
+  position: absolute;
+  inset: 0;
+  cursor: pointer;
+}
+
+/* Small thumbnails in Create have no tap to spare, so they stay covered. */
+html[data-discreet] .source-thumb,
+html[data-discreet] .control-thumb {
+  filter: blur(4px) saturate(0.5);
+  opacity: 0.6;
+}
+
+html[data-discreet] .control-thumb canvas {
+  filter: grayscale(1) invert(1) contrast(1.15) blur(4px);
+}
+
+/* A covered prompt: the words' shapes without the words. */
+.covered-text {
+  display: inline;
+  text-align: inherit;
+  color: transparent;
+  text-shadow: 0 0 0.65em var(--ink-muted);
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* A covered error still reads as an error. */
+.group-error .covered-text {
+  text-shadow: 0 0 0.65em var(--danger);
+}
+
+/*
+ * The app switcher's snapshot: plain paper and the wordmark, raised the moment the
+ * app loses focus (discretion.ts installShield).
+ */
+html[data-shield] body::after {
+  content: 'Degas';
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  background: var(--paper);
+  color: var(--ink-muted);
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: var(--step-2);
+}

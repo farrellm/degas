@@ -1,27 +1,21 @@
 import { useQuery } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
-import { api } from './api'
-import { DiscretionToggle } from './components/DiscretionToggle'
-import { NotificationAsk } from './components/NotificationAsk'
-import { SessionChip } from './components/SessionChip'
-import { SessionSheet } from './components/SessionSheet'
-import { coverAll } from './discretion'
-import { useServerEvents } from './events'
-import { CreateScreen } from './screens/CreateScreen'
-import { LibraryScreen } from './screens/LibraryScreen'
-import { ResultsScreen } from './screens/ResultsScreen'
 
-const TABS = ['Create', 'Results', 'Library'] as const
-type Tab = (typeof TABS)[number]
+import { queries } from '@/api/queries'
+import { CreateScreen } from '@/features/create/CreateScreen'
+import { LibraryScreen } from '@/features/library/LibraryScreen'
+import { ResultsScreen } from '@/features/results/ResultsScreen'
+import { NotificationAsk } from '@/features/session/NotificationAsk'
+import { SessionChip } from '@/features/session/SessionChip'
+import { SessionSheet } from '@/features/session/SessionSheet'
+import { coverAll } from '@/lib/discretion'
 
-/** Where a link into the app points: `/?tab=results`, `/?sheet=session` (notifications). */
-function linkTarget(url: string): { tab?: Tab; session: boolean } {
-  const params = new URL(url, location.origin).searchParams
-  const tab = TABS.find((t) => t.toLowerCase() === params.get('tab'))
-  return { tab, session: params.get('sheet') === 'session' }
-}
+import { DiscretionToggle } from './DiscretionToggle'
+import { linkTarget, type Tab, TABS } from './tabs'
+import { useServerEvents } from './useServerEvents'
 
-function App() {
+/** The app shell: the header, the three tabs, and the session sheet. */
+export function App() {
   const [tab, setTab] = useState<Tab>(() => linkTarget(location.href).tab ?? 'Create')
   const [sessionOpen, setSessionOpen] = useState(() => linkTarget(location.href).session)
   useServerEvents()
@@ -42,8 +36,8 @@ function App() {
     }
   }, [])
 
-  const session = useQuery({ queryKey: ['session'], queryFn: api.session })
-  const jobs = useQuery({ queryKey: ['jobs'], queryFn: api.jobs })
+  const session = useQuery(queries.session())
+  const jobs = useQuery(queries.jobs())
   const pending = jobs.data?.filter((j) => j.status === 'queued' || j.status === 'running').length
 
   return (
@@ -125,5 +119,3 @@ function App() {
     </div>
   )
 }
-
-export default App

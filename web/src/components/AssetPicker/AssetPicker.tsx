@@ -1,14 +1,20 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useState, type ReactNode } from 'react'
-import { api, thumbUrl, type Asset } from '../api'
-import { assetLabel, bytes, copyEstimate, useCachedPaths } from '../assets'
-import { ago, useNow } from '../time'
-import { Sheet } from './Sheet'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { type ReactNode, useState } from 'react'
+
+import { queryKeys } from '@/api/queries'
+import type { Asset } from '@/api/types'
+import { thumbUrl } from '@/api/urls'
+import { Sheet } from '@/components/Sheet'
+import { useCachedPaths } from '@/hooks/useAssets'
+import { assetLabel, copyEstimate } from '@/lib/assets'
+import { formatBytes } from '@/lib/format'
+
+import { RescanFooter } from './RescanFooter'
 
 // Below this many rows, a search field is more clutter than help.
 const SEARCH_FROM = 7
 
-interface Props {
+export interface AssetPickerProps {
   title: string
   /** Plural noun for search and empty states: "models", "LoRAs". */
   noun: string
@@ -43,7 +49,7 @@ export function AssetPicker({
   deleting,
   onPick,
   onClose,
-}: Props) {
+}: AssetPickerProps) {
   const [query, setQuery] = useState('')
   const [deleteMode, setDeleteMode] = useState(false)
   const [confirming, setConfirming] = useState<string | null>(null)
@@ -55,7 +61,7 @@ export function AssetPicker({
       setDeleted(`Deleted ${assetLabel(a.path, assets)}.`)
       setConfirming(null)
     },
-    onSettled: () => qc.invalidateQueries({ queryKey: ['assets'] }),
+    onSettled: () => qc.invalidateQueries({ queryKey: queryKeys.assets }),
   })
   const cached = useCachedPaths()
   const q = query.trim().toLowerCase()
@@ -119,7 +125,7 @@ export function AssetPicker({
                 : cached.has(a.path)
                   ? 'on the GPU'
                   : copyEstimate(a.size)
-            const meta = [describe?.(a), a.size === null ? null : bytes(a.size), where]
+            const meta = [describe?.(a), a.size === null ? null : formatBytes(a.size), where]
               .filter(Boolean)
               .join(', ')
             const asking = deleteMode && confirming === a.path
@@ -194,39 +200,5 @@ export function AssetPicker({
       {!deleteMode && footer}
       <RescanFooter />
     </Sheet>
-  )
-}
-
-function RescanFooter() {
-  const qc = useQueryClient()
-  const now = useNow(60_000)
-  const drive = useQuery({ queryKey: ['drive'], queryFn: api.drive })
-  const rescan = useMutation({
-    mutationFn: api.rescan,
-    onSettled: () => qc.invalidateQueries({ queryKey: ['drive'] }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['assets'] }),
-  })
-  const d = drive.data
-  return (
-    <div className="asset-footer">
-      <p>
-        {!d
-          ? null
-          : !d.authorized
-            ? 'Drive isn’t authorized yet.'
-            : `Indexed ${d.indexed_at ? ago(d.indexed_at, now) : 'never'}.`}
-      </p>
-      <button
-        type="button"
-        className="btn quiet small"
-        disabled={rescan.isPending || !d?.authorized}
-        onClick={() => {
-          rescan.mutate()
-        }}
-      >
-        {rescan.isPending ? 'Rescanning…' : 'Rescan Drive'}
-      </button>
-      {rescan.error && <p role="alert">{rescan.error.message}</p>}
-    </div>
   )
 }

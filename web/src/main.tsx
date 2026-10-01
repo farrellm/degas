@@ -1,12 +1,14 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { StrictMode } from 'react'
-import { createRoot } from 'react-dom/client'
 import '@fontsource-variable/newsreader/opsz.css'
 import '@fontsource-variable/newsreader/opsz-italic.css'
 import '@fontsource-variable/schibsted-grotesk'
-import './index.css'
-import App from './App.tsx'
-import { installShield } from './discretion'
+import './styles/index.css'
+
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { StrictMode } from 'react'
+import { createRoot } from 'react-dom/client'
+
+import { App } from './app/App'
+import { installShield } from './lib/discretion'
 
 const root = document.getElementById('root')
 if (!root) throw new Error('#root element missing')

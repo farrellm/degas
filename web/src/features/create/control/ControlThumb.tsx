@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
-import { blobUrl, thumbUrl } from '../api'
+
+import { blobUrl, thumbUrl } from '@/api/urls'
 
 const SIZE = 68 // drawn at 2× the 34 px slot
 const OUTSIDE = 0.25 // how much of the trace shows outside an area

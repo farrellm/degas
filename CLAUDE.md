@@ -12,7 +12,7 @@ make fmt          # ruff format/fix + prettier
 make dev-server   # FastAPI on 127.0.0.1:8420
 make dev-web      # Vite; proxies /api to dev-server
 uv run pytest server/tests/test_api.py -k name   # single Python test
-cd web && pnpm vitest run src/prompt.test.ts      # single web test
+cd web && pnpm vitest run src/lib/schema.test.ts # single web test
 make deploy / make logs   # prod: systemd user unit + `tailscale serve --https=8448`
 ```
 
@@ -22,8 +22,11 @@ make deploy / make logs   # prod: systemd user unit + `tailscale serve --https=8
   (`colab/`: CLI wrapper, SSH tunnel, worker client, bundle).
 - `worker/src/degas_worker` (runs on the Colab VM, behind the SSH tunnel): tarred by
   `degas/colab/bundle.py` and scp'd over — must never import `degas`.
-- `web/`: React 19 + Vite + TanStack Query. The Create form is rendered from each family's
-  JSON Schema (`SchemaForm.tsx`), so new families usually need no frontend changes.
+- `web/`: React 19 + Vite + TanStack Query. `src/features/<name>/` holds each part of the app
+  (create, editors, results, library, session); `src/{api,lib,hooks,components}` are shared and
+  must not import a feature (lint enforces it). Import across folders as `@/…`. The Create
+  form is rendered from each family's JSON Schema (`features/create/schema-form/`), so new
+  families usually need no frontend changes.
 
 ## Gotchas
 

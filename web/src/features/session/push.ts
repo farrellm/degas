@@ -1,7 +1,8 @@
 // Web Push on the phone (design §8.3). iOS only delivers notifications to Degas once
 // it's installed to the home screen, and only asks for permission from a tap.
 
-import { api } from './api'
+import { api } from '@/api/client'
+import { writeStored } from '@/lib/storage'
 
 const ASKED_KEY = 'degas.push.asked'
 
@@ -74,11 +75,7 @@ export function wasAsked(): boolean {
 }
 
 export function markAsked() {
-  try {
-    localStorage.setItem(ASKED_KEY, new Date().toISOString())
-  } catch {
-    // not remembered
-  }
+  writeStored(ASKED_KEY, new Date().toISOString())
 }
 
 function base64UrlBytes(value: string): Uint8Array<ArrayBuffer> {

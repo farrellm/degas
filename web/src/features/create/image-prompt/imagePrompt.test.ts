@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import type { AdapterKind, Asset } from './api'
+
+import type { AdapterKind, Asset } from '@/api/types'
+
 import {
   adapterKind,
   anyOblong,

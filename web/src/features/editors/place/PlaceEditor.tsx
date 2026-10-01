@@ -1,9 +1,11 @@
-import { useRef, type KeyboardEvent, type PointerEvent } from 'react'
-import { thumbUrl } from '../api'
-import type { Size } from '../crop'
-import { align, clampPlace, margins, rescale, scaleOf, type Edge, type Place } from '../place'
+import { type KeyboardEvent, type PointerEvent, useRef } from 'react'
 
-interface Props {
+import { thumbUrl } from '@/api/urls'
+import type { Size } from '@/lib/geometry'
+
+import { align, clampPlace, type Edge, margins, type Place, rescale, scaleOf } from './place'
+
+export interface PlaceEditorProps {
   source: { sha: string; width: number; height: number }
   /** The canvas: the form's Size. */
   canvas: Size
@@ -23,7 +25,7 @@ const EDGES: { id: Edge | 'centre'; label: string }[] = [
  * Outpaint: the source on its canvas. The margins are hatched like a sketch tile, since
  * that's where new pixels will be drawn. Drag the image to move it.
  */
-export function PlaceEditor({ source, canvas, place, onChange }: Props) {
+export function PlaceEditor({ source, canvas, place, onChange }: PlaceEditorProps) {
   const box = useRef<HTMLDivElement>(null)
   const drag = useRef<{ x: number; y: number; from: Place } | null>(null)
   const shape = { w: source.width, h: source.height }

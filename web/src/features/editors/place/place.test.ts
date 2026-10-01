@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+
 import { align, clampPlace, defaultPlace, margins, rescale, scaleOf, validPlace } from './place'
 
 const canvas = { w: 1344, h: 768 }

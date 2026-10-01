@@ -1,40 +1,47 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import {
-  useCallback,
-  useDeferredValue,
-  useEffect,
-  useLayoutEffect,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
   useMemo,
   useRef,
   useState,
-  type KeyboardEvent as ReactKeyboardEvent,
-  type PointerEvent as ReactPointerEvent,
 } from 'react'
-import { api, blobUrl, isActive, type BlobInfo, type SelectPoint, type Selection } from '../api'
-import { useAssets } from '../assets'
-import { zoomAt, type Size, type View } from '../crop'
+
+import { api } from '@/api/client'
+import { queries } from '@/api/queries'
+import type { BlobInfo } from '@/api/types'
+import { blobUrl } from '@/api/urls'
+import { zoomAt } from '@/features/editors/crop/crop'
+import { pinch, stagePoint } from '@/features/editors/gestures'
+import { useAssets } from '@/hooks/useAssets'
+import { useDialog } from '@/hooks/useDialog'
+import { useElementSize } from '@/hooks/useElementSize'
+import type { Size, View } from '@/lib/geometry'
+import type { Source } from '@/lib/image'
+import { isActive, isGpuReady } from '@/lib/session'
+
+import type { Action, Stroke } from './canvas'
 import {
-  binarizeAlpha,
   clampView,
   emptyHistory,
   fitView,
-  growSteps,
-  hasAlpha,
-  lumaToAlpha,
+  type History,
   push,
   redo,
-  ringOffsets,
   toImage,
   undo,
   workingSize,
-  type History,
-} from '../mask'
+} from './mask'
+import { MaskTools } from './MaskTools'
+import { SelectControls } from './SelectControls'
+import { useMaskCanvas } from './useMaskCanvas'
+import { useSelection } from './useSelection'
 
 export const SAM_ASSET = 'preprocessors/sam3'
 
-interface Props {
+export interface MaskEditorProps {
   /** The image the mask is painted over, and its pixel size. */
-  source: { sha: string; width: number; height: number }
+  source: Source
   /** The current mask, to keep editing it. */
   mask: string | null
   /** The form's mask blur, in image pixels, for the blur preview (0 hides it). */
@@ -50,176 +57,12 @@ interface Props {
 }
 
 type Tool = 'brush' | 'erase' | 'select'
-type Combine = 'add' | 'subtract' | 'replace'
-
-interface Stroke {
-  kind: 'stroke'
-  erase: boolean
-  size: number
-  points: [number, number][]
-}
-
-type Action =
-  | Stroke
-  | { kind: 'invert' }
-  | { kind: 'clear' }
-  | { kind: 'selection'; op: Combine; layer: HTMLCanvasElement }
 
 // Used until the stage has been measured (and in tests, which have no layout).
 const FALLBACK_STAGE: Size = { w: 360, h: 480 }
 const HATCH_GAP = 7 // screen px between hatching strokes at the fitted zoom, like a sketch tile
 const TAP_SLOP = 8
 const LONG_PRESS_MS = 500
-const MAX_GROW = 128 // image px of margin a selection can be grown by
-
-function canvas(size: Size): HTMLCanvasElement {
-  const c = document.createElement('canvas')
-  c.width = size.w
-  c.height = size.h
-  return c
-}
-
-const context = (c: HTMLCanvasElement | null) => c?.getContext('2d') ?? null
-
-/** Rose hatching as a canvas pattern; strokes drawn with it join without seams. */
-function hatchPattern(ctx: CanvasRenderingContext2D, gap: number): CanvasPattern | string {
-  const color =
-    getComputedStyle(document.documentElement).getPropertyValue('--hatch').trim() || '#efa3b5'
-  const t = Math.max(3, Math.round(gap))
-  const tile = canvas({ w: t, h: t })
-  const tc = context(tile)
-  if (!tc) return color
-  tc.strokeStyle = color
-  tc.lineWidth = Math.max(1, t / 4.5)
-  tc.lineCap = 'square'
-  tc.beginPath()
-  for (const o of [-t, 0, t]) {
-    tc.moveTo(o, t)
-    tc.lineTo(o + t, 0)
-  }
-  tc.stroke()
-  return ctx.createPattern(tile, 'repeat') ?? color
-}
-
-function drawStroke(
-  ctx: CanvasRenderingContext2D,
-  stroke: Stroke,
-  style: CanvasPattern | string,
-  from = 0,
-) {
-  const pts = stroke.points.slice(Math.max(0, from - 1))
-  const first = pts[0]
-  if (!first) return
-  ctx.save()
-  ctx.globalCompositeOperation = stroke.erase ? 'destination-out' : 'source-over'
-  ctx.strokeStyle = style
-  ctx.fillStyle = style
-  ctx.lineWidth = stroke.size
-  ctx.lineCap = 'round'
-  ctx.lineJoin = 'round'
-  ctx.beginPath()
-  if (pts.length === 1) {
-    ctx.arc(first[0], first[1], stroke.size / 2, 0, 2 * Math.PI)
-    ctx.fill()
-  } else {
-    ctx.moveTo(first[0], first[1])
-    for (const [x, y] of pts.slice(1)) ctx.lineTo(x, y)
-    ctx.stroke()
-  }
-  ctx.restore()
-}
-
-/** Apply one action to the mask (white where it will be redrawn, in the alpha channel). */
-function apply(ctx: CanvasRenderingContext2D, action: Action, size: Size) {
-  switch (action.kind) {
-    case 'stroke':
-      drawStroke(ctx, action, '#fff')
-      break
-    case 'clear':
-      ctx.clearRect(0, 0, size.w, size.h)
-      break
-    case 'invert':
-      ctx.save()
-      ctx.globalCompositeOperation = 'xor'
-      ctx.fillStyle = '#fff'
-      ctx.fillRect(0, 0, size.w, size.h)
-      ctx.restore()
-      break
-    case 'selection':
-      ctx.save()
-      if (action.op === 'replace') ctx.clearRect(0, 0, size.w, size.h)
-      ctx.globalCompositeOperation = action.op === 'subtract' ? 'destination-out' : 'source-over'
-      ctx.drawImage(action.layer, 0, 0)
-      ctx.restore()
-  }
-}
-
-/** A stored grey mask as an alpha layer at the working size. */
-async function loadLayer(sha: string, size: Size): Promise<HTMLCanvasElement> {
-  const img = new Image()
-  img.src = blobUrl(sha)
-  await img.decode()
-  const layer = canvas(size)
-  const ctx = context(layer)
-  if (ctx) {
-    ctx.drawImage(img, 0, 0, size.w, size.h)
-    const data = ctx.getImageData(0, 0, size.w, size.h)
-    lumaToAlpha(data.data)
-    ctx.putImageData(data, 0, 0)
-  }
-  return layer
-}
-
-/** A layer grown by `r` px, to give a selection a margin to blend into. */
-function grow(layer: HTMLCanvasElement, r: number): HTMLCanvasElement {
-  const steps = growSteps(r)
-  if (!steps.length) return layer
-  const size = { w: layer.width, h: layer.height }
-  let from = canvas(size)
-  const first = context(from)
-  if (!first) return layer
-  first.drawImage(layer, 0, 0)
-  const data = first.getImageData(0, 0, size.w, size.h)
-  binarizeAlpha(data.data)
-  first.putImageData(data, 0, 0)
-  for (const step of steps) {
-    const out = canvas(size)
-    const ctx = context(out)
-    if (!ctx) return from
-    ctx.imageSmoothingEnabled = false
-    ctx.drawImage(from, 0, 0)
-    for (const o of ringOffsets(step)) ctx.drawImage(from, o.x, o.y)
-    from = out
-  }
-  return from
-}
-
-/** The edge of a layer, `width` px thick, for showing a selection before it's used. */
-function outline(layer: HTMLCanvasElement, width: number, style: string): HTMLCanvasElement {
-  const size = { w: layer.width, h: layer.height }
-  const inner = canvas(size)
-  const ic = context(inner)
-  const out = canvas(size)
-  const oc = context(out)
-  if (!ic || !oc) return out
-  ic.drawImage(layer, 0, 0)
-  ic.globalCompositeOperation = 'destination-in'
-  for (const [dx, dy] of [
-    [width, 0],
-    [-width, 0],
-    [0, width],
-    [0, -width],
-  ] as const) {
-    ic.drawImage(layer, dx, dy)
-  }
-  oc.drawImage(layer, 0, 0)
-  oc.globalCompositeOperation = 'destination-out'
-  oc.drawImage(inner, 0, 0)
-  oc.globalCompositeOperation = 'source-in'
-  oc.fillStyle = style
-  oc.fillRect(0, 0, size.w, size.h)
-  return out
-}
 
 /** Full-screen mask painting over the source (design §8.2, ux.md Phase 6). */
 export function MaskEditor({
@@ -230,44 +73,31 @@ export function MaskEditor({
   title = 'Mask',
   onDone,
   onCancel,
-}: Props) {
+}: MaskEditorProps) {
   const picture = underlay ?? source.sha
   const work = useMemo(
     () => workingSize({ w: source.width, h: source.height }),
     [source.width, source.height],
   )
   const toWork = work.w / source.width // working px per image px
-  const [stage, setStage] = useState<Size>(FALLBACK_STAGE)
   const [view, setView] = useState<View | null>(null)
   const [tool, setTool] = useState<Tool>('brush')
   const [brush, setBrush] = useState(() => Math.round(Math.max(work.w, work.h) / 24))
   const [history, setHistory] = useState<History<Action>>(emptyHistory)
-  const [ready, setReady] = useState(!mask)
   const [imageOpacity, setImageOpacity] = useState(1)
   const [showBlur, setShowBlur] = useState(false)
   const [ring, setRing] = useState<{ x: number; y: number } | null>(null)
-  const [points, setPoints] = useState<SelectPoint[]>([])
-  const [exclude, setExclude] = useState(false)
-  const [text, setText] = useState('')
-  const [selection, setSelection] = useState<Selection | null>(null)
-  const [shown, setShown] = useState(0)
-  const [growBy, setGrowBy] = useState(8)
-  const [layers, setLayers] = useState<Record<string, HTMLCanvasElement>>({})
 
-  const ref = useRef<HTMLDivElement>(null)
+  const ref = useDialog(onCancel)
   const stageRef = useRef<HTMLDivElement>(null)
-  const displayRef = useRef<HTMLCanvasElement>(null)
-  const outlineRef = useRef<HTMLCanvasElement>(null)
-  const maskCanvas = useRef<HTMLCanvasElement | null>(null)
-  const base = useRef<HTMLCanvasElement | null>(null)
-  const pattern = useRef<CanvasPattern | string>('#efa3b5')
+  const stage = useElementSize(stageRef, FALLBACK_STAGE)
   const stroke = useRef<Stroke | null>(null)
   const pointers = useRef(new Map<number, { x: number; y: number }>())
   const tap = useRef<{ x: number; y: number; long: boolean; timer: number } | null>(null)
 
-  const session = useQuery({ queryKey: ['session'], queryFn: api.session })
+  const session = useQuery(queries.session())
   const assets = useAssets()
-  const gpuReady = ['ready', 'busy'].includes(session.data?.session?.state ?? '')
+  const gpuReady = isGpuReady(session.data)
   const samIndexed = assets.data?.some((a) => a.path === SAM_ASSET) ?? false
   const selectNote = !samIndexed
     ? `Put SAM 3 in Drive under degas/${SAM_ASSET}/ and rescan to use Select.`
@@ -277,163 +107,35 @@ export function MaskEditor({
         : 'Start a session to use Select.'
       : null
 
-  useEffect(() => {
-    const opener = document.activeElement as HTMLElement | null
-    ref.current?.focus()
-    const overflow = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onCancel()
-    }
-    document.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('keydown', onKey)
-      document.body.style.overflow = overflow
-      opener?.focus()
-    }
-  }, [onCancel])
-
-  useLayoutEffect(() => {
-    const el = stageRef.current
-    if (!el || typeof ResizeObserver === 'undefined') return
-    const observer = new ResizeObserver(([entry]) => {
-      const r = entry?.contentRect
-      if (r && r.width > 0 && r.height > 0) setStage({ w: r.width, h: r.height })
-    })
-    observer.observe(el)
-    return () => {
-      observer.disconnect()
-    }
-  }, [])
-
   const maxBrush = Math.round(Math.max(work.w, work.h) / 3)
   const fitted = fitView(stage, work)
   const v = view ? clampView(view, stage, work) : fitted
 
-  // The mask itself lives off screen; the display is the mask filled with hatching.
-  const recomposite = useCallback(() => {
-    const m = maskCanvas.current
-    const ctx = context(displayRef.current)
-    if (!m || !ctx) return
-    ctx.save()
-    ctx.clearRect(0, 0, work.w, work.h)
-    ctx.drawImage(m, 0, 0)
-    ctx.globalCompositeOperation = 'source-in'
-    ctx.fillStyle = pattern.current
-    ctx.fillRect(0, 0, work.w, work.h)
-    ctx.restore()
-  }, [work.w, work.h])
+  const displayRef = useRef<HTMLCanvasElement>(null)
+  const outlineRef = useRef<HTMLCanvasElement>(null)
+  const { ready, render, paint, toPng } = useMaskCanvas({
+    mask,
+    displayRef,
+    work,
+    history,
+    // The hatching is sized for the fitted zoom, so it reads like the feed's sketch tiles.
+    hatchGap: HATCH_GAP / fitted.s,
+  })
 
-  const render = useCallback(
-    (actions: Action[]) => {
-      maskCanvas.current ??= canvas(work)
-      const ctx = context(maskCanvas.current)
-      if (!ctx) return
-      ctx.clearRect(0, 0, work.w, work.h)
-      if (base.current) ctx.drawImage(base.current, 0, 0)
-      for (const a of actions) apply(ctx, a, work)
-      recomposite()
-    },
-    [work, recomposite],
-  )
-
-  // The hatching is sized for the fitted zoom, so it reads like the feed's sketch tiles.
-  useEffect(() => {
-    const ctx = context(displayRef.current)
-    if (ctx) pattern.current = hatchPattern(ctx, HATCH_GAP / fitted.s)
-    recomposite()
-  }, [fitted.s, recomposite])
-
-  useEffect(() => {
-    if (!mask) return
-    let live = true
-    loadLayer(mask, work)
-      .then((layer) => {
-        if (!live) return
-        base.current = layer
-        setReady(true)
-      })
-      .catch(() => {
-        if (live) setReady(true) // start from an empty mask
-      })
-    return () => {
-      live = false
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- load once, at open
-  }, [])
-
-  useEffect(() => {
-    if (ready) render(history.done)
-  }, [ready, history, render])
-
-  // SAM ----------------------------------------------------------------------------------
-
-  const select = useMutation({
-    mutationFn: (req: { points: SelectPoint[]; text: string }) =>
-      api.select(picture, { points: req.points, text: req.text || undefined }),
-    onSuccess: async (found) => {
-      const loaded: Record<string, HTMLCanvasElement> = {}
-      await Promise.all(
-        found.candidates.map(async (c) => {
-          loaded[c.sha256] = layers[c.sha256] ?? (await loadLayer(c.sha256, work))
-        }),
-      )
-      setLayers((prev) => ({ ...prev, ...loaded }))
-      setSelection(found)
-      setShown(found.chosen ?? 0)
+  const sam = useSelection({
+    picture,
+    outlineRef,
+    work,
+    toWork,
+    zoom: v.s,
+    onCombine: (op, layer) => {
+      setHistory((h) => push(h, { kind: 'selection', op, layer }))
     },
   })
-  const candidate = selection?.candidates[shown]
-  const layer = candidate ? layers[candidate.sha256] : undefined
-  // The outline shows the selection as it will be added: grown by the slider's margin.
-  const previewGrow = useDeferredValue(growBy)
-  const grown = useMemo(
-    () => (layer ? grow(layer, previewGrow * toWork) : undefined),
-    [layer, previewGrow, toWork],
-  )
-
-  useEffect(() => {
-    const ctx = context(outlineRef.current)
-    if (!ctx) return
-    ctx.clearRect(0, 0, work.w, work.h)
-    if (!grown) return
-    const accent =
-      getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#efa3b5'
-    ctx.drawImage(outline(grown, Math.max(1, 2 / v.s), accent), 0, 0)
-  }, [grown, v.s, work.w, work.h])
-
-  const addPoint = (x: number, y: number, include: boolean) => {
-    const next = [...points, { x: x / toWork, y: y / toWork, include }]
-    setPoints(next)
-    select.mutate({ points: next, text: text.trim() })
-  }
-
-  const clearSelection = () => {
-    setPoints([])
-    setSelection(null)
-    select.reset()
-  }
-
-  const combine = (op: Combine) => {
-    if (!layer || !grown) return
-    const added = previewGrow === growBy ? grown : grow(layer, growBy * toWork)
-    setHistory((h) => push(h, { kind: 'selection', op, layer: added }))
-    clearSelection()
-  }
 
   // Pointers -------------------------------------------------------------------------------
 
-  const paint = (s: Stroke, from: number) => {
-    const m = context(maskCanvas.current)
-    const d = context(displayRef.current)
-    if (m) drawStroke(m, s, '#fff', from)
-    if (d) drawStroke(d, s, pattern.current, from)
-  }
-
-  const point = (e: { clientX: number; clientY: number }) => {
-    const r = stageRef.current?.getBoundingClientRect()
-    return { x: e.clientX - (r?.left ?? 0), y: e.clientY - (r?.top ?? 0) }
-  }
+  const point = (e: { clientX: number; clientY: number }) => stagePoint(stageRef.current, e)
 
   const moveView = (change: (view: View) => View) => {
     setView((prev) => clampView(change(prev ? clampView(prev, stage, work) : fitted), stage, work))
@@ -483,13 +185,7 @@ export function MaskEditor({
     const other = [...pointers.current].find(([id]) => id !== e.pointerId)?.[1]
     pointers.current.set(e.pointerId, p)
     if (other) {
-      const before = Math.hypot(prev.x - other.x, prev.y - other.y)
-      const after = Math.hypot(p.x - other.x, p.y - other.y)
-      const mid = { x: (p.x + other.x) / 2, y: (p.y + other.y) / 2 }
-      moveView((view) => {
-        const z = before > 0 ? zoomAt(view, after / before, mid.x, mid.y) : view
-        return { ...z, tx: z.tx + (p.x - prev.x) / 2, ty: z.ty + (p.y - prev.y) / 2 }
-      })
+      moveView((view) => pinch(view, prev, p, other))
       return
     }
     if (tap.current && Math.hypot(p.x - tap.current.x, p.y - tap.current.y) > TAP_SLOP) {
@@ -511,10 +207,10 @@ export function MaskEditor({
       setHistory((h) => push(h, s))
     }
     const t = tap.current
-    if (t && tool === 'select' && gpuReady && samIndexed && !select.isPending) {
+    if (t && tool === 'select' && gpuReady && samIndexed && !sam.pending) {
       const at = toImage(v, t.x, t.y)
       if (at.x >= 0 && at.y >= 0 && at.x <= work.w && at.y <= work.h) {
-        addPoint(at.x, at.y, !(exclude || t.long))
+        sam.addPoint(at.x, at.y, !(sam.exclude || t.long))
       }
     }
     cancelTap()
@@ -575,15 +271,8 @@ export function MaskEditor({
 
   const save = useMutation({
     mutationFn: async (): Promise<BlobInfo | null> => {
-      const m = maskCanvas.current
-      const ctx = context(m)
-      if (!m || !ctx) throw new Error('This browser can’t paint masks.')
-      if (!hasAlpha(ctx.getImageData(0, 0, work.w, work.h).data)) return null
-      const png = await new Promise<Blob | null>((resolve) => {
-        m.toBlob(resolve, 'image/png')
-      })
-      if (!png) throw new Error('Couldn’t read the painted mask.')
-      return api.uploadMask(source.sha, png)
+      const png = await toPng()
+      return png && api.uploadMask(source.sha, png)
     },
     onSuccess: onDone,
   })
@@ -656,7 +345,7 @@ export function MaskEditor({
           />
           <canvas ref={outlineRef} width={work.w} height={work.h} />
         </div>
-        {points.map((p, i) => (
+        {sam.points.map((p, i) => (
           <span
             key={i}
             className={p.include ? 'sam-point' : 'sam-point exclude'}
@@ -693,23 +382,21 @@ export function MaskEditor({
         {tool === 'select' ? (
           <SelectControls
             note={selectNote}
-            points={points}
-            exclude={exclude}
-            onExclude={setExclude}
-            text={text}
-            onText={setText}
-            onFind={() => {
-              select.mutate({ points, text: text.trim() })
-            }}
-            pending={select.isPending}
-            error={select.error?.message ?? null}
-            selection={selection}
-            shown={shown}
-            onShown={setShown}
-            growBy={growBy}
-            onGrow={setGrowBy}
-            onCombine={combine}
-            onClear={clearSelection}
+            points={sam.points}
+            exclude={sam.exclude}
+            onExclude={sam.setExclude}
+            text={sam.text}
+            onText={sam.setText}
+            onFind={sam.find}
+            pending={sam.pending}
+            error={sam.error}
+            selection={sam.selection}
+            shown={sam.shown}
+            onShown={sam.setShown}
+            growBy={sam.growBy}
+            onGrow={sam.setGrowBy}
+            onCombine={sam.combine}
+            onClear={sam.clear}
           />
         ) : (
           <div className="mask-row">
@@ -728,68 +415,25 @@ export function MaskEditor({
           </div>
         )}
 
-        <div className="editor-tools mask-tools">
-          <button
-            type="button"
-            className="tool"
-            aria-label="Undo"
-            disabled={!history.done.length}
-            onClick={() => {
-              setHistory(undo)
-            }}
-          >
-            <svg viewBox="0 0 20 20" aria-hidden>
-              <path d="M7 4.5 4 7.5l3 3" />
-              <path d="M4.5 7.5H12a4 4 0 0 1 0 8H9" />
-            </svg>
-          </button>
-          <button
-            type="button"
-            className="tool"
-            aria-label="Redo"
-            disabled={!history.undone.length}
-            onClick={() => {
-              setHistory(redo)
-            }}
-          >
-            <svg viewBox="0 0 20 20" aria-hidden>
-              <path d="m13 4.5 3 3-3 3" />
-              <path d="M15.5 7.5H8a4 4 0 0 0 0 8h3" />
-            </svg>
-          </button>
-          <button
-            type="button"
-            className="tool"
-            disabled={!ready}
-            onClick={() => {
-              setHistory((h) => push(h, { kind: 'invert' }))
-            }}
-          >
-            Invert
-          </button>
-          <button
-            type="button"
-            className="tool"
-            disabled={!ready}
-            onClick={() => {
-              setHistory((h) => push(h, { kind: 'clear' }))
-            }}
-          >
-            Clear
-          </button>
-          {blur > 0 && (
-            <button
-              type="button"
-              className="tool"
-              aria-pressed={showBlur}
-              onClick={() => {
-                setShowBlur(!showBlur)
-              }}
-            >
-              Blur
-            </button>
-          )}
-        </div>
+        <MaskTools
+          canUndo={history.done.length > 0}
+          canRedo={history.undone.length > 0}
+          ready={ready}
+          showBlur={blur > 0 ? showBlur : undefined}
+          onUndo={() => {
+            setHistory(undo)
+          }}
+          onRedo={() => {
+            setHistory(redo)
+          }}
+          onInvert={() => {
+            setHistory((h) => push(h, { kind: 'invert' }))
+          }}
+          onClear={() => {
+            setHistory((h) => push(h, { kind: 'clear' }))
+          }}
+          onShowBlur={setShowBlur}
+        />
         <div className="mask-row">
           <label htmlFor="image-opacity">Image</label>
           <input
@@ -808,172 +452,5 @@ export function MaskEditor({
         {save.error && <p role="alert">{save.error.message}</p>}
       </div>
     </div>
-  )
-}
-
-interface SelectProps {
-  note: string | null
-  points: SelectPoint[]
-  exclude: boolean
-  onExclude: (exclude: boolean) => void
-  text: string
-  onText: (text: string) => void
-  onFind: () => void
-  pending: boolean
-  error: string | null
-  selection: Selection | null
-  shown: number
-  onShown: (i: number) => void
-  growBy: number
-  onGrow: (px: number) => void
-  onCombine: (op: Combine) => void
-  onClear: () => void
-}
-
-/** SAM 3: taps and a description make a selection, which then adds to the mask. */
-function SelectControls(p: SelectProps) {
-  if (p.note) return <p className="row-note mask-note">{p.note}</p>
-  const count = p.selection?.candidates.length ?? 0
-  return (
-    <>
-      {/* Not a <form>: the editor renders inside the Create form, and a nested submit would
-          bubble up and queue a generation. */}
-      <div className="mask-row describe">
-        <label htmlFor="select-text" className="visually-hidden">
-          Describe what to select
-        </label>
-        <input
-          id="select-text"
-          type="text"
-          placeholder="Describe it, or tap the image"
-          value={p.text}
-          enterKeyHint="search"
-          onChange={(e) => {
-            p.onText(e.target.value)
-          }}
-          onKeyDown={(e) => {
-            if (e.key !== 'Enter') return
-            e.preventDefault()
-            if (p.text.trim() && !p.pending) p.onFind()
-          }}
-        />
-        <button
-          type="button"
-          className="btn quiet small"
-          disabled={!p.text.trim() || p.pending}
-          onClick={p.onFind}
-        >
-          Find
-        </button>
-      </div>
-      <div className="mask-row">
-        <div className="seed-modes" role="group" aria-label="Taps">
-          <button
-            type="button"
-            aria-pressed={!p.exclude}
-            onClick={() => {
-              p.onExclude(false)
-            }}
-          >
-            Include
-          </button>
-          <button
-            type="button"
-            aria-pressed={p.exclude}
-            onClick={() => {
-              p.onExclude(true)
-            }}
-          >
-            Exclude
-          </button>
-        </div>
-        {(p.points.length > 0 || p.selection) && (
-          <button type="button" className="btn quiet small" onClick={p.onClear}>
-            Start over
-          </button>
-        )}
-      </div>
-      <p className="row-note mask-note" aria-live="polite">
-        {p.pending
-          ? 'Selecting… the first time on a session copies SAM 3 to the GPU.'
-          : p.error
-            ? null
-            : p.selection && count === 0
-              ? 'Nothing matched. Tap it instead, or describe it differently.'
-              : p.selection
-                ? 'Shown as an outline. Add it to the mask, or tap to refine.'
-                : 'Tap what to select. Long-press, or choose Exclude, to leave something out.'}
-      </p>
-      {p.error && <p role="alert">{p.error}</p>}
-      <div className="mask-row">
-        <label htmlFor="grow">Grow</label>
-        <input
-          id="grow"
-          type="range"
-          min={0}
-          max={MAX_GROW}
-          value={p.growBy}
-          onChange={(e) => {
-            p.onGrow(Number(e.target.value))
-          }}
-        />
-        <output htmlFor="grow">{p.growBy} px</output>
-      </div>
-      {count > 0 && (
-        <>
-          <div className="mask-row">
-            <button
-              type="button"
-              className="btn quiet small"
-              disabled={p.shown <= 0}
-              onClick={() => {
-                p.onShown(p.shown - 1)
-              }}
-            >
-              Smaller
-            </button>
-            <button
-              type="button"
-              className="btn quiet small"
-              disabled={p.shown >= count - 1}
-              onClick={() => {
-                p.onShown(p.shown + 1)
-              }}
-            >
-              Bigger
-            </button>
-          </div>
-          <div className="mask-row combine">
-            <button
-              type="button"
-              className="btn small"
-              onClick={() => {
-                p.onCombine('add')
-              }}
-            >
-              Add
-            </button>
-            <button
-              type="button"
-              className="btn quiet small"
-              onClick={() => {
-                p.onCombine('subtract')
-              }}
-            >
-              Subtract
-            </button>
-            <button
-              type="button"
-              className="btn quiet small"
-              onClick={() => {
-                p.onCombine('replace')
-              }}
-            >
-              Replace
-            </button>
-          </div>
-        </>
-      )}
-    </>
   )
 }
