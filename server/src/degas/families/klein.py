@@ -1,7 +1,7 @@
-"""FLUX.2 [klein] descriptor: editing from up to 4 images (design §4.3).
+"""FLUX.2 [klein] descriptor: text-to-image, and editing from up to 4 images (design §4.3).
 
-The 9B model, step-distilled to 4 steps, as the official diffusers folder. It reads the
-source and up to 3 references (BFL's limit for klein), and has no CFG.
+The 9B model, step-distilled to 4 steps, as the official diffusers folder. An edit reads the
+source and up to 3 references (BFL's limit for klein). There's no CFG.
 """
 
 from typing import Any
@@ -68,7 +68,7 @@ class Klein:
             id="9b",
             label="FLUX.2 [klein] 9B",
             min_gpu="L4",
-            modes=("edit",),
+            modes=("t2i", "edit"),
             max_refs=MAX_REFS,
             ref_max_pixels=REF_MAX_PIXELS,
         ),
@@ -98,9 +98,10 @@ class Klein:
             raise SpecError(f"{self.label} doesn't take control units")
         raw = spec.get("inputs")
         inputs = validate_inputs(raw, mode)
-        refs = validate_refs((raw or {}).get("refs"), MAX_REFS)
-        if refs:
-            inputs["refs"] = refs
+        if mode != "t2i":
+            refs = validate_refs((raw or {}).get("refs"), MAX_REFS)
+            if refs:
+                inputs["refs"] = refs
         return {
             "family": self.id,
             "variant": variant,
