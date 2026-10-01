@@ -14,10 +14,14 @@ cd web && pnpm vitest run src/lib/schema.test.ts # single web test
 
 ## Architecture
 
-- `server/src/degas` (home server): API, SQLite, blob store, dispatcher, Colab session manager
-  (`colab/`: CLI wrapper, SSH tunnel, worker client, bundle).
+- `server/src/degas` (home server): `api/` (a router per resource, request schemas, and
+  `errors.py`, the one table mapping `DegasError`s to HTTP statuses), `db/` (schema, queries,
+  row TypedDicts), blob store, dispatcher, Colab session manager (`colab/`: CLI wrapper, SSH
+  tunnel, worker client, bundle). `services.py` wires them; `degas.app:create_app` is a
+  factory (no module-level app).
 - `worker/src/degas_worker` (runs on the Colab VM, behind the SSH tunnel): tarred by
-  `degas/colab/bundle.py` and scp'd over — must never import `degas`.
+  `degas/colab/bundle.py` and scp'd over — must never import `degas`. `degas_worker/spec.py`
+  types the job spec for both sides (the server imports it).
 - `web/`: React 19 + Vite + TanStack Query; its conventions are in `web/CLAUDE.md`. The Create
   form is rendered from each family's JSON Schema (`features/create/schema-form/`), so new
   families usually need no frontend changes.
@@ -25,12 +29,16 @@ cd web && pnpm vitest run src/lib/schema.test.ts # single web test
 ## Gotchas
 
 - A model family = descriptor `server/src/degas/families/<id>.py` + runner
-  `worker/src/degas_worker/families/<id>.py`, same name. Register the descriptor in `FAMILIES`
+  `worker/src/degas_worker/families/<id>.py` (or a package `<id>/`, as SDXL is), same name.
+  Shared pieces: `families/validation.py` and `schema.py` for descriptors,
+  `families/runtime.py` for runners. Register the descriptor in `FAMILIES`
   (`server/src/degas/families/__init__.py`) and the runner in `RUNNERS`
   (`worker/src/degas_worker/families/__init__.py`) via a factory that imports the module lazily.
 - torch/diffusers/transformers/peft/accelerate are not installed locally or in CI (mypy
   `ignore_missing_imports`). Runner modules may import them at top level, but nothing else may
   import a runner module eagerly — tests and the worker app must load without GPU deps.
+- A route that returns a stored row is annotated `Mapping[str, Any]`, not the row's TypedDict:
+  FastAPI would make the TypedDict a response model and drop keys the route adds.
 - Tests fake the Colab CLI and tunnel but run the real worker app over ASGI
   (`server/tests/conftest.py`); no GPU needed.
 - `spike/` is a frozen Phase 0 record — excluded from lint; don't edit.

@@ -89,10 +89,11 @@ def sweep(db: Database, blobs: BlobStore, grace_s: float = BLOB_GRACE_S) -> dict
     """Delete expired results and jobs, then every blob nothing references any more."""
     counts = db.expire()
     referenced = db.referenced_blobs()
-    removed: list[str] = []
-    for sha in list(blobs.stored(older_than_s=grace_s)):
-        if sha not in referenced and blobs.delete(sha):
-            removed.append(sha)
+    removed = [
+        sha
+        for sha in list(blobs.stored(older_than_s=grace_s))
+        if sha not in referenced and blobs.delete(sha)
+    ]
     db.forget_transforms(removed)
     counts["blobs"] = len(removed)
     if any(counts.values()):
