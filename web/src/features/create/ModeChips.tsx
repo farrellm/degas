@@ -1,3 +1,5 @@
+import { ChoiceChips } from '@/components/ChoiceChips'
+
 import { MODE_LABELS } from './modes'
 
 export interface ModeChipsProps {
@@ -9,19 +11,12 @@ export interface ModeChipsProps {
 /** What the job starts from: text, an image, an edit… */
 export function ModeChips({ modes, mode, onChoose }: ModeChipsProps) {
   return (
-    <div className="mode-chips" role="group" aria-label="Start from">
-      {modes.map((m) => (
-        <button
-          key={m}
-          type="button"
-          aria-pressed={m === mode}
-          onClick={() => {
-            onChoose(m)
-          }}
-        >
-          {MODE_LABELS[m] ?? m}
-        </button>
-      ))}
-    </div>
+    <ChoiceChips
+      label="Start from"
+      className="mode-chips"
+      options={modes.map((m) => ({ id: m, label: MODE_LABELS[m] ?? m }))}
+      value={mode}
+      onChoose={onChoose}
+    />
   )
 }

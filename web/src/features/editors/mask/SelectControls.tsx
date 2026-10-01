@@ -1,31 +1,17 @@
-import type { Selection, SelectPoint } from '@/api/types'
-
-import type { Combine } from './canvas'
+import { RangeRow } from './RangeRow'
+import type { SelectionState } from './useSelection'
 
 const MAX_GROW = 128 // image px of margin a selection can be grown by
 
-interface SelectProps {
+export interface SelectControlsProps {
+  /** Why Select can't be used right now, shown in place of the controls. */
   note: string | null
-  points: SelectPoint[]
-  exclude: boolean
-  onExclude: (exclude: boolean) => void
-  text: string
-  onText: (text: string) => void
-  onFind: () => void
-  pending: boolean
-  error: string | null
-  selection: Selection | null
-  shown: number
-  onShown: (i: number) => void
-  growBy: number
-  onGrow: (px: number) => void
-  onCombine: (op: Combine) => void
-  onClear: () => void
+  sam: SelectionState
 }
 
 /** SAM 3: taps and a description make a selection, which then adds to the mask. */
-export function SelectControls(p: SelectProps) {
-  if (p.note) return <p className="row-note mask-note">{p.note}</p>
+export function SelectControls({ note, sam: p }: SelectControlsProps) {
+  if (note) return <p className="row-note mask-note">{note}</p>
   const count = p.selection?.candidates.length ?? 0
   return (
     <>
@@ -42,19 +28,19 @@ export function SelectControls(p: SelectProps) {
           value={p.text}
           enterKeyHint="search"
           onChange={(e) => {
-            p.onText(e.target.value)
+            p.setText(e.target.value)
           }}
           onKeyDown={(e) => {
             if (e.key !== 'Enter') return
             e.preventDefault()
-            if (p.text.trim() && !p.pending) p.onFind()
+            if (p.text.trim() && !p.pending) p.find()
           }}
         />
         <button
           type="button"
           className="btn quiet small"
           disabled={!p.text.trim() || p.pending}
-          onClick={p.onFind}
+          onClick={p.find}
         >
           Find
         </button>
@@ -65,7 +51,7 @@ export function SelectControls(p: SelectProps) {
             type="button"
             aria-pressed={!p.exclude}
             onClick={() => {
-              p.onExclude(false)
+              p.setExclude(false)
             }}
           >
             Include
@@ -74,14 +60,14 @@ export function SelectControls(p: SelectProps) {
             type="button"
             aria-pressed={p.exclude}
             onClick={() => {
-              p.onExclude(true)
+              p.setExclude(true)
             }}
           >
             Exclude
           </button>
         </div>
         {(p.points.length > 0 || p.selection) && (
-          <button type="button" className="btn quiet small" onClick={p.onClear}>
+          <button type="button" className="btn quiet small" onClick={p.clear}>
             Start over
           </button>
         )}
@@ -98,20 +84,15 @@ export function SelectControls(p: SelectProps) {
                 : 'Tap what to select. Long-press, or choose Exclude, to leave something out.'}
       </p>
       {p.error && <p role="alert">{p.error}</p>}
-      <div className="mask-row">
-        <label htmlFor="grow">Grow</label>
-        <input
-          id="grow"
-          type="range"
-          min={0}
-          max={MAX_GROW}
-          value={p.growBy}
-          onChange={(e) => {
-            p.onGrow(Number(e.target.value))
-          }}
-        />
-        <output htmlFor="grow">{p.growBy} px</output>
-      </div>
+      <RangeRow
+        id="grow"
+        label="Grow"
+        min={0}
+        max={MAX_GROW}
+        value={p.growBy}
+        output={`${String(p.growBy)} px`}
+        onChange={p.setGrowBy}
+      />
       {count > 0 && (
         <>
           <div className="mask-row">
@@ -120,7 +101,7 @@ export function SelectControls(p: SelectProps) {
               className="btn quiet small"
               disabled={p.shown <= 0}
               onClick={() => {
-                p.onShown(p.shown - 1)
+                p.setShown(p.shown - 1)
               }}
             >
               Smaller
@@ -130,7 +111,7 @@ export function SelectControls(p: SelectProps) {
               className="btn quiet small"
               disabled={p.shown >= count - 1}
               onClick={() => {
-                p.onShown(p.shown + 1)
+                p.setShown(p.shown + 1)
               }}
             >
               Bigger
@@ -141,7 +122,7 @@ export function SelectControls(p: SelectProps) {
               type="button"
               className="btn small"
               onClick={() => {
-                p.onCombine('add')
+                p.combine('add')
               }}
             >
               Add
@@ -150,7 +131,7 @@ export function SelectControls(p: SelectProps) {
               type="button"
               className="btn quiet small"
               onClick={() => {
-                p.onCombine('subtract')
+                p.combine('subtract')
               }}
             >
               Subtract
@@ -159,7 +140,7 @@ export function SelectControls(p: SelectProps) {
               type="button"
               className="btn quiet small"
               onClick={() => {
-                p.onCombine('replace')
+                p.combine('replace')
               }}
             >
               Replace

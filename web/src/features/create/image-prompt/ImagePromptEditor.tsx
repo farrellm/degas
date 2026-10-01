@@ -3,16 +3,15 @@ import { useState } from 'react'
 
 import { queries } from '@/api/queries'
 import type { Asset, ImagePromptOptions, Variant } from '@/api/types'
-import { thumbUrl } from '@/api/urls'
-import { AssetPicker } from '@/components/AssetPicker/AssetPicker'
 import { FitSelect } from '@/components/FitSelect'
 import { ImagePicker } from '@/components/ImagePicker/ImagePicker'
 import { Sheet } from '@/components/Sheet'
 import { SliderRow } from '@/components/SliderRow'
 import { StepRange } from '@/components/StepRange'
+import { AreaRow } from '@/features/create/rows/AreaRow'
+import { UnitModelRow } from '@/features/create/rows/UnitModelRow'
 import { CropEditor } from '@/features/editors/crop/CropEditor'
 import { MaskEditor } from '@/features/editors/mask/MaskEditor'
-import { MaskThumb } from '@/features/editors/mask/MaskThumb'
 import { assetLabel } from '@/lib/assets'
 import type { FitOption } from '@/lib/fit'
 import { formatSize } from '@/lib/format'
@@ -21,36 +20,25 @@ import { type Source, toSource } from '@/lib/image'
 import { isGpuReady } from '@/lib/session'
 import { stepFraction } from '@/lib/steps'
 
+import { AdapterPicker } from './AdapterPicker'
 import { blankCanvas } from './blankCanvas'
-import { FaceTile } from './FaceTile'
+import { FaceSliders } from './FaceSliders'
 import {
-  adapterKind,
   anyOblong,
-  detailInfo,
-  DETAILS,
-  FACEID_NOTE,
   type ImagePromptUnit,
   isFaceid,
-  MAX_PICTURES,
   mismatch,
   modelFor,
   type Take,
-  takeInfo,
-  takesFor,
   weightFor,
 } from './imagePrompt'
+import { PromptPictures } from './PromptPictures'
+import { TakePicker } from './TakePicker'
 
 const FITS: FitOption[] = [
   { id: 'crop', label: 'The middle square' },
   { id: 'pad', label: 'All of it, letterboxed' },
 ]
-
-const KIND_LABELS = {
-  subject: 'Reads the whole picture',
-  face: 'Reads faces',
-  faceid: 'Reads who a face is (FaceID)',
-  composition: 'Reads layout',
-} as const
 
 type Overlay = 'image' | 'crop' | 'area' | 'model' | null
 
@@ -90,7 +78,6 @@ export function ImagePromptEditor({
   onRemove,
   onClose,
 }: ImagePromptEditorProps) {
-  const takes = takesFor(options)
   const [overlay, setOverlay] = useState<Overlay>(null)
   // The picture being cropped, and its place in the row (one past the end adds it).
   const [cropping, setCropping] = useState<{ sha: string; at: number } | null>(null)
@@ -193,19 +180,11 @@ export function ImagePromptEditor({
   }
   if (overlay === 'model') {
     return (
-      <AssetPicker
-        title="Image prompt model"
-        noun="models"
-        assets={adapters}
-        selected={new Set([unit.model])}
-        describe={(a) => KIND_LABELS[adapterKind(a)]}
-        empty={
-          <p>
-            No image prompt models found. Put{' '}
-            {options.detail ? 'the FLUX.1-Redux-dev diffusers folder' : 'IP-Adapters'} in Drive
-            under <code>degas/ip_adapters/{familyId}/</code>, then rescan.
-          </p>
-        }
+      <AdapterPicker
+        adapters={adapters}
+        familyId={familyId}
+        selected={unit.model}
+        redux={options.detail}
         onPick={(a) => {
           onChange((u) => ({ ...u, model: a.path }))
           setOverlay(null)
@@ -218,7 +197,6 @@ export function ImagePromptEditor({
   }
 
   const model = adapters.find((a) => a.path === unit.model)
-  const modelMissing = !!unit.model && !model
   const warning = unit.model ? mismatch(model, unit.model, unit.take) : null
   const span = { a: Math.round(unit.start * steps), b: Math.round(unit.end * steps) }
   const setSpan = (a: number, b: number) => {
@@ -228,127 +206,43 @@ export function ImagePromptEditor({
   return (
     <Sheet title="Image prompt" onClose={onClose}>
       <div className="prompt-editor">
-        <div className="prompt-pictures" role="group" aria-label="Pictures">
-          {unit.pictures.map((picture, i) => {
-            const n = String(i + 1)
-            return (
-              <figure key={`${picture.sha}-${n}`} className="prompt-picture">
-                {/* Square, because the model sees the middle square. */}
-                {faceid ? (
-                  <FaceTile sha={picture.sha} n={n} gpuReady={gpuReady} />
-                ) : (
-                  <img src={thumbUrl(picture.sha)} alt={`Picture ${n}`} />
-                )}
-                <figcaption className="row-buttons">
-                  <button
-                    type="button"
-                    className="btn quiet small"
-                    aria-label={`Crop picture ${n}`}
-                    onClick={() => {
-                      setCropping({ sha: picture.sha, at: i })
-                      setOverlay('crop')
-                    }}
-                  >
-                    Crop
-                  </button>
-                  <button
-                    type="button"
-                    className="lora-remove"
-                    aria-label={`Remove picture ${n}`}
-                    onClick={() => {
-                      onChange((u) => ({ ...u, pictures: u.pictures.filter((_, j) => j !== i) }))
-                    }}
-                  >
-                    <svg viewBox="0 0 12 12" aria-hidden>
-                      <path d="M2 2l8 8M10 2l-8 8" />
-                    </svg>
-                  </button>
-                </figcaption>
-              </figure>
-            )
-          })}
-          {unit.pictures.length < MAX_PICTURES && (
-            <button
-              type="button"
-              className="prompt-add"
-              onClick={() => {
-                setOverlay('image')
-              }}
-            >
-              {unit.pictures.length === 0 ? 'Choose a picture' : 'Add picture'}
-            </button>
-          )}
-        </div>
-        {faceid && unit.pictures.length > 0 && !gpuReady && (
-          <p className="row-note">The face in each picture is found on the GPU when it runs.</p>
-        )}
-        <p className="row-note">
-          {faceid && unit.pictures.length > 0
-            ? 'The model reads who the face is, not the rest of the picture.'
-            : unit.pictures.length === 0
-              ? 'The image will take after this picture, the way it takes after the prompt.'
-              : unit.pictures.length > 1
-                ? 'The model reads them together.'
-                : 'The model sees the middle square, at low resolution: fine detail and text don’t carry.'}
-        </p>
+        <PromptPictures
+          pictures={unit.pictures}
+          faceid={faceid}
+          gpuReady={gpuReady}
+          onCrop={(i) => {
+            const picture = unit.pictures[i]
+            if (!picture) return
+            setCropping({ sha: picture.sha, at: i })
+            setOverlay('crop')
+          }}
+          onRemove={(i) => {
+            onChange((u) => ({ ...u, pictures: u.pictures.filter((_, j) => j !== i) }))
+          }}
+          onAdd={() => {
+            setOverlay('image')
+          }}
+        />
 
-        {takes.length > 0 && (
-          <div className="control-traces" role="group" aria-label="Take from it">
-            {takes.map((t) => (
-              <button
-                key={t.id}
-                type="button"
-                aria-pressed={unit.take === t.id}
-                onClick={() => {
-                  choose(t.id)
-                }}
-              >
-                {t.label}
-              </button>
-            ))}
-          </div>
-        )}
-        {takes.length > 0 && (
-          <p className="row-note">
-            {unit.take === 'face' && faceid ? FACEID_NOTE : takeInfo(unit.take).note}
-          </p>
-        )}
-        {options.detail && (
-          <>
-            <div className="control-traces" role="group" aria-label="How closely">
-              {DETAILS.map((d) => (
-                <button
-                  key={d.downsample}
-                  type="button"
-                  aria-pressed={unit.downsample === d.downsample}
-                  onClick={() => {
-                    onChange((u) => ({ ...u, downsample: d.downsample }))
-                  }}
-                >
-                  {d.label}
-                </button>
-              ))}
-            </div>
-            <p className="row-note">{detailInfo(unit.downsample).note}</p>
-          </>
-        )}
+        <TakePicker
+          unit={unit}
+          options={options}
+          faceid={faceid}
+          onTake={choose}
+          onDownsample={(downsample) => {
+            onChange((u) => ({ ...u, downsample }))
+          }}
+        />
 
-        <div className={modelMissing ? 'model-row missing' : 'model-row'}>
-          <button
-            type="button"
-            className="setting setting-button"
-            onClick={() => {
-              setOverlay('model')
-            }}
-          >
-            <span className="setting-label">Model</span>{' '}
-            <span className={unit.model ? 'setting-value' : 'setting-value none'}>
-              {unit.model ? assetLabel(unit.model, adapters) : 'Choose a model'}
-            </span>
-          </button>
-          {modelMissing && <p className="row-warning">Not found in Drive. Pick another model.</p>}
-          {warning && !modelMissing && <p className="row-warning">{warning}</p>}
-        </div>
+        <UnitModelRow
+          value={unit.model ? assetLabel(unit.model, adapters) : null}
+          placeholder="Choose a model"
+          missing={unit.model && !model ? 'Not found in Drive. Pick another model.' : null}
+          warning={warning}
+          onPick={() => {
+            setOverlay('model')
+          }}
+        />
 
         <SliderRow
           id="prompt-weight"
@@ -362,30 +256,16 @@ export function ImagePromptEditor({
         />
 
         {faceid && (
-          <>
-            <SliderRow
-              id="prompt-structure"
-              label="Face structure"
-              min={0}
-              max={2}
-              value={unit.structure}
-              note="How much of the face’s shape comes from the picture, on top of who it is."
-              onChange={(structure) => {
-                onChange((u) => ({ ...u, structure }))
-              }}
-            />
-            <SliderRow
-              id="prompt-lora"
-              label="Face LoRA"
-              min={0}
-              max={1.5}
-              value={unit.loraWeight}
-              note="The LoRA trained with the model. Lower lets the checkpoint’s own look through."
-              onChange={(loraWeight) => {
-                onChange((u) => ({ ...u, loraWeight }))
-              }}
-            />
-          </>
+          <FaceSliders
+            structure={unit.structure}
+            loraWeight={unit.loraWeight}
+            onStructure={(structure) => {
+              onChange((u) => ({ ...u, structure }))
+            }}
+            onLoraWeight={(loraWeight) => {
+              onChange((u) => ({ ...u, loraWeight }))
+            }}
+          />
         )}
 
         {options.steps && (
@@ -399,53 +279,35 @@ export function ImagePromptEditor({
         )}
 
         {options.areas && (
-          <div className="source-row">
-            <button
-              type="button"
-              className="setting setting-button"
-              disabled={openArea.isPending}
-              onClick={() => {
-                openArea.mutate()
-              }}
-            >
-              <span className="setting-label">Area</span>{' '}
-              <span className={unit.area ? 'setting-value' : 'setting-value none'}>
-                {unit.area ? (
-                  <>
-                    <MaskThumb source={unit.area.over.sha} mask={unit.area.sha} />
-                    Edit area
-                  </>
-                ) : (
-                  'Limit to an area'
-                )}
-              </span>
-            </button>
-            {openArea.error && (
-              <p className="row-warning" role="alert">
-                {openArea.error.message}
-              </p>
-            )}
-            {unit.area && (
-              <div className="row-buttons source-actions">
-                <button
-                  type="button"
-                  className="btn quiet small"
-                  onClick={() => {
-                    onChange((u) => ({ ...u, area: null }))
-                  }}
-                >
-                  Clear
-                </button>
-              </div>
-            )}
-            {unit.area &&
+          <AreaRow
+            label="Area"
+            area={unit.area ? { source: unit.area.over.sha, mask: unit.area.sha } : null}
+            editText="Edit area"
+            emptyText="Limit to an area"
+            disabled={openArea.isPending}
+            before={
+              openArea.error && (
+                <p className="row-warning" role="alert">
+                  {openArea.error.message}
+                </p>
+              )
+            }
+            after={
+              unit.area &&
               (unit.area.over.width !== target.w || unit.area.over.height !== target.h) && (
                 <p className="row-note">
                   Painted at {formatSize(unit.area.over.width, unit.area.over.height)}; it will be
                   fitted to {formatSize(target.w, target.h)}.
                 </p>
-              )}
-          </div>
+              )
+            }
+            onOpen={() => {
+              openArea.mutate()
+            }}
+            onClear={() => {
+              onChange((u) => ({ ...u, area: null }))
+            }}
+          />
         )}
 
         {anyOblong(unit) && (
