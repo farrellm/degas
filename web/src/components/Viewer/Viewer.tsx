@@ -243,8 +243,9 @@ export function Viewer<T extends ViewerItem>({
           <span>{sampling.join(', ')}</span>
         </p>
         {extra?.(r)}
-        {/* Keyed so per-item state (errors, confirmations) resets on swipe. */}
-        <div key={r.id} className="viewer-actions">
+        {/* Keyed so per-item state (errors, confirmations) resets on swipe; prefixed so it can't
+            collide with a keyed `extra` beside it. */}
+        <div key={`actions:${r.id}`} className="viewer-actions">
           {actions(r)}
         </div>
       </div>
