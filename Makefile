@@ -30,7 +30,7 @@ build:
 	cd web && pnpm build
 
 dev-server:
-	uv run uvicorn degas.app:app --reload --host 127.0.0.1 --port 8420
+	uv run uvicorn --factory degas.app:create_app --reload --host 127.0.0.1 --port 8420
 
 dev-web:
 	cd web && pnpm dev

@@ -6,7 +6,6 @@ import contextlib
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
 
 import httpx2
 from pydantic import ValidationError
@@ -24,8 +23,9 @@ from degas.lora.settings import LoraSettings, load_settings
 from degas.rclone import RcloneError
 
 
-def add_parser(sub: Any) -> None:
+def add_parser(sub: "argparse._SubParsersAction[argparse.ArgumentParser]") -> None:
     lora = sub.add_parser("lora", help="train an SDXL character LoRA on a Colab GPU")
+    lora.set_defaults(run=run)
     cmd = lora.add_subparsers(dest="lora_command", required=True)
 
     def dataset_args(p: argparse.ArgumentParser) -> None:

@@ -21,12 +21,14 @@ from degas.colab.worker_client import WorkerClient
 from degas.config import Config
 from degas.db import Database
 from degas.dispatcher import Dispatcher
-from degas.drive import DriveAuth, DriveIndexer, companions
+from degas.drive import DriveAuth, DriveIndexer
+from degas.drive.catalog import AssetCatalog
 from degas.events import EventBus
 from degas.families import FAMILIES
 from degas.inputs import Inputs
-from degas.library import release, sweep
+from degas.library import sweep
 from degas.notices import RESULTS_URL, SESSION_URL, idle_notice, job_notice
+from degas.preprocess import Preprocessing
 from degas.push import Push, Sender
 from degas.rclone import AsyncRclone, Remote
 
@@ -43,15 +45,15 @@ class Services:
     blobs: BlobStore
     bus: EventBus
     drive: DriveAuth
-    indexer: DriveIndexer
+    assets: AssetCatalog
     sessions: SessionManager
     dispatcher: Dispatcher
     inputs: Inputs
+    preprocessing: Preprocessing
     push: Push
-    imports: Imports = field(init=False)
-    _tasks: list[asyncio.Task[None]] = field(default_factory=list)
-    _rescan_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    imports: Imports
     rng: random.Random = field(default_factory=random.SystemRandom)
+    _tasks: list[asyncio.Task[None]] = field(default_factory=list)
 
     async def start(self) -> None:
         await self.sessions.recover()
@@ -68,33 +70,9 @@ class Services:
         await self.push.drain()
         await self.imports.aclose()
         await self.sessions.aclose()
-        await self.indexer.aclose()
+        await self.assets.indexer.aclose()
         await self.drive.aclose()
         self.db.close()
-
-    async def rescan(self) -> int:
-        async with self._rescan_lock:
-            assets = await self.indexer.scan()
-            previous = {a["path"]: a for a in self.db.list_assets()}
-            await self.indexer.enrich(assets, previous, self.blobs.put)
-            count = self.db.replace_assets(assets)
-        self.bus.publish({"type": "assets", "count": count})
-        return count
-
-    async def delete_loras(self, paths: list[str]) -> None:
-        """Move LoRAs (with their sidecars and previews) to Drive's trash and drop them from
-        the index. Every path must be an indexed LoRA."""
-        importer = self.imports.importer
-        async with self._rescan_lock:
-            for path in paths:
-                folder, file = path.rsplit("/", 1)
-                target = f"{importer.base}/{folder}"
-                names = (await importer.remote.run("lsf", "--files-only", target)).splitlines()
-                for name in [file, *companions(file, names)]:
-                    if name in names:
-                        await importer.remote.run("deletefile", f"{target}/{name}")
-                release(self.db, self.blobs, self.db.delete_assets([path]))
-        self.bus.publish({"type": "assets", "count": len(self.db.list_assets())})
 
     def sweep(self) -> dict[str, int]:
         counts = sweep(self.db, self.blobs)
@@ -114,7 +92,7 @@ class Services:
         while True:
             if self.drive.authorized:
                 try:
-                    await self.rescan()
+                    await self.assets.rescan()
                 except Exception as e:
                     log.warning("Drive rescan failed: %s", e)
             await asyncio.sleep(RESCAN_INTERVAL_S)
@@ -180,13 +158,28 @@ def build_services(
 
     dispatcher.on_finish.append(job_finished)
     sessions.on_idle_warning.append(idle_warning)
-    svc = Services(config, db, blobs, bus, drive, indexer, sessions, dispatcher, inputs, push)
+
+    remote = remote or AsyncRclone()
     importer = Importer(
         Civitai(config.civitai.token_file, config.civitai.api_base, civitai_http),
-        remote or AsyncRclone(),
+        remote,
         config.lora.rclone_remote,
         config.drive.root,
         set(FAMILIES),
     )
-    svc.imports = Imports(importer, lambda: db.list_assets(kind="lora"), bus.publish, svc.rescan)
-    return svc
+    assets = AssetCatalog(db, blobs, bus, indexer, remote, importer.base)
+    imports = Imports(importer, lambda: db.list_assets(kind="lora"), bus.publish, assets.rescan)
+    return Services(
+        config=config,
+        db=db,
+        blobs=blobs,
+        bus=bus,
+        drive=drive,
+        assets=assets,
+        sessions=sessions,
+        dispatcher=dispatcher,
+        inputs=inputs,
+        preprocessing=Preprocessing(db, blobs, sessions, inputs),
+        push=push,
+        imports=imports,
+    )

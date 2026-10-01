@@ -34,6 +34,3 @@ def create_app(
     if config.web_dist_dir.is_dir():
         app.mount("/", StaticFiles(directory=config.web_dist_dir, html=True), name="web")
     return app
-
-
-app = create_app()

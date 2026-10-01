@@ -10,7 +10,6 @@ from degas.api.deps import Svc, blob_or_404
 from degas.api.schemas import Frame, FromUrl, Preprocess, RemapMask, Transform
 from degas.inputs import MAX_UPLOAD_BYTES
 from degas.media import MediaError
-from degas.preprocess import run as run_preprocess
 
 router = APIRouter(tags=["blobs"])
 
@@ -72,7 +71,7 @@ async def remap_mask(svc: Svc, sha: str, body: RemapMask) -> dict[str, Any]:
 
 @router.post("/preprocess", status_code=201)
 async def preprocess(svc: Svc, body: Preprocess) -> dict[str, Any]:
-    return await run_preprocess(svc, body.id, body.image, body.params)
+    return await svc.preprocessing.run(body.id, body.image, body.params)
 
 
 @router.post("/blobs/{sha}/frame", status_code=201)
