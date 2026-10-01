@@ -8,6 +8,7 @@ Read `README.md` for layout/setup, `docs/design.md` for architecture and the pha
 
 ```sh
 make check        # lint + typecheck + test; run before declaring done (CI adds `pnpm build`)
+uv run ruff check . && uv run mypy && uv run pytest   # Python only (web untouched)
 uv run pytest server/tests/test_api.py -k name   # single Python test
 cd web && pnpm vitest run src/lib/schema.test.ts # single web test
 ```
@@ -46,6 +47,17 @@ cd web && pnpm vitest run src/lib/schema.test.ts # single web test
   the phone gets at once, with no restart. To check a build without deploying, build in a
   scratch `git worktree`. To check the UI live, run `cd web && pnpm dev --port 5199`: it
   proxies `/api` to the running server (real data) and leaves `dist` alone.
+- The prod service runs this checkout's Python (editable install) and builds the worker
+  bundle from it at each session start, so half-done Python work here can ship to a GPU
+  session. Do multi-commit Python work in a `git worktree` beside the repo (inside it, ruff
+  lints the copy too); `systemctl --user restart degas` picks up merged Python changes.
+- Never start a second server on the real `degas.toml` (same SQLite file and Colab
+  session). For a smoke test or a live GPU check, use a scratch config: its own `data_dir`,
+  `port` and `colab.session_name`, with `drive.client_file` / `token_file` pointing at the
+  real ones in `data/` (only read).
+- Runner changes are only proven on a GPU: after touching `degas_worker/families` or
+  `preprocess`, run one job per family and each preprocessor through the API on a scratch
+  server. An A100 runs every family.
 - Pre-commit: hooks fix staged files on commit; `make check` runs in GitHub CI only.
 
 ## Workflow
