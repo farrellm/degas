@@ -9,15 +9,26 @@ fine-tune); the text encoders, VAE and configs come from the official diffusers 
 loads on its own.
 """
 
-from typing import Any, Literal
+from typing import Any
 
 from degas.families.base import (
     ImagePromptOptions,
     JsonSchema,
+    LoraFormat,
+    MediaKind,
     SizeConstraints,
     SpecError,
     Variant,
     find_variant,
+)
+from degas.families.schema import (
+    params_schema,
+    prompt_prop,
+    seed_prop,
+    size_props,
+    steps_prop,
+)
+from degas.families.validation import (
     snap_size,
     validate_image_prompts,
     validate_model,
@@ -55,8 +66,8 @@ SIZE = SizeConstraints(
 class Flux1:
     id = "flux1"
     label = "FLUX.1"
-    media: Literal["image", "video"] = "image"
-    lora_format: Literal["single", "paired_hi_lo"] = "single"
+    media: MediaKind = "image"
+    lora_format: LoraFormat = "single"
     supports_control = False
     supports_image_prompts = True
     image_prompt_options = ImagePromptOptions(detail=True)
@@ -70,33 +81,9 @@ class Flux1:
     def param_schema(self, variant: str, mode: str) -> JsonSchema:
         find_variant(self, variant, mode)
         props: dict[str, JsonSchema] = {
-            "prompt": {"type": "string", "title": "Prompt", "minLength": 1, "x-widget": "prompt"},
-            "width": {
-                "type": "integer",
-                "title": "Width",
-                "default": 1024,
-                "minimum": 512,
-                "maximum": 2048,
-                "multipleOf": 16,
-                "x-widget": "aspect",
-            },
-            "height": {
-                "type": "integer",
-                "title": "Height",
-                "default": 1024,
-                "minimum": 512,
-                "maximum": 2048,
-                "multipleOf": 16,
-                "x-widget": "aspect",
-            },
-            "steps": {
-                "type": "integer",
-                "title": "Steps",
-                "default": 28,
-                "minimum": 1,
-                "maximum": 50,
-                "x-widget": "slider",
-            },
+            "prompt": prompt_prop(),
+            **size_props((1024, 1024), minimum=512, maximum=2048, multiple_of=16),
+            "steps": steps_prop(28, 50),
             "guidance": {
                 "type": "number",
                 "title": "Guidance",
@@ -107,16 +94,9 @@ class Flux1:
                 "multipleOf": 0.5,
                 "x-widget": "slider",
             },
-            "seed": {
-                "type": "integer",
-                "title": "Seed",
-                "default": -1,
-                "minimum": -1,
-                "maximum": 2**32 - 1,
-                "x-widget": "seed",
-            },
+            "seed": seed_prop(),
         }
-        return {"type": "object", "required": ["prompt"], "properties": props}
+        return params_schema(props)
 
     def validate(self, spec: dict[str, Any]) -> dict[str, Any]:
         variant = spec.get("variant", "dev")

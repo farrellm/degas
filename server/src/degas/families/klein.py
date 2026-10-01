@@ -4,14 +4,25 @@ The 9B model, step-distilled to 4 steps, as the official diffusers folder. It re
 source and up to 3 references (BFL's limit for klein), and has no CFG.
 """
 
-from typing import Any, Literal
+from typing import Any
 
 from degas.families.base import (
     JsonSchema,
+    LoraFormat,
+    MediaKind,
     SizeConstraints,
     SpecError,
     Variant,
     find_variant,
+)
+from degas.families.schema import (
+    params_schema,
+    prompt_prop,
+    seed_prop,
+    size_props,
+    steps_prop,
+)
+from degas.families.validation import (
     snap_size,
     validate_inputs,
     validate_model,
@@ -46,8 +57,8 @@ SIZE = SizeConstraints(
 class Klein:
     id = "klein"
     label = "FLUX.2 [klein]"
-    media: Literal["image", "video"] = "image"
-    lora_format: Literal["single", "paired_hi_lo"] = "single"
+    media: MediaKind = "image"
+    lora_format: LoraFormat = "single"
     supports_control = False
     supports_image_prompts = False
     image_prompt_options = None
@@ -68,44 +79,12 @@ class Klein:
     def param_schema(self, variant: str, mode: str) -> JsonSchema:
         find_variant(self, variant, mode)
         props: dict[str, JsonSchema] = {
-            "prompt": {"type": "string", "title": "Prompt", "minLength": 1, "x-widget": "prompt"},
-            "width": {
-                "type": "integer",
-                "title": "Width",
-                "default": 1024,
-                "minimum": 512,
-                "maximum": 2048,
-                "multipleOf": 16,
-                "x-widget": "aspect",
-            },
-            "height": {
-                "type": "integer",
-                "title": "Height",
-                "default": 1024,
-                "minimum": 512,
-                "maximum": 2048,
-                "multipleOf": 16,
-                "x-widget": "aspect",
-            },
-            "steps": {
-                "type": "integer",
-                "title": "Steps",
-                "description": "The model is distilled to 4.",
-                "default": 4,
-                "minimum": 1,
-                "maximum": 16,
-                "x-widget": "slider",
-            },
-            "seed": {
-                "type": "integer",
-                "title": "Seed",
-                "default": -1,
-                "minimum": -1,
-                "maximum": 2**32 - 1,
-                "x-widget": "seed",
-            },
+            "prompt": prompt_prop(),
+            **size_props((1024, 1024), minimum=512, maximum=2048, multiple_of=16),
+            "steps": steps_prop(4, 16, "The model is distilled to 4."),
+            "seed": seed_prop(),
         }
-        return {"type": "object", "required": ["prompt"], "properties": props}
+        return params_schema(props)
 
     def validate(self, spec: dict[str, Any]) -> dict[str, Any]:
         variant = spec.get("variant", "9b")

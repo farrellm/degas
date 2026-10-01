@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from degas import __version__
-from degas.api import router
+from degas.api import register_error_handlers, router
 from degas.config import Config, load_config
 from degas.services import Services, build_services
 
@@ -30,6 +30,7 @@ def create_app(
 
     app = FastAPI(title="Degas", version=__version__, lifespan=lifespan)
     app.include_router(router)
+    register_error_handlers(app)
     if config.web_dist_dir.is_dir():
         app.mount("/", StaticFiles(directory=config.web_dist_dir, html=True), name="web")
     return app

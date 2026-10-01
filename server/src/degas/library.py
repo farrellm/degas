@@ -1,4 +1,5 @@
-"""Keeping results: saved generation configs (design §6.4) and retention (§6.3)."""
+"""Keeping results: saved generation configs (design §6.4), retention (§6.3), and the
+names and tags of what is kept."""
 
 import logging
 from collections.abc import Iterable, Iterator
@@ -102,3 +103,24 @@ def release(db: Database, blobs: BlobStore, shas: list[str]) -> None:
     for sha in gone:
         blobs.delete(sha)
     db.forget_transforms(gone)
+
+
+# -- saved prompts and tags ------------------------------------------------------------------
+
+PROMPT_NAME_WORDS = 6
+
+
+def prompt_name(prompt: str) -> str:
+    """A saved prompt's default name: its first few words."""
+    words = prompt.replace(",", " ").split()
+    name = " ".join(words[:PROMPT_NAME_WORDS])
+    return name + ("…" if len(words) > PROMPT_NAME_WORDS else "")
+
+
+def clean_tags(tags: list[str]) -> list[str]:
+    """Tags trimmed, without blanks or repeats (whatever their case)."""
+    out: list[str] = []
+    for tag in (t.strip() for t in tags):
+        if tag and tag.lower() not in (o.lower() for o in out):
+            out.append(tag)
+    return out

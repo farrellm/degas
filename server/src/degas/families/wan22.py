@@ -1,13 +1,25 @@
 """Wan 2.2 descriptor: text- and image-to-video (design §4.3)."""
 
-from typing import Any, Literal
+from typing import Any
 
 from degas.families.base import (
     JsonSchema,
+    LoraFormat,
+    MediaKind,
     SizeConstraints,
     SpecError,
     Variant,
     find_variant,
+)
+from degas.families.schema import (
+    negative_prompt_prop,
+    params_schema,
+    prompt_prop,
+    seed_prop,
+    size_props,
+    steps_prop,
+)
+from degas.families.validation import (
     snap_size,
     validate_inputs,
     validate_model,
@@ -46,8 +58,8 @@ BOUNDARY = {"t2v-a14b": 0.875, "i2v-a14b": 0.9}
 class Wan22:
     id = "wan22"
     label = "Wan 2.2"
-    media: Literal["image", "video"] = "video"
-    lora_format: Literal["single", "paired_hi_lo"] = "paired_hi_lo"
+    media: MediaKind = "video"
+    lora_format: LoraFormat = "paired_hi_lo"
     supports_control = False
     supports_image_prompts = False
     image_prompt_options = None
@@ -85,31 +97,9 @@ class Wan22:
         c = self.size_constraints(variant)
         width, height = c.presets[0]
         props: dict[str, JsonSchema] = {
-            "prompt": {"type": "string", "title": "Prompt", "minLength": 1, "x-widget": "prompt"},
-            "negative_prompt": {
-                "type": "string",
-                "title": "Negative prompt",
-                "default": "",
-                "x-widget": "prompt",
-            },
-            "width": {
-                "type": "integer",
-                "title": "Width",
-                "default": width,
-                "minimum": 256,
-                "maximum": 1280,
-                "multipleOf": c.multiple_of,
-                "x-widget": "aspect",
-            },
-            "height": {
-                "type": "integer",
-                "title": "Height",
-                "default": height,
-                "minimum": 256,
-                "maximum": 1280,
-                "multipleOf": c.multiple_of,
-                "x-widget": "aspect",
-            },
+            "prompt": prompt_prop(),
+            "negative_prompt": negative_prompt_prop(),
+            **size_props((width, height), minimum=256, maximum=1280, multiple_of=c.multiple_of),
             "num_frames": {
                 "type": "integer",
                 "title": "Frames",
@@ -127,14 +117,7 @@ class Wan22:
                 "maximum": 30,
                 "x-widget": "slider",
             },
-            "steps": {
-                "type": "integer",
-                "title": "Steps",
-                "default": d["steps"],
-                "minimum": 1,
-                "maximum": 80,
-                "x-widget": "slider",
-            },
+            "steps": steps_prop(d["steps"], 80),
             "cfg": {
                 "type": "number",
                 "title": "CFG" if variant == "ti2v-5b" else "CFG, high noise",
@@ -144,14 +127,7 @@ class Wan22:
                 "multipleOf": 0.5,
                 "x-widget": "slider",
             },
-            "seed": {
-                "type": "integer",
-                "title": "Seed",
-                "default": -1,
-                "minimum": -1,
-                "maximum": 2**32 - 1,
-                "x-widget": "seed",
-            },
+            "seed": seed_prop(),
         }
         if variant != "ti2v-5b":
             props["cfg_low"] = {
@@ -174,7 +150,7 @@ class Wan22:
                 "x-widget": "slider",
                 "x-advanced": True,
             }
-        return {"type": "object", "required": ["prompt"], "properties": props}
+        return params_schema(props)
 
     def validate(self, spec: dict[str, Any]) -> dict[str, Any]:
         variant = spec.get("variant", "ti2v-5b")

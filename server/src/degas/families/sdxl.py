@@ -1,15 +1,28 @@
 """Stable Diffusion XL descriptor."""
 
-from typing import Any, Literal
+from typing import Any
 
 from degas.families.base import (
-    IP_PURPOSES,
     ImagePromptOptions,
     JsonSchema,
+    LoraFormat,
+    MediaKind,
     SizeConstraints,
     SpecError,
     Variant,
     find_variant,
+)
+from degas.families.schema import (
+    choice_prop,
+    negative_prompt_prop,
+    params_schema,
+    prompt_prop,
+    seed_prop,
+    size_props,
+    steps_prop,
+)
+from degas.families.validation import (
+    IP_PURPOSES,
     snap_size,
     validate_control,
     validate_image_prompts,
@@ -66,6 +79,9 @@ CONFIGS = {
     "inpaint": "configs/sdxl/stable-diffusion-xl-1.0-inpainting-0.1",
 }
 
+# How much of the image an inpaint redraws.
+INPAINT_AREAS = {"whole": "The whole image", "masked": "Around the mask"}
+
 # Inpainting checkpoints default to DPM++ 2M SDE.
 SAMPLER = {"base": "dpmpp_2m", "inpaint": "dpmpp_2m_sde"}
 
@@ -88,8 +104,8 @@ PRESETS = (
 class Sdxl:
     id = "sdxl"
     label = "Stable Diffusion XL"
-    media: Literal["image", "video"] = "image"
-    lora_format: Literal["single", "paired_hi_lo"] = "single"
+    media: MediaKind = "image"
+    lora_format: LoraFormat = "single"
     supports_control = True
     supports_image_prompts = True
     image_prompt_options = ImagePromptOptions(
@@ -114,44 +130,10 @@ class Sdxl:
     def param_schema(self, variant: str, mode: str) -> JsonSchema:
         self._check(variant, mode)
         props: dict[str, JsonSchema] = {
-            "prompt": {
-                "type": "string",
-                "title": "Prompt",
-                "minLength": 1,
-                "x-widget": "prompt",
-            },
-            "negative_prompt": {
-                "type": "string",
-                "title": "Negative prompt",
-                "default": "",
-                "x-widget": "prompt",
-            },
-            "width": {
-                "type": "integer",
-                "title": "Width",
-                "default": 1024,
-                "minimum": 512,
-                "maximum": 2048,
-                "multipleOf": 8,
-                "x-widget": "aspect",
-            },
-            "height": {
-                "type": "integer",
-                "title": "Height",
-                "default": 1024,
-                "minimum": 512,
-                "maximum": 2048,
-                "multipleOf": 8,
-                "x-widget": "aspect",
-            },
-            "steps": {
-                "type": "integer",
-                "title": "Steps",
-                "default": 30,
-                "minimum": 1,
-                "maximum": 100,
-                "x-widget": "slider",
-            },
+            "prompt": prompt_prop(),
+            "negative_prompt": negative_prompt_prop(),
+            **size_props((1024, 1024), minimum=512, maximum=2048, multiple_of=8),
+            "steps": steps_prop(30, 100),
             "cfg": {
                 "type": "number",
                 "title": "CFG",
@@ -161,33 +143,15 @@ class Sdxl:
                 "multipleOf": 0.5,
                 "x-widget": "slider",
             },
-            "seed": {
-                "type": "integer",
-                "title": "Seed",
-                "default": -1,
-                "minimum": -1,
-                "maximum": 2**32 - 1,
-                "x-widget": "seed",
-            },
-            "scheduler": {
-                "type": "string",
-                "title": "Sampler",
-                "default": SAMPLER[variant],
-                "enum": list(SCHEDULERS),
-                "x-enum-labels": list(SCHEDULERS.values()),
-                "x-widget": "select",
-                "x-advanced": True,
-            },
-            "schedule": {
-                "type": "string",
-                "title": "Schedule",
-                "description": "Not used by Euler a or DDIM.",
-                "default": "karras",
-                "enum": list(SCHEDULES),
-                "x-enum-labels": list(SCHEDULES.values()),
-                "x-widget": "select",
-                "x-advanced": True,
-            },
+            "seed": seed_prop(),
+            "scheduler": choice_prop("Sampler", SCHEDULERS, SAMPLER[variant], advanced=True),
+            "schedule": choice_prop(
+                "Schedule",
+                SCHEDULES,
+                "karras",
+                description="Not used by Euler a or DDIM.",
+                advanced=True,
+            ),
             "clip_skip": {
                 "type": "integer",
                 "title": "CLIP skip",
@@ -206,7 +170,7 @@ class Sdxl:
             },
         }
         props.update(_mode_params(variant, mode))
-        return {"type": "object", "required": ["prompt"], "properties": props}
+        return params_schema(props)
 
     def validate(self, spec: dict[str, Any]) -> dict[str, Any]:
         variant = spec.get("variant", "base")
@@ -304,14 +268,7 @@ def _mode_params(variant: str, mode: str) -> dict[str, JsonSchema]:
             "x-widget": "slider",
         }
     if mode == "inpaint":
-        props["inpaint_area"] = {
-            "type": "string",
-            "title": "Redraw",
-            "default": "whole",
-            "enum": ["whole", "masked"],
-            "x-enum-labels": ["The whole image", "Around the mask"],
-            "x-widget": "select",
-        }
+        props["inpaint_area"] = choice_prop("Redraw", INPAINT_AREAS, "whole")
         props["mask_padding"] = {
             "type": "integer",
             "title": "Space around the mask",
