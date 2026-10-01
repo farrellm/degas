@@ -46,7 +46,11 @@ make deploy / make logs   # prod: systemd user unit + `tailscale serve --https=8
 - `spike/` is a frozen Phase 0 record — excluded from lint; don't edit.
 - The prod service serves `web/dist` from disk, so `pnpm build` / `make build` changes what
   the phone gets at once, with no restart. To check a build without deploying, build in a
-  scratch `git worktree`.
+  scratch `git worktree`. To check the UI live, run `cd web && pnpm dev --port 5199`: it
+  proxies `/api` to the running server (real data) and leaves `dist` alone.
+- A custom hook must not return a ref inside its result object: `react-hooks/refs` then
+  flags every read of that object during render. Create the ref in the component and pass
+  it in.
 - Pre-commit: hooks fix staged files on commit; `make check` runs in GitHub CI only.
 
 ## Workflow
