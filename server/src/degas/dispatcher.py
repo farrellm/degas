@@ -17,14 +17,14 @@ from datetime import UTC, datetime
 from typing import Any
 
 from degas import media
-from degas.blobs import BlobStore
+from degas.blobs import BlobStore, unref
 from degas.colab.session import SessionManager
 from degas.colab.worker_client import WorkerBusyError, WorkerClient, WorkerError
 from degas.db import Database, now
 from degas.events import EventBus
 from degas.families.base import spec_assets
-from degas.inputs import Inputs, unref
-from degas.library import input_blobs, saved_config
+from degas.inputs import Inputs
+from degas.library import input_blobs, saved_config, staged_blobs
 
 log = logging.getLogger(__name__)
 
@@ -224,7 +224,7 @@ class Dispatcher:
 
     async def _stage_inputs(self, worker: WorkerClient, spec: dict[str, Any]) -> None:
         """Send input blobs (content-addressed, so at most once per session)."""
-        for sha in _input_blobs(spec):
+        for sha in staged_blobs(spec):
             if await worker.has_blob(sha):
                 continue
             path = self.blobs.path(sha)
@@ -425,21 +425,3 @@ class Dispatcher:
             config = item["config"]
             return list(config.get("segments") or [config])
         return []
-
-
-def _input_blobs(spec: dict[str, Any]) -> list[str]:
-    shas: list[str] = []
-    inputs = spec.get("inputs") or {}
-    for value in [inputs.get("source"), inputs.get("mask"), *(inputs.get("refs") or [])]:
-        if isinstance(value, str) and value.startswith("sha256:"):
-            shas.append(value.removeprefix("sha256:"))
-    for unit in spec.get("control") or []:
-        for key in ("image", "mask"):
-            value = unit.get(key)
-            if isinstance(value, str) and value.startswith("sha256:"):
-                shas.append(value.removeprefix("sha256:"))
-    for unit in spec.get("image_prompts") or []:
-        for value in [*unit.get("images", []), unit.get("mask")]:
-            if isinstance(value, str) and value.startswith("sha256:"):
-                shas.append(value.removeprefix("sha256:"))
-    return shas

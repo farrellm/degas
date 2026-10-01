@@ -1,14 +1,17 @@
 """Family descriptors: what a model family offers and how its job specs are validated."""
 
-import re
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from typing import Any, Literal, Protocol
+
+from degas.blobs import is_ref
+from degas.errors import DegasError
+from degas.media import FIT_MODES
 
 GPUS = ("T4", "L4", "A100", "H100")  # ascending capability
 JsonSchema = dict[str, Any]
 
 
-class SpecError(ValueError):
+class SpecError(DegasError, ValueError):
     pass
 
 
@@ -84,7 +87,7 @@ def describe(family: FamilyDescriptor) -> dict[str, Any]:
         "supports_control": family.supports_control,
         "supports_image_prompts": family.supports_image_prompts,
         "image_prompt_options": (
-            family.image_prompt_options.__dict__ if family.image_prompt_options else None
+            asdict(family.image_prompt_options) if family.image_prompt_options else None
         ),
         "variants": [
             {
@@ -96,7 +99,7 @@ def describe(family: FamilyDescriptor) -> dict[str, Any]:
                 "lora_format": v.lora_format or family.lora_format,
                 "max_refs": v.max_refs,
                 "ref_max_pixels": v.ref_max_pixels,
-                "size_constraints": family.size_constraints(v.id).__dict__,
+                "size_constraints": asdict(family.size_constraints(v.id)),
             }
             for v in family.variants
         ],
@@ -104,8 +107,6 @@ def describe(family: FamilyDescriptor) -> dict[str, Any]:
 
 
 LORA_WEIGHT: JsonSchema = {"type": "number", "minimum": -2, "maximum": 2}
-SHA_REF = re.compile(r"^sha256:[0-9a-f]{64}$")
-FIT_MODES = ("crop", "pad", "stretch")
 # Modes that start from a source image.
 SOURCE_MODES = frozenset({"i2i", "i2v", "edit", "inpaint", "outpaint"})
 
@@ -136,7 +137,7 @@ def validate_inputs(inputs: Any, mode: str) -> dict[str, Any]:
         return {}
     inputs = inputs if isinstance(inputs, dict) else {}
     source = inputs.get("source")
-    if not isinstance(source, str) or not SHA_REF.match(source):
+    if not is_ref(source):
         raise SpecError("Choose a source image")
     fit = inputs.get("fit") or "crop"
     if fit not in FIT_MODES:
@@ -144,14 +145,14 @@ def validate_inputs(inputs: Any, mode: str) -> dict[str, Any]:
     out: dict[str, Any] = {"source": source, "fit": fit}
     if mode == "inpaint":
         mask = inputs.get("mask")
-        if not isinstance(mask, str) or not SHA_REF.match(mask):
+        if not is_ref(mask):
             raise SpecError("Paint the area to redraw")
         out["mask"] = mask
     if mode == "outpaint":
         out["place"] = inputs.get("place")
     extends = inputs.get("extends")
     if extends is not None:
-        if not isinstance(extends, str) or not SHA_REF.match(extends):
+        if not is_ref(extends):
             raise SpecError("extends: expected a sha256 reference")
         out["extends"] = extends
     return out
@@ -167,7 +168,7 @@ def validate_refs(refs: Any, limit: int) -> list[str]:
     if len(refs) > limit:
         raise SpecError(f"At most {limit} images can go with the source")
     for n, ref in enumerate(refs, 2):
-        if not isinstance(ref, str) or not SHA_REF.match(ref):
+        if not is_ref(ref):
             raise SpecError(f"Image {n}: expected a sha256 reference")
     return list(refs)
 
@@ -240,7 +241,7 @@ CONTROL_FRACTION: JsonSchema = {"type": "number", "minimum": 0, "maximum": 1}
 
 
 def _sha(value: Any, what: str) -> str:
-    if not isinstance(value, str) or not SHA_REF.match(value):
+    if not is_ref(value):
         raise SpecError(f"{what}: expected a sha256 reference")
     return value
 

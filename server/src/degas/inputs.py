@@ -16,7 +16,7 @@ import httpx2
 from starlette.concurrency import run_in_threadpool
 
 from degas import media
-from degas.blobs import THUMB_SIZE, BlobStore
+from degas.blobs import THUMB_SIZE, BlobStore, ref, unref
 from degas.db import Database
 from degas.families.base import FamilyDescriptor
 from degas.families.wan22 import extend_variant
@@ -32,14 +32,6 @@ USER_AGENT = (
     "Mozilla/5.0 (iPhone; CPU iPhone OS 19_0 like Mac OS X) AppleWebKit/605.1.15"
     " (KHTML, like Gecko) Version/19.0 Mobile/15E148 Safari/604.1"
 )
-
-
-def ref(sha: str) -> str:
-    return f"sha256:{sha}"
-
-
-def unref(value: str) -> str:
-    return value.removeprefix("sha256:")
 
 
 class Inputs:
@@ -335,7 +327,7 @@ class Inputs:
         if size is None:
             raise MediaError("The image the mask was painted on is no longer stored")
         png = await run_in_threadpool(media.normalize_mask, data, size)
-        return self._put_mask(png)
+        return self._put_image(png)
 
     async def remap_mask(self, mask: str, source: str, to: str) -> dict[str, Any]:
         """Carry a mask painted over `source` onto `to`, another crop of the same original.
@@ -356,7 +348,7 @@ class Inputs:
             raise MediaError("The mask no longer matches its image")
         ops = [*media.invert_ops(was["ops"] if was else [], *size), *(now["ops"] if now else [])]
         png = await run_in_threadpool(media.apply_mask_ops, data, ops)
-        return {**self._put_mask(png), "empty": await run_in_threadpool(media.mask_is_empty, png)}
+        return {**self._put_image(png), "empty": await run_in_threadpool(media.mask_is_empty, png)}
 
     async def store_trace(self, data: bytes, size: tuple[int, int]) -> dict[str, Any]:
         """Store a preprocessor's trace of an image (a depth map, a pose, edges), which must be
@@ -364,12 +356,6 @@ class Inputs:
         if media.image_size(data) != size:
             raise MediaError("the trace isn't the size of its image")
         return self._put_image(data)
-
-    def _put_mask(self, png: bytes) -> dict[str, Any]:
-        sha = self.blobs.put(png, "image/png")
-        self.db.hold_input(sha)
-        w, h = media.image_size(png) or (None, None)
-        return {"sha256": sha, "media_type": "image/png", "width": w, "height": h}
 
     # -- video extension -------------------------------------------------------------------
 

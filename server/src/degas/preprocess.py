@@ -7,8 +7,9 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Literal
 
+from degas.blobs import ref, unref
 from degas.colab.worker_client import WorkerError
-from degas.inputs import unref
+from degas.errors import DegasError
 from degas.media import MediaError
 from degas.services import Services
 
@@ -21,7 +22,7 @@ MAX_POINTS = 16
 MAX_TEXT = 200
 
 
-class PreprocessError(RuntimeError):
+class PreprocessError(DegasError):
     def __init__(self, status: int, message: str) -> None:
         super().__init__(message)
         self.status = status
@@ -104,9 +105,9 @@ async def run(svc: Services, kind: str, image: str, params: dict[str, Any]) -> d
         raise PreprocessError(404, "The image is no longer stored")
     clean = pre.check(params)
     worker = svc.sessions.worker
-    if worker is None or svc.sessions.state not in ("ready", "busy"):
+    if worker is None or not svc.sessions.running:
         raise PreprocessError(409, f"Start a session to {pre.use}")
-    request: dict[str, Any] = {"id": kind, "image": f"sha256:{sha}", "params": clean}
+    request: dict[str, Any] = {"id": kind, "image": ref(sha), "params": clean}
     if pre.asset:
         asset = svc.db.get_asset(pre.asset)
         if asset is None or asset["kind"] != "preprocessor":

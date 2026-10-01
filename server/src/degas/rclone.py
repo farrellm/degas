@@ -13,10 +13,12 @@ from typing import Protocol
 
 from PIL import Image
 
+from degas.errors import DegasError
+
 PREVIEW_SIDE = 768
 
 
-class RcloneError(RuntimeError):
+class RcloneError(DegasError):
     pass
 
 

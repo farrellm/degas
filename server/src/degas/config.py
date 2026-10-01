@@ -11,11 +11,13 @@ from pydantic import BaseModel, ConfigDict
 _REPO = Path(__file__).resolve().parents[3]
 
 
-class _Section(BaseModel):
+class Section(BaseModel):
+    """A TOML table: unknown keys are errors, so a typo isn't silently ignored."""
+
     model_config = ConfigDict(extra="forbid")
 
 
-class ColabConfig(_Section):
+class ColabConfig(Section):
     binary: str = "colab"
     auth: Literal["oauth2", "adc"] | None = None  # None: the CLI's default
     session_name: str = "degas"
@@ -29,32 +31,32 @@ class ColabConfig(_Section):
     exec_heartbeat: bool = True
 
 
-class DriveConfig(_Section):
+class DriveConfig(Section):
     root: str = "degas"  # folder under My Drive
     client_file: Path | None = None  # OAuth client JSON (desktop app)
     token_file: Path | None = None  # default: <data_dir>/drive_token.json
 
 
-class PushConfig(_Section):
+class PushConfig(Section):
     # VAPID contact: push services (Apple's included) want a mailto: or https: URL.
     subject: str = "mailto:degas@localhost"
     key_file: Path | None = None  # default: <data_dir>/vapid_private.pem (generated)
 
 
-class LoraConfig(_Section):
+class LoraConfig(Section):
     session_name: str = "degas-lora"  # its own Colab session, apart from the app's
     # A local rclone remote with write access to the same Drive, for `degas lora publish`
     # and Civitai imports.
     rclone_remote: str = "gdrive:"
 
 
-class CivitaiConfig(_Section):
+class CivitaiConfig(Section):
     # An API token (civitai.com → Account settings → API keys); many downloads need one.
     token_file: Path = Path("~/.config/civitai/token")
     api_base: str = "https://civitai.com"
 
 
-class Config(_Section):
+class Config(Section):
     data_dir: Path = Path("data")
     host: str = "127.0.0.1"
     port: int = 8420

@@ -23,6 +23,7 @@ from degas.colab.cli import Colab
 from degas.colab.session import RCLONE_URL
 from degas.colab.tunnel import Tunnel
 from degas.drive import AccessToken
+from degas.errors import DegasError
 from degas.lora import recipe
 from degas.lora.recipe import LORA_HOME, RemoteRun
 from degas.lora.settings import LoraSettings
@@ -35,7 +36,7 @@ _PROGRESS = re.compile(
 )
 
 
-class RunError(RuntimeError):
+class RunError(DegasError):
     pass
 
 

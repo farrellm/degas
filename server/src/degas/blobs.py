@@ -6,10 +6,13 @@ import re
 import time
 from collections.abc import Iterator
 from pathlib import Path
+from typing import TypeGuard
 
 from PIL import Image
 
-_SHA256 = re.compile(r"^[0-9a-f]{64}$")
+SHA256 = re.compile(r"[0-9a-f]{64}")
+REF_PREFIX = "sha256:"
+SHA_REF = re.compile(r"sha256:[0-9a-f]{64}")
 THUMB_SIZE = 512
 
 EXTENSIONS = {
@@ -21,6 +24,19 @@ EXTENSIONS = {
     "video/quicktime": "mov",
 }
 VIDEO_EXTENSIONS = {"mp4", "webm", "mov"}
+
+
+def ref(sha: str) -> str:
+    """How specs and saved configs name a blob: `sha256:<hex>`."""
+    return f"{REF_PREFIX}{sha}"
+
+
+def unref(value: str) -> str:
+    return value.removeprefix(REF_PREFIX)
+
+
+def is_ref(value: object) -> TypeGuard[str]:
+    return isinstance(value, str) and SHA_REF.fullmatch(value) is not None
 
 
 class BlobStore:
@@ -35,7 +51,7 @@ class BlobStore:
 
     def path(self, sha: str) -> Path | None:
         """Path of a stored blob, or None if absent."""
-        if not _SHA256.match(sha):
+        if not SHA256.fullmatch(sha):
             return None
         d = self.blobs / sha[:2]
         matches = list(d.glob(f"{sha}.*")) if d.exists() else []
@@ -112,5 +128,5 @@ class BlobStore:
         cutoff = time.time() - older_than_s
         for path in self.blobs.glob("*/*"):
             name = path.name.split(".", 1)[0]
-            if _SHA256.match(name) and path.stat().st_mtime <= cutoff:
+            if SHA256.fullmatch(name) and path.stat().st_mtime <= cutoff:
                 yield name

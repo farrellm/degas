@@ -9,12 +9,14 @@ import logging
 import re
 from typing import Protocol
 
+from degas.errors import DegasError
+
 log = logging.getLogger(__name__)
 
 _ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 
 
-class ColabError(RuntimeError):
+class ColabError(DegasError):
     pass
 
 

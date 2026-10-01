@@ -15,6 +15,7 @@ from typing import Any
 
 from degas.civitai.client import Civitai, CivitaiError
 from degas.civitai.plan import ImportPlan, PlanError, PlannedFile, plan_import
+from degas.errors import DegasError
 from degas.rclone import RcloneError, Remote, preview_jpeg
 
 log = logging.getLogger(__name__)
@@ -25,7 +26,7 @@ PROGRESS_INTERVAL_S = 0.5
 Progress = Callable[[str, int, int], None]
 
 
-class CivitaiImportError(RuntimeError):
+class CivitaiImportError(DegasError):
     """The import can't go ahead, or failed partway."""
 
 
@@ -176,7 +177,7 @@ class Importer:
             raise
 
 
-class ImportBusyError(RuntimeError):
+class ImportBusyError(DegasError):
     pass
 
 

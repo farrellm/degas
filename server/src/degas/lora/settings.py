@@ -11,7 +11,9 @@ import tomllib
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import Field, field_validator
+
+from degas.config import Section
 
 SETTINGS_FILE = "lora.toml"
 
@@ -29,11 +31,7 @@ DEFAULT_PROMPTS = [
 DEFAULT_NEGATIVE = "lowres, blurry, deformed, bad anatomy, extra fingers, watermark, text"
 
 
-class _Section(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-
-class TrainSettings(_Section):
+class TrainSettings(Section):
     network_dim: Annotated[int, Field(ge=1, le=256)] = 32
     network_alpha: Annotated[float, Field(gt=0)] = 16
     optimizer: Literal["AdamW8bit", "Prodigy"] = "AdamW8bit"
@@ -53,7 +51,8 @@ class TrainSettings(_Section):
     min_snr_gamma: float | None = 5.0
     noise_offset: float | None = None
     seed: int = 42
-    extra_args: list[str] = []  # passed to sdxl_train_network.py as they are
+    # Passed to sdxl_train_network.py as they are.
+    extra_args: list[str] = Field(default_factory=list)
 
     @property
     def lr(self) -> float:
@@ -92,7 +91,7 @@ class TrainSettings(_Section):
         return math.ceil(images * self.repeats_for(images) / self.batch_size) * self.epochs
 
 
-class SampleSettings(_Section):
+class SampleSettings(Section):
     prompts: list[str] = DEFAULT_PROMPTS
     negative: str = DEFAULT_NEGATIVE
     width: int = 896
@@ -113,7 +112,7 @@ class SampleSettings(_Section):
         return prompts
 
 
-class LoraSettings(_Section):
+class LoraSettings(Section):
     name: str  # the LoRA's file name, without .safetensors
     trigger: str  # a rare token that names the character, e.g. "ohwx"
     class_word: str  # what the character is: "woman", "man", "person"

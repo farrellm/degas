@@ -13,12 +13,14 @@ import socket
 from pathlib import Path
 from typing import Protocol
 
+from degas.errors import DegasError
+
 log = logging.getLogger(__name__)
 
 HOST = "root@colab-runtime"
 
 
-class TunnelError(RuntimeError):
+class TunnelError(DegasError):
     pass
 
 

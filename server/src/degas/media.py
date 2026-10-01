@@ -12,6 +12,8 @@ from typing import Any
 
 from PIL import Image, ImageOps
 
+from degas.errors import DegasError
+
 try:  # HEIC from iPhones; optional so the server runs without the plugin
     from pillow_heif import register_heif_opener  # type: ignore[import-not-found,unused-ignore]
 
@@ -29,7 +31,7 @@ VIDEO_TYPES = {"video/mp4", "video/webm", "video/quicktime"}
 Op = dict[str, Any]
 
 
-class MediaError(ValueError):
+class MediaError(DegasError, ValueError):
     pass
 
 
