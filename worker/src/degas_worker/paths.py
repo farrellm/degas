@@ -1,8 +1,16 @@
 """Filesystem layout on the VM."""
 
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
+
+_SHA256 = re.compile(r"[0-9a-f]{64}")
+
+
+def is_sha256(value: str) -> bool:
+    """Whether `value` can name a blob (and so is safe as a file name)."""
+    return _SHA256.fullmatch(value) is not None
 
 
 @dataclass(frozen=True)

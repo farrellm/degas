@@ -9,7 +9,6 @@ survive a dropped connection.
 import asyncio
 import json
 import logging
-import re
 import shutil
 import threading
 import traceback
@@ -20,18 +19,17 @@ from typing import Any
 
 from degas_worker.cache import AssetCache
 from degas_worker.families.base import FamilyRunner, JobCancelled, Output
-from degas_worker.paths import Paths
+from degas_worker.paths import Paths, is_sha256
 from degas_worker.spec import Spec
 
 log = logging.getLogger(__name__)
 
-_SHA256 = re.compile(r"^[0-9a-f]{64}$")
 TERMINAL = frozenset({"done", "error", "cancelled"})
 Event = dict[str, Any]
 
 
-class WorkerBusy(Exception):  # noqa: N818
-    pass
+class WorkerBusyError(Exception):
+    """The one generation slot is taken."""
 
 
 @dataclass
@@ -119,7 +117,7 @@ class _Context:
     def blob(self, ref: str) -> Path:
         sha = ref.removeprefix("sha256:")
         path = self._cache.paths.blobs / sha
-        if not _SHA256.match(sha) or not path.exists():
+        if not is_sha256(sha) or not path.exists():
             raise ValueError(f"Input {ref} was not staged on the worker")
         return path
 
@@ -127,6 +125,62 @@ class _Context:
         for path in self.pins:
             self._cache.unpin(path)
         self.pins.clear()
+
+
+class OutputStore:
+    """A job's outputs on disk, each with a small JSON sidecar, until the server has them."""
+
+    def __init__(self, root: Path) -> None:
+        self.root = root
+
+    def _dir(self, job_id: str) -> Path:
+        if not job_id or "/" in job_id or job_id.startswith("."):
+            raise ValueError(f"Invalid job id {job_id!r}")
+        return self.root / job_id
+
+    def put(self, job_id: str, output: Output) -> None:
+        d = self._dir(job_id)
+        d.mkdir(parents=True, exist_ok=True)
+        (d / f"{output.item}.{output.ext}").write_bytes(output.data)
+        meta = {
+            "job": job_id,
+            "item": output.item,
+            "seed": output.seed,
+            "media_type": output.media_type,
+            "file": f"{output.item}.{output.ext}",
+        }
+        (d / f"{output.item}.json").write_text(json.dumps(meta))
+
+    def pending(self) -> list[dict[str, Any]]:
+        """Outputs not yet acknowledged by the server."""
+        found = []
+        if self.root.exists():
+            for meta in sorted(self.root.glob("*/*.json")):
+                try:
+                    found.append(json.loads(meta.read_text()))
+                except (OSError, ValueError):
+                    continue
+        return found
+
+    def file(self, job_id: str, item: int) -> tuple[Path, str] | None:
+        """An output's file and media type, or None if there is no such output."""
+        meta_path = self._dir(job_id) / f"{item}.json"
+        if not meta_path.exists():
+            return None
+        meta = json.loads(meta_path.read_text())
+        return self._dir(job_id) / meta["file"], meta["media_type"]
+
+    def ack(self, job_id: str, item: int) -> bool:
+        """The server has this output: delete it."""
+        found = self.file(job_id, item)
+        if found is None:
+            return False
+        found[0].unlink(missing_ok=True)
+        (self._dir(job_id) / f"{item}.json").unlink(missing_ok=True)
+        d = self._dir(job_id)
+        if not any(d.iterdir()):
+            shutil.rmtree(d, ignore_errors=True)
+        return True
 
 
 class JobManager:
@@ -141,6 +195,7 @@ class JobManager:
         self._factories = runners
         self._runner: FamilyRunner | None = None
         self._runner_family: str | None = None
+        self.outputs = OutputStore(paths.outputs)
         self.current: JobRecord | None = None  # running, or the most recent job
         self._jobs: dict[str, JobRecord] = {}
 
@@ -157,7 +212,7 @@ class JobManager:
 
     def start(self, job_id: str, spec: Spec, seeds: list[int]) -> JobRecord:
         if self.busy:
-            raise WorkerBusy
+            raise WorkerBusyError
         if job_id in self._jobs:
             raise ValueError(f"Job {job_id} already exists")
         if spec.get("family") not in self._factories:
@@ -197,7 +252,7 @@ class JobManager:
         try:
             runner = self._runner_for(record.spec["family"])
             for output in runner.run(record.spec, record.seeds, ctx):
-                self._store(record.id, output)
+                self.outputs.put(record.id, output)
                 record.emit(
                     {
                         "t": "output",
@@ -215,52 +270,3 @@ class JobManager:
             record.emit({"t": "error", "message": message, "trace": traceback.format_exc()})
         finally:
             ctx.release()
-
-    # -- outputs ---------------------------------------------------------------------------
-
-    def _output_dir(self, job_id: str) -> Path:
-        if not job_id or "/" in job_id or job_id.startswith("."):
-            raise ValueError(f"Invalid job id {job_id!r}")
-        return self.paths.outputs / job_id
-
-    def _store(self, job_id: str, output: Output) -> None:
-        d = self._output_dir(job_id)
-        d.mkdir(parents=True, exist_ok=True)
-        (d / f"{output.item}.{output.ext}").write_bytes(output.data)
-        meta = {
-            "job": job_id,
-            "item": output.item,
-            "seed": output.seed,
-            "media_type": output.media_type,
-            "file": f"{output.item}.{output.ext}",
-        }
-        (d / f"{output.item}.json").write_text(json.dumps(meta))
-
-    def outputs(self) -> list[dict[str, Any]]:
-        """Outputs not yet acknowledged by the server."""
-        found = []
-        if self.paths.outputs.exists():
-            for meta in sorted(self.paths.outputs.glob("*/*.json")):
-                try:
-                    found.append(json.loads(meta.read_text()))
-                except (OSError, ValueError):
-                    continue
-        return found
-
-    def output_file(self, job_id: str, item: int) -> tuple[Path, str] | None:
-        meta_path = self._output_dir(job_id) / f"{item}.json"
-        if not meta_path.exists():
-            return None
-        meta = json.loads(meta_path.read_text())
-        return self._output_dir(job_id) / meta["file"], meta["media_type"]
-
-    def ack(self, job_id: str, item: int) -> bool:
-        found = self.output_file(job_id, item)
-        if found is None:
-            return False
-        found[0].unlink(missing_ok=True)
-        (self._output_dir(job_id) / f"{item}.json").unlink(missing_ok=True)
-        d = self._output_dir(job_id)
-        if not any(d.iterdir()):
-            shutil.rmtree(d, ignore_errors=True)
-        return True
