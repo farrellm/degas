@@ -1,4 +1,5 @@
-"""Phase 10: FLUX.1 [dev] (text-to-image) and FLUX.2 [klein] (edit with references)."""
+"""Phase 10: FLUX.1 [dev] (text-to-image) and FLUX.2 [klein] (text-to-image, and edit with
+references)."""
 
 from typing import Any
 
@@ -76,10 +77,17 @@ def test_klein_defaults_to_four_steps() -> None:
     assert "config" not in spec
 
 
+def test_klein_from_text_takes_no_images() -> None:
+    spec = Klein().validate({**EDIT, "mode": "t2i", "inputs": {"source": SHA, "refs": [SHA]}})
+    assert spec["mode"] == "t2i"
+    assert spec["inputs"] == {}
+    assert spec["params"]["steps"] == 4
+
+
 @pytest.mark.parametrize(
     ("change", "message"),
     [
-        ({"mode": "t2i"}, "can't do 't2i'"),
+        ({"mode": "inpaint"}, "can't do 'inpaint'"),
         ({"inputs": {}}, "Choose a source image"),
         ({"inputs": {"source": SHA, "refs": [SHA] * 4}}, "At most 3 images"),
         ({"params": {"prompt": "x", "cfg": 4}}, "Unknown parameters"),
@@ -133,3 +141,9 @@ def test_a_klein_edit_fits_the_source_and_sends_references(
     done = run(client, spec)
     assert harness.klein.calls[-1] == {"mode": "edit", "images": [(1024, 1024), (300, 500)]}
     assert done["spec"]["inputs"]["refs"] == [f"sha256:{ref['sha256']}"]
+
+
+def test_a_klein_job_from_text_sends_no_images(client: TestClient, harness: Harness) -> None:
+    done = run(client, {**EDIT, "mode": "t2i", "inputs": {}})
+    assert done["status"] == "done"
+    assert harness.klein.calls[-1] == {"mode": "t2i", "images": []}

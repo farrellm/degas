@@ -264,7 +264,7 @@ Built. For the subway or the couch: a switch in the header, left of the session 
 Built. Two new families, found under the Model button like Qwen. They need no new widgets, because each form is built from its family's schema.
 
 - **FLUX.1 [dev]** has only *From text*. Its settings are *Guidance* (3.5), *Steps* (28) and the size. There's no *Negative prompt* and no *CFG*, because the model is guidance-distilled, and the Guidance field says so.
-- **FLUX.2 [klein]** has only *Edit*. Its settings are *Steps* (4, and the field says the model is distilled to 4) and the size. The *Images* row takes up to 3 images after the source, since klein reads 4 in all. Its *Add image* is disabled at that limit, as Qwen's is at 9: the limit comes from the variant (`max_refs`). A family whose variant declares no references has no Images row, even in *Edit*.
+- **FLUX.2 [klein]** does *From text* and *Edit*. Its settings are *Steps* (4, and the field says the model is distilled to 4) and the size. In *Edit*, the *Images* row takes up to 3 images after the source, since klein reads 4 in all. Its *Add image* is disabled at that limit, as Qwen's is at 9: the limit comes from the variant (`max_refs`). A family whose variant declares no references has no Images row, even in *Edit*.
 - **Crop readout.** Klein scales references down to 1 megapixel and never up, so cropping a reference small doesn't bring the ochre *The model scales it up* warning that Qwen shows.
 
 ### Phase 11: Image prompts

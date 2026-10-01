@@ -1,8 +1,9 @@
-"""FLUX.2 [klein] runner: editing from up to 4 images (design §4.3).
+"""FLUX.2 [klein] runner: text-to-image, and editing from up to 4 images (design §4.3).
 
-`Flux2KleinPipeline` takes the source and its references as condition images, each scaled
-down to at most 1 megapixel. The 9B model is step-distilled: 4 steps and no CFG, so guidance
-is left at 1. The model is the official diffusers folder, in bf16.
+For an edit, `Flux2KleinPipeline` takes the source and its references as condition images,
+each scaled down to at most 1 megapixel; with none it makes the image from the prompt alone.
+The 9B model is step-distilled: 4 steps and no CFG, so guidance is left at 1. The model is
+the official diffusers folder, in bf16.
 """
 
 from collections.abc import Iterator
@@ -33,13 +34,16 @@ class KleinRunner:
         self.adapters: dict[str, str] = {}  # LoRA asset path → loaded adapter name
 
     def run(self, spec: Spec, seeds: list[int], ctx: RunContext) -> Iterator[Output]:
-        if spec.get("mode") != "edit":
-            raise ValueError(f"FLUX.2 [klein] can't do {spec.get('mode')!r}")
+        mode = spec.get("mode")
+        if mode not in ("t2i", "edit"):
+            raise ValueError(f"FLUX.2 [klein] can't do {mode!r}")
         model = spec["model"]
         path = ctx.fetch_asset(model["path"], model.get("size"))
         loras = fetch_loras(spec, ctx)
-        inputs = spec["inputs"]
-        images = [_open(ctx.blob(ref)) for ref in [inputs["source"], *inputs.get("refs", [])]]
+        inputs = spec.get("inputs") or {}
+        images: list[Image.Image] = []
+        if mode == "edit":
+            images = [_open(ctx.blob(ref)) for ref in [inputs["source"], *inputs.get("refs", [])]]
         ctx.check_cancelled()
         ctx.progress(0, "load", 0, 1)
         self._load(path)
@@ -49,13 +53,14 @@ class KleinRunner:
         params = spec["params"]
         steps = int(params["steps"])
         kwargs: dict[str, Any] = {
-            "image": images,
             "prompt": params["prompt"],
             "width": int(params["width"]),
             "height": int(params["height"]),
             "num_inference_steps": steps,
             "guidance_scale": 1.0,
         }
+        if images:
+            kwargs["image"] = images
         for item, seed in enumerate(seeds):
             ctx.check_cancelled()
             ctx.progress(item, "denoise", 0, steps)

@@ -50,7 +50,7 @@ def test_families_and_schema(client: TestClient) -> None:
     assert by_id["sdxl"]["variants"][0]["modes"] == ["t2i", "i2i", "inpaint", "outpaint"]
     assert by_id["flux1"]["variants"][0]["modes"] == ["t2i"]
     assert by_id["qwen21"]["variants"][0]["modes"] == ["t2i", "edit", "inpaint"]
-    assert by_id["klein"]["variants"][0]["modes"] == ["edit"]
+    assert by_id["klein"]["variants"][0]["modes"] == ["t2i", "edit"]
     wan = {v["id"]: v for v in by_id["wan22"]["variants"]}
     assert wan["ti2v-5b"]["modes"] == ["t2v", "i2v"]
     assert wan["ti2v-5b"]["lora_format"] == "single"

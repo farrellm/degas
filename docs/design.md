@@ -266,11 +266,12 @@ class FamilyRunner:
 
 - **Model.** FLUX.2 [klein] 9B: a 9B flow transformer with Qwen3-8B as its text encoder and the FLUX.2 VAE, step-distilled to 4 steps. Released January 2026 under the FLUX Non-Commercial License. diffusers' `Flux2KleinPipeline`, which is in diffusers 0.40 and in the pinned commit.
 - **Checkpoint.** The official diffusers folder `black-forest-labs/FLUX.2-klein-9B` under `models/klein/` (about 35 GB: transformer 18.2 GB, text encoder 16.4 GB, all bf16).
-- **Variant `9b`**, mode `edit` only, minimum GPU L4. It uses the same offload rule as Qwen: offloaded on an L4 or A100, and fully on the GPU on an H100.
+- **Variant `9b`**, modes `t2i` and `edit`, minimum GPU L4. It uses the same offload rule as Qwen: offloaded on an L4 or A100, and fully on the GPU on an H100.
+- **Text-to-image.** The same pipeline with no condition images.
 - **Edit.** The source is image 1 and `inputs.refs` adds up to 3 more: BFL's model table allows klein 4 images, and the pipeline itself sets no limit. The pipeline scales each condition image down to at most 1 megapixel and never up, so the crop editor doesn't warn that a small reference will be enlarged (`Variant.ref_max_pixels`). Images with alpha are flattened onto white.
 - **Parameters:** prompt, width and height (multiples of 16, up to 4 MP, default 1024²), steps (default 4) and seed. There's no CFG or negative prompt, so guidance is fixed at 1.
 - **LoRAs:** single files, in `loras/klein/`, loaded by the pipeline's `Flux2LoraLoaderMixin`.
-- **Not in v1:** `t2i` and `inpaint` (the same pipeline does text-to-image, and inpaint could work like Qwen's, as an edit pasted back through the mask); the 4B and undistilled base models.
+- **Not in v1:** `inpaint` (it could work like Qwen's, as an edit pasted back through the mask); the 4B and undistilled base models.
 
 ### 4.4 Preprocessors
 
