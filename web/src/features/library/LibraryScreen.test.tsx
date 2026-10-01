@@ -40,6 +40,19 @@ describe('Library', () => {
     expect(screen.getByRole('button', { name: 'Generate' })).toBeDisabled()
   })
 
+  it('opens a kept image without React warnings', async () => {
+    const errors = vi.spyOn(console, 'error')
+    mockApi({
+      'GET /api/library': () => ({ items: [LIBRARY_ITEM], cursor: null }),
+    })
+    const user = userEvent.setup()
+    renderApp()
+    await user.click(await screen.findByRole('button', { name: 'Library' }))
+    await user.click(await screen.findByRole('button', { name: 'Open a harbour at dusk' }))
+    expect(screen.getByLabelText('Tags')).toBeInTheDocument()
+    expect(errors).not.toHaveBeenCalled()
+  })
+
   it('deletes a kept image after confirming', async () => {
     const deleted: string[] = []
     mockApi({
