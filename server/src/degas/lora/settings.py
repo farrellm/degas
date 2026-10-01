@@ -25,8 +25,10 @@ DEFAULT_PROMPTS = [
     "candid photo of {subject} laughing in a busy cafe, 35mm film",
     "photo of {subject} as an astronaut on the surface of the moon, cinematic lighting",
     "impressionist oil painting of {subject} in a garden, loose brushwork",
-    "photo of a {class_word}, head and shoulders portrait, looking at the camera,"
-    " soft window light",
+    (
+        "photo of a {class_word}, head and shoulders portrait, looking at the camera,"
+        " soft window light"
+    ),
 ]
 DEFAULT_NEGATIVE = "lowres, blurry, deformed, bad anatomy, extra fingers, watermark, text"
 

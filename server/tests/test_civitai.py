@@ -338,8 +338,11 @@ async def test_import_refuses_duplicates_unless_forced() -> None:
     with pytest.raises(PlanError, match="already exists"):
         await imp.plan("200002", same_name)
     p = await imp.plan("200002", index, force=True)
-    assert p.warnings == ["Going ahead anyway: test-style-xl.safetensors is already in Drive"
-                          " as loras/sdxl/mine.safetensors"]  # fmt: skip
+    warning = (
+        "Going ahead anyway: test-style-xl.safetensors is already in Drive"
+        " as loras/sdxl/mine.safetensors"
+    )
+    assert p.warnings == [warning]
 
 
 async def test_import_deletes_a_file_that_fails_its_checks() -> None:

@@ -178,7 +178,7 @@ A new top-level list, beside `control`, recorded in the saved config (§6.4):
 
 - `purpose`: `all | style | layout | style_layout`. It maps to block scales in the runner
   (§2.4). The table lives in `degas_worker/families/ip_adapter.py`, torch-free so it's testable.
-- `validate_image_prompts` in `families/base.py`, next to `validate_control`: at most 2 units, at
+- `validate_image_prompts` in `families/validation.py`, next to `validate_control`: at most 2 units, at
   most 4 images each, adapter under `ip_adapters/<family>/`, each adapter once, `start < end`,
   weight 0–2. All units must name the same encoder, which the descriptor resolves from the index
   and writes into `image_encoder` so it's prefetched and staged like the fp16 VAE.
@@ -193,7 +193,7 @@ A new top-level list, beside `control`, recorded in the saved config (§6.4):
   shows exactly what the model saw. An area mask is fitted to the output size exactly as a control
   unit's area is (`_fit_mask`).
 - Everywhere that walks `control` walks `image_prompts` too: `library.input_blobs` and the saved
-  config (`library.py`), Remix's missing-asset check (`api.py`), and the dispatcher's staging and
+  config (`library.py`), Remix's missing-asset check (`submission.py`), and the dispatcher's staging and
   prefetch (`dispatcher.py`). Worth a small helper, `spec_inputs(spec)`, so the next list doesn't
   need four edits again.
 
