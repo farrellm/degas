@@ -20,8 +20,9 @@ GB = 1000**3
 MB = 1000**2
 
 
-def add_parser(sub: Any) -> None:
+def add_parser(sub: "argparse._SubParsersAction[argparse.ArgumentParser]") -> None:
     civitai = sub.add_parser("civitai", help="import LoRAs from Civitai into Drive")
+    civitai.set_defaults(run=run)
     cmd = civitai.add_subparsers(dest="civitai_command", required=True)
     imp = cmd.add_parser("import", help="copy a LoRA into loras/<family>/ with a sidecar")
     imp.add_argument("url", help="a Civitai model or version link, an AIR, or a version id")

@@ -7,11 +7,13 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from degas.blobs import ref, unref
+from degas.blobs import BlobStore, ref, unref
+from degas.colab.session import SessionManager
 from degas.colab.worker_client import WorkerError
+from degas.db import Database
 from degas.errors import DegasError
+from degas.inputs import Inputs
 from degas.media import MediaError
-from degas.services import Services
 
 SAM_ASSET = "preprocessors/sam3"
 DEPTH_ASSET = "preprocessors/depth-anything-v2"
@@ -89,67 +91,81 @@ KINDS: dict[str, Kind] = {
 }
 
 
-async def run(svc: Services, kind: str, image: str, params: dict[str, Any]) -> dict[str, Any]:
-    """Run a preprocessor on an image blob; returns its outputs as stored blobs.
+class Preprocessing:
+    """Runs preprocessors on the session's worker and stores what they answer as blobs."""
 
-    SAM answers `{candidates: [mask], chosen}`; the traces answer `{image}`; a face answers
-    `{image, faces}`, the aligned crop of the picture's main face and how many it has.
-    """
-    pre = KINDS.get(kind)
-    if pre is None:
-        raise PreprocessError(400, f"Unknown preprocessor {kind!r}")
-    sha = unref(image)
-    size = svc.blobs.image_size(sha) if not svc.blobs.is_video(sha) else None
-    path = svc.blobs.path(sha)
-    if size is None or path is None:
-        raise PreprocessError(404, "The image is no longer stored")
-    clean = pre.check(params)
-    worker = svc.sessions.worker
-    if worker is None or not svc.sessions.running:
-        raise PreprocessError(409, f"Start a session to {pre.use}")
-    request: dict[str, Any] = {"id": kind, "image": ref(sha), "params": clean}
-    if pre.asset:
-        asset = svc.db.get_asset(pre.asset)
-        if asset is None or asset["kind"] != "preprocessor":
-            raise PreprocessError(
-                400, f"{pre.model} isn't in Drive. Put it under degas/{pre.asset}/, then rescan."
-            )
-        request["asset"] = {"path": asset["path"], "size": asset["size"]}
-    svc.sessions.touch()
-    try:
-        if not await worker.has_blob(sha):
-            await worker.put_blob(sha, path.read_bytes())
-        out = await worker.preprocess(request)
-    except WorkerError as e:
-        if kind == "face" and NO_FACE in str(e):
-            raise PreprocessError(422, f"{NO_FACE}.") from None
-        raise PreprocessError(502, f"{pre.name} failed on the GPU: {e}") from None
-    return await _answer(svc, pre, out, sha, size)
+    def __init__(
+        self, db: Database, blobs: BlobStore, sessions: SessionManager, inputs: Inputs
+    ) -> None:
+        self.db = db
+        self.blobs = blobs
+        self.sessions = sessions
+        self.inputs = inputs
 
+    async def run(self, kind: str, image: str, params: dict[str, Any]) -> dict[str, Any]:
+        """Run a preprocessor on an image blob; returns its outputs as stored blobs.
 
-async def _answer(
-    svc: Services, pre: Kind, out: dict[str, Any], sha: str, size: tuple[int, int]
-) -> dict[str, Any]:
-    """Store what the worker answered as blobs."""
-    if pre.output == "face":
+        SAM answers `{candidates: [mask], chosen}`; the traces answer `{image}`; a face answers
+        `{image, faces}`, the aligned crop of the picture's main face and how many it has.
+        """
+        pre = KINDS.get(kind)
+        if pre is None:
+            raise PreprocessError(400, f"Unknown preprocessor {kind!r}")
+        sha = unref(image)
+        size = self.blobs.image_size(sha) if not self.blobs.is_video(sha) else None
+        path = self.blobs.path(sha)
+        if size is None or path is None:
+            raise PreprocessError(404, "The image is no longer stored")
+        clean = pre.check(params)
+        worker = self.sessions.worker
+        if worker is None or not self.sessions.running:
+            raise PreprocessError(409, f"Start a session to {pre.use}")
+        request: dict[str, Any] = {"id": kind, "image": ref(sha), "params": clean}
+        if pre.asset:
+            asset = self.db.get_asset(pre.asset)
+            if asset is None or asset["kind"] != "preprocessor":
+                raise PreprocessError(
+                    400,
+                    f"{pre.model} isn't in Drive. Put it under degas/{pre.asset}/, then rescan.",
+                )
+            request["asset"] = {"path": asset["path"], "size": asset["size"]}
+        self.sessions.touch()
         try:
-            data = base64.b64decode(out["image"], validate=True)
-            return {"image": await svc.inputs.store(data, "image/png"), "faces": out.get("faces")}
-        except (binascii.Error, KeyError, TypeError, MediaError) as e:
-            raise PreprocessError(502, f"The GPU returned an unreadable face: {e}") from None
-    if pre.output == "image":
-        try:
-            data = base64.b64decode(out["image"], validate=True)
-            return {"image": await svc.inputs.store_trace(data, size)}
-        except (binascii.Error, KeyError, TypeError, MediaError) as e:
-            raise PreprocessError(502, f"The GPU returned an unreadable image: {e}") from None
-    candidates = []
-    for c in out.get("candidates") or []:
-        try:
-            data = base64.b64decode(c["mask"], validate=True)
-            stored = await svc.inputs.store_mask(sha, data)
-        except (binascii.Error, KeyError, MediaError) as e:
-            raise PreprocessError(502, f"The GPU returned an unreadable mask: {e}") from None
-        candidates.append({**stored, "score": c.get("score")})
-    chosen = out.get("chosen", 0) if candidates else None
-    return {"candidates": candidates, "chosen": chosen}
+            if not await worker.has_blob(sha):
+                await worker.put_blob(sha, path.read_bytes())
+            out = await worker.preprocess(request)
+        except WorkerError as e:
+            if kind == "face" and NO_FACE in str(e):
+                raise PreprocessError(422, f"{NO_FACE}.") from None
+            raise PreprocessError(502, f"{pre.name} failed on the GPU: {e}") from None
+        return await self._answer(pre, out, sha, size)
+
+    async def _answer(
+        self, pre: Kind, out: dict[str, Any], sha: str, size: tuple[int, int]
+    ) -> dict[str, Any]:
+        """Store what the worker answered as blobs."""
+        if pre.output == "face":
+            try:
+                data = base64.b64decode(out["image"], validate=True)
+                return {
+                    "image": await self.inputs.store(data, "image/png"),
+                    "faces": out.get("faces"),
+                }
+            except (binascii.Error, KeyError, TypeError, MediaError) as e:
+                raise PreprocessError(502, f"The GPU returned an unreadable face: {e}") from None
+        if pre.output == "image":
+            try:
+                data = base64.b64decode(out["image"], validate=True)
+                return {"image": await self.inputs.store_trace(data, size)}
+            except (binascii.Error, KeyError, TypeError, MediaError) as e:
+                raise PreprocessError(502, f"The GPU returned an unreadable image: {e}") from None
+        candidates = []
+        for c in out.get("candidates") or []:
+            try:
+                data = base64.b64decode(c["mask"], validate=True)
+                stored = await self.inputs.store_mask(sha, data)
+            except (binascii.Error, KeyError, MediaError) as e:
+                raise PreprocessError(502, f"The GPU returned an unreadable mask: {e}") from None
+            candidates.append({**stored, "score": c.get("score")})
+        chosen = out.get("chosen", 0) if candidates else None
+        return {"candidates": candidates, "chosen": chosen}

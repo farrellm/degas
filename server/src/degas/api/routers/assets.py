@@ -19,7 +19,7 @@ async def assets(
 
 @router.post("/assets/rescan")
 async def rescan(svc: Svc) -> dict[str, Any]:
-    count = await svc.rescan()
+    count = await svc.assets.rescan()
     return {"count": count, "indexed_at": svc.db.get_setting("drive.indexed_at")}
 
 
@@ -32,7 +32,7 @@ async def delete_assets(svc: Svc, path: Annotated[list[str], Query()]) -> dict[s
             raise HTTPException(404, f"{p} isn't in the Drive index")
         if asset["kind"] != "lora":
             raise HTTPException(400, "Only LoRAs can be deleted from Degas")
-    await svc.delete_loras(path)
+    await svc.assets.delete_loras(path)
     return {"deleted": path}
 
 

@@ -436,6 +436,7 @@ def civitai_client(harness: Harness) -> Iterator[tuple[TestClient, FakeCivitai, 
         svc.imports.importer = Importer(
             Civitai(None, http=http), remote, "gdrive:", "degas", set(FAMILIES)
         )
+        svc.assets.remote = remote
         return svc
 
     with TestClient(create_app(harness.config, build)) as client:
