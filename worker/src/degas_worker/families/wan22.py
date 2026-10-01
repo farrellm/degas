@@ -7,7 +7,6 @@ components. The A14B variants have two experts (`transformer` for high noise,
 """
 
 import contextlib
-import gc
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -19,11 +18,14 @@ from PIL import Image
 
 from degas_worker.families.base import Output, RunContext
 from degas_worker.families.lora import expert_loras, plan_loras
+from degas_worker.families.offload import place
+from degas_worker.families.runtime import (
+    free_gpu_memory,
+    seeded,
+    step_callback,
+)
 from degas_worker.spec import Spec
 from degas_worker.video import encode_mp4
-
-# Offload to the CPU when the loaded weights take more than this share of the GPU's memory.
-_OFFLOAD_ABOVE = 0.7
 
 # (LoRA asset path, local file, weight, component it goes into)
 LoraLoad = tuple[str, Path, float, str]
@@ -85,18 +87,10 @@ class Wan22Runner:
             ctx.check_cancelled()
             ctx.progress(item, "denoise", 0, steps)
 
-            def on_step(
-                _pipe: Any, i: int, _t: Any, cb_kwargs: dict[str, Any], item: int = item
-            ) -> dict[str, Any]:
-                ctx.check_cancelled()
-                done = i + 1
-                ctx.progress(item, "denoise" if done < steps else "decode", done, steps)
-                return cb_kwargs
-
             frames = pipe(
                 **kwargs,
-                generator=torch.Generator("cpu").manual_seed(seed),
-                callback_on_step_end=on_step,
+                generator=seeded(seed),
+                callback_on_step_end=step_callback(ctx, item, steps),
             ).frames[0]
             ctx.progress(item, "encode", steps, steps)
             pixels = (np.clip(np.asarray(frames), 0, 1) * 255).round().astype(np.uint8)
@@ -116,12 +110,7 @@ class Wan22Runner:
             str(path), subfolder="vae", torch_dtype=torch.float32
         )
         pipe = DiffusionPipeline.from_pretrained(str(path), vae=vae, torch_dtype=torch.bfloat16)
-        _free, total = torch.cuda.mem_get_info()
-        weights = _loaded_bytes(pipe)
-        if weights > total * _OFFLOAD_ABOVE:
-            pipe.enable_model_cpu_offload()
-        else:
-            pipe.to("cuda")
+        place(pipe)
         with contextlib.suppress(AttributeError):
             pipe.vae.enable_tiling()  # 720p decodes otherwise peak well above the denoiser
         pipe.set_progress_bar_config(disable=True)
@@ -185,14 +174,4 @@ class Wan22Runner:
         self.i2v = None
         self.model_path = None
         self.adapters = {}
-        gc.collect()
-        torch.cuda.empty_cache()
-
-
-def _loaded_bytes(pipe: Any) -> int:
-    """Size of the pipeline's weights as loaded (Wan's repos store fp32; they load as bf16)."""
-    total = 0
-    for component in pipe.components.values():
-        if isinstance(component, torch.nn.Module):
-            total += sum(p.numel() * p.element_size() for p in component.parameters())
-    return total
+        free_gpu_memory()

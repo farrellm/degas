@@ -1,6 +1,5 @@
 """Depth Anything V2 (a transformers folder) for a depth ControlNet: near is white."""
 
-import gc
 from pathlib import Path
 from typing import Any
 
@@ -8,6 +7,7 @@ import torch
 from PIL import Image
 from transformers import AutoImageProcessor, AutoModelForDepthEstimation
 
+from degas_worker.families.runtime import free_gpu_memory
 from degas_worker.preprocess.base import trace
 
 
@@ -52,5 +52,4 @@ class Depth:
         self.model = None
         self.processor = None
         self.model_dir = None
-        gc.collect()
-        torch.cuda.empty_cache()
+        free_gpu_memory()
