@@ -4,6 +4,7 @@ from degas_worker.families.lora import (
     adapter_name,
     expert_loras,
     plan_loras,
+    qwen21_lora_state,
     single_loras,
     strip_text_model,
 )
@@ -71,3 +72,57 @@ def test_expert_loras_send_each_half_to_its_expert() -> None:
         (only_low, "transformer_2"),
         (single, "transformer"),
     ]
+
+
+class _Tensor:
+    """Enough of a tensor for `qwen21_lora_state`: rows of numbers, or a scalar."""
+
+    def __init__(self, rows: Any) -> None:
+        self.rows = rows
+
+    @property
+    def shape(self) -> tuple[int, ...]:
+        return (len(self.rows), len(self.rows[0]))
+
+    def __getitem__(self, rows: slice) -> "_Tensor":
+        return _Tensor(self.rows[rows])
+
+    def __mul__(self, scale: float) -> "_Tensor":
+        return _Tensor([[x * scale for x in row] for row in self.rows])
+
+    def __float__(self) -> float:
+        return float(self.rows)
+
+
+def _rows(state: dict[str, Any]) -> dict[str, Any]:
+    return {key: value.rows for key, value in state.items()}
+
+
+def test_qwen21_lora_keys_get_one_prefix_and_alphas_are_folded_in() -> None:
+    block = "transformer.transformer_blocks.0.attn.to_k"
+    state = {
+        f"{block}.lora_A.weight": _Tensor([[1.0, 2.0], [3.0, 4.0]]),  # rank 2
+        f"{block}.lora_B.weight": _Tensor([[5.0, 6.0]]),
+        f"{block}.alpha": _Tensor(1.0),
+    }
+    out = "diffusion_model.transformer_blocks.0.attn.to_k"
+    assert _rows(qwen21_lora_state(state)) == {
+        f"{out}.lora_A.weight": [[0.5, 1.0], [1.5, 2.0]],
+        f"{out}.lora_B.weight": [[5.0, 6.0]],
+    }
+
+
+def test_qwen21_lora_fused_gate_is_split_between_its_two_layers() -> None:
+    mlp = "diffusion_model.transformer_blocks.3.img_mlp"
+    state = {
+        f"{mlp}.gate_up.lora_A.weight": _Tensor([[1.0, 2.0]]),
+        f"{mlp}.gate_up.lora_B.weight": _Tensor([[1.0], [2.0], [3.0], [4.0]]),
+        f"{mlp}.out.lora_A.weight": _Tensor([[7.0]]),
+    }
+    assert _rows(qwen21_lora_state(state)) == {
+        f"{mlp}.gate_layer.lora_A.weight": [[1.0, 2.0]],
+        f"{mlp}.proj.lora_A.weight": [[1.0, 2.0]],
+        f"{mlp}.gate_layer.lora_B.weight": [[1.0], [2.0]],
+        f"{mlp}.proj.lora_B.weight": [[3.0], [4.0]],
+        f"{mlp}.out.lora_A.weight": [[7.0]],
+    }
