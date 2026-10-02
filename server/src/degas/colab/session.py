@@ -371,6 +371,12 @@ class SessionManager:
             " || python3 -m pip install -q fastapi uvicorn",
             timeout=300,
         )
+        # diffusers' Wan image-to-video pipeline cleans prompts with ftfy without checking it is
+        # there ("name 'ftfy' is not defined"), and the image doesn't have it.
+        await t.run(
+            "python3 -c 'import ftfy' 2>/dev/null || python3 -m pip install -q ftfy",
+            timeout=300,
+        )
         # The image's torchao (0.10) is older than peft accepts, and peft then refuses to load
         # any LoRA ("incompatible version of torchao"). Nothing here uses torchao: remove it.
         await t.run(
