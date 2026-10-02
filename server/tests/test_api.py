@@ -56,6 +56,8 @@ def test_families_and_schema(client: TestClient) -> None:
     assert wan["ti2v-5b"]["lora_format"] == "single"
     assert wan["i2v-a14b"]["lora_format"] == "paired_hi_lo"
     assert wan["i2v-a14b"]["model_dir"] == "models/wan22/i2v-a14b"
+    assert wan["wan21-i2v-14b"]["modes"] == ["i2v"]
+    assert wan["wan21-i2v-14b"]["lora_format"] == "single"
     schema = client.get("/api/families/sdxl/schema?variant=base&mode=t2i").json()
     assert schema["properties"]["steps"]["default"] == 30
     resp = client.get("/api/families/sdxl/schema?variant=inpaint&mode=t2i")

@@ -1,4 +1,8 @@
-"""Wan 2.2 descriptor: text- and image-to-video (design §4.3)."""
+"""Wan 2.2 descriptor: text- and image-to-video (design §4.3).
+
+It also has Wan 2.1's 14B image-to-video model as a variant: the same pipeline and runner, with
+one transformer in place of the A14B's two experts.
+"""
 
 from typing import Any
 
@@ -31,6 +35,7 @@ from degas_worker.spec import Lora, PairedLora, Spec
 
 MAX_LORAS = 6
 MODELS = "models/wan22"
+WAN21_I2V = "wan21-i2v-14b"
 
 # The 5B's VAE compresses 16x and its transformer patches 2x2, so sizes step by 32.
 # It is trained at 720p only.
@@ -40,6 +45,7 @@ SIZE_5B = SizeConstraints(
     max_pixels=1280 * 736,
     presets=((1280, 704), (704, 1280), (960, 960)),
 )
+# The 14B models, Wan 2.1's too.
 SIZE_A14B = SizeConstraints(
     multiple_of=16,
     min_pixels=480 * 480,
@@ -47,12 +53,14 @@ SIZE_A14B = SizeConstraints(
     presets=((1280, 720), (720, 1280), (832, 480), (480, 832), (960, 960)),
 )
 
-# Defaults from the Wan 2.2 model cards.
+# Defaults from the Wan 2.2 and 2.1 model cards.
 DEFAULTS: dict[str, dict[str, Any]] = {
     "ti2v-5b": {"num_frames": 121, "fps": 24, "steps": 50, "cfg": 5.0},
     "t2v-a14b": {"num_frames": 81, "fps": 16, "steps": 40, "cfg": 4.0, "cfg_low": 3.0},
     "i2v-a14b": {"num_frames": 81, "fps": 16, "steps": 40, "cfg": 3.5, "cfg_low": 3.5},
+    WAN21_I2V: {"num_frames": 81, "fps": 16, "steps": 40, "cfg": 5.0},
 }
+# Where the A14B variants hand over from the high-noise expert to the low-noise one.
 BOUNDARY = {"t2v-a14b": 0.875, "i2v-a14b": 0.9}
 
 
@@ -86,6 +94,14 @@ class Wan22:
             min_gpu="A100",
             modes=("i2v",),
             model_dir=f"{MODELS}/i2v-a14b",
+        ),
+        Variant(
+            id=WAN21_I2V,
+            label="Wan 2.1 I2V 14B",
+            min_gpu="A100",
+            modes=("i2v",),
+            model_dir=f"{MODELS}/{WAN21_I2V}",
+            lora_format="single",
         ),
     )
 
@@ -121,7 +137,7 @@ class Wan22:
             "steps": steps_prop(d["steps"], 80),
             "cfg": {
                 "type": "number",
-                "title": "CFG" if variant == "ti2v-5b" else "CFG, high noise",
+                "title": "CFG, high noise" if variant in BOUNDARY else "CFG",
                 "default": d["cfg"],
                 "minimum": 1,
                 "maximum": 10,
@@ -130,7 +146,7 @@ class Wan22:
             },
             "seed": seed_prop(),
         }
-        if variant != "ti2v-5b":
+        if variant in BOUNDARY:
             props["cfg_low"] = {
                 "type": "number",
                 "title": "CFG, low noise",
@@ -182,4 +198,4 @@ class Wan22:
 
 def extend_variant(variant: str) -> str:
     """The variant that continues a clip made by `variant` from its last frame."""
-    return "ti2v-5b" if variant == "ti2v-5b" else "i2v-a14b"
+    return "i2v-a14b" if variant == "t2v-a14b" else variant

@@ -192,6 +192,13 @@ def test_plan_wan_5b_is_a_single_file() -> None:
     assert p.variants == ["ti2v-5b"]
 
 
+def test_plan_wan21_i2v_is_a_single_file() -> None:
+    v = version(baseModel="Wan Video 14B i2v 720p", files=[wan_file("rip_i2v.safetensors", 1)])
+    p = plan(v)
+    assert [(f.path.split("/")[1], f.half) for f in p.files] == [("wan22", None)]
+    assert p.variants == ["wan21-i2v-14b"]
+
+
 def test_slug() -> None:
     assert slug("Détail Tweaker XL") == "detail_tweaker_xl"
     assert slug("Slap (and Self Slap) - Wan 2.2") == "slap_and_self_slap_wan_2.2"
