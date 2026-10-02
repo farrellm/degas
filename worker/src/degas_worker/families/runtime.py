@@ -12,6 +12,7 @@ from PIL import Image
 
 from degas_worker.families.base import Output, RunContext
 from degas_worker.families.lora import plan_loras, single_loras
+from degas_worker.families.offload import is_offloaded
 from degas_worker.spec import Spec
 
 # (LoRA asset path, local file, weight)
@@ -85,6 +86,7 @@ def sync_loras(
         for path in [p for p, name in applied.items() if name in plan.remove]:
             del applied[path]
     local = {path: file for path, file, _ in loras}
+    offloaded = is_offloaded(pipe)
     for path, name in plan.add:
         try:
             if load is None:
@@ -94,6 +96,10 @@ def sync_loras(
         except Exception as e:
             with contextlib.suppress(Exception):
                 pipe.delete_adapters([name])
+            if offloaded:
+                # diffusers takes the offload hooks off to load a LoRA and puts them back only
+                # if it loads. Without them every later job would run on the CPU.
+                pipe.enable_model_cpu_offload()
             raise ValueError(f"Could not load LoRA {path}: {e}") from e
         applied[path] = name
     if activate and plan.names:

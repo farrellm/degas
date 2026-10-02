@@ -44,9 +44,15 @@ DIFFUSERS_PIN = (
 )
 
 # Runs in the Colab kernel so the worker inherits its CUDA environment (Phase 0, finding 6).
+# The old worker is killed outright: on SIGTERM uvicorn waits for its connections to close, and
+# the event stream of a running job never does, so it would live on, still running the job.
 BOOTSTRAP = f"""
-import os, subprocess, sys
-subprocess.run(["pkill", "-f", {WORKER_MATCH!r}])
+import os, subprocess, sys, time
+subprocess.run(["pkill", "-KILL", "-f", {WORKER_MATCH!r}])
+for _ in range(100):
+    if subprocess.run(["pgrep", "-f", {WORKER_MATCH!r}], stdout=subprocess.DEVNULL).returncode:
+        break
+    time.sleep(0.1)
 _env = dict(os.environ, PYTHONPATH="{REMOTE}/worker", DEGAS_WORKER_HOME="{REMOTE}",
             DEGAS_CACHE_BUDGET_GB="{{budget}}", PATH="{REMOTE}/bin:" + os.environ.get("PATH", ""),
             PYTORCH_CUDA_ALLOC_CONF="expandable_segments:True")
