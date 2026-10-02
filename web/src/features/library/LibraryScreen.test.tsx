@@ -72,6 +72,21 @@ describe('Library', () => {
     expect(within(prompts).getByText('ip-adapter-plus sdxl vit-h')).toBeInTheDocument()
     expect(within(prompts).getByText('Style, weight 1.00, steps 1–24')).toBeInTheDocument()
     expect(within(prompts).getByText('Face, weight 0.80')).toBeInTheDocument()
+
+    // A tap opens a picture larger, over the viewer; its keys don't reach the image under it.
+    await user.click(
+      within(prompts).getByRole('button', { name: 'Open picture 2, ip-adapter-plus sdxl vit-h' }),
+    )
+    const picture = screen.getByRole('dialog', { name: 'Image prompt picture' })
+    expect(picture.querySelector('img')).toHaveAttribute('src', '/api/blobs/pic2')
+    expect(within(picture).getByText('2 of 3')).toBeInTheDocument()
+    await user.keyboard('{ArrowRight}')
+    expect(picture.querySelector('img')).toHaveAttribute('src', '/api/blobs/face1')
+    expect(within(picture).getByText('Face, weight 0.80')).toBeInTheDocument()
+    expect(within(picture).getByRole('button', { name: 'Next picture' })).toBeDisabled()
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('dialog', { name: 'Image prompt picture' })).not.toBeInTheDocument()
+    expect(screen.getByRole('dialog', { name: 'Image' })).toBeInTheDocument()
   })
 
   it('deletes a kept image after confirming', async () => {

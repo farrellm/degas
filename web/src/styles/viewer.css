@@ -91,12 +91,17 @@
   gap: 4px;
 }
 
+/* Each opens larger on a tap. */
+.image-prompt-pictures button {
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--well);
+}
+
 .image-prompt-pictures img {
   display: block;
   width: 64px;
   height: 64px;
-  border-radius: 3px;
-  background: var(--well);
   object-fit: cover;
 }
 
