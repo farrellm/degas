@@ -78,7 +78,11 @@ export function loraChoices(index: Asset[] | undefined, variant: Variant | undef
   const entryFor = (row: Asset): LoraEntry => {
     const weight = row.sidecar?.default_weight ?? 1
     const pair = pairOf.get(row.path)
-    if (!pair) return { path: row.path, weight }
+    if (!pair) {
+      // A single file offered to an A14B variant (by its sidecar) goes into both experts.
+      const ref = { path: row.path, weight }
+      return paired ? { high: ref, low: { ...ref } } : ref
+    }
     return {
       ...(pair.high && { high: { path: pair.high.path, weight } }),
       ...(pair.low && { low: { path: pair.low.path, weight } }),
@@ -87,11 +91,11 @@ export function loraChoices(index: Asset[] | undefined, variant: Variant | undef
   return { rows, entryFor }
 }
 
-/** The files behind a LoRA in the form (both halves of a pair). */
+/** The files behind a LoRA in the form (both halves of a pair, once if they share a file). */
 export function loraPaths(entry: LoraEntry): string[] {
-  return isPair(entry)
-    ? [entry.high?.path, entry.low?.path].filter((p): p is string => !!p)
-    : [entry.path]
+  if (!isPair(entry)) return [entry.path]
+  const paths = [entry.high?.path, entry.low?.path].filter((p): p is string => !!p)
+  return [...new Set(paths)]
 }
 
 /** The index entries behind a LoRA in the form (both halves of a pair). */

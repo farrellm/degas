@@ -2,7 +2,16 @@ import { act, fireEvent, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 
-import { ASSETS, FAMILIES, PROMPT, RESULT, RUNNING, SCHEMA, SPEC } from '@/test/fixtures'
+import {
+  ASSETS,
+  FAMILIES,
+  PROMPT,
+  RESULT,
+  RUNNING,
+  SCHEMA,
+  SPEC,
+  WAN_ASSETS,
+} from '@/test/fixtures'
 import { FakeEventSource, mockApi, VIDEO_ROUTES } from '@/test/mockApi'
 import { renderApp } from '@/test/render'
 
@@ -675,6 +684,52 @@ describe('Create', () => {
         high: { path: 'loras/wan22/motion_high_noise.safetensors', weight: 1 },
         low: { path: 'loras/wan22/motion_low_noise.safetensors', weight: 0.5 },
       },
+    ])
+  })
+
+  it('applies a single-file LoRA tagged for an A14B variant to both experts', async () => {
+    localStorage.setItem(
+      'degas.create.draft',
+      JSON.stringify({
+        family: 'wan22',
+        families: { wan22: { model: 'models/wan22/t2v-a14b/Wan2.2-T2V-A14B', params: {} } },
+      }),
+    )
+    const submitted: { spec: { loras: unknown } }[] = []
+    const single = 'loras/wan22/wan21_style.safetensors'
+    mockApi({
+      ...VIDEO_ROUTES,
+      'GET /api/assets': () => [
+        ...ASSETS,
+        ...WAN_ASSETS,
+        {
+          path: single,
+          family: 'wan22',
+          kind: 'lora',
+          size: 300e6,
+          sidecar: { variants: ['t2v-a14b'], default_weight: 0.8 },
+          preview_thumb: null,
+        },
+      ],
+      'POST /api/jobs': (init) => {
+        submitted.push(JSON.parse(init?.body as string) as (typeof submitted)[number])
+        return { id: 'j5' }
+      },
+    })
+    const user = userEvent.setup()
+    renderApp()
+    await user.click(await screen.findByRole('button', { name: 'Add LoRA' }))
+    const sheet = screen.getByRole('dialog', { name: 'Add LoRA' })
+    await user.click(within(sheet).getByRole('button', { name: /wan21 style/i }))
+    fireEvent.change(screen.getByRole('slider', { name: /wan21 style low-noise weight/i }), {
+      target: { value: '0.5' },
+    })
+
+    await user.type(screen.getByLabelText('Prompt'), 'surf')
+    await user.click(screen.getByRole('button', { name: 'Generate' }))
+    await screen.findByText('Queued 1 clip.')
+    expect(submitted[0]?.spec.loras).toEqual([
+      { high: { path: single, weight: 0.8 }, low: { path: single, weight: 0.5 } },
     ])
   })
 

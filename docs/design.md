@@ -231,7 +231,7 @@ class FamilyRunner:
   - `t2v-a14b`: text-to-video, minimum GPU A100.
   - `i2v-a14b`: image-to-video, minimum GPU A100.
 - **Pipelines:** diffusers `WanPipeline` and `WanImageToVideoPipeline`.
-- **LoRAs:** `paired_hi_lo` for the A14B variants. A LoRA entry names a high-noise file and a low-noise file, and each has its own weight. A LoRA entry for the 5B variant is a single file.
+- **LoRAs:** `paired_hi_lo` for the A14B variants. A LoRA entry names a high-noise file and a low-noise file, and each has its own weight. Both may be the same file: a single-file LoRA (Wan 2.1 14B's load on the A14B experts) whose sidecar lists an A14B variant is offered there and goes into both experts, still with a weight each. A LoRA entry for the 5B variant is a single file.
 - **Parameters:** prompt, negative prompt, resolution preset, frame count, fps, steps, CFG (with separate values for the two experts on A14B), boundary ratio (A14B), seed, and a source image for i2v.
 - **Output:** an MP4 encoded with H.264 in `yuv420p` pixel format, so it plays inline on iOS. A poster frame is extracted, and so is the last frame, which is used for video extension.
 
