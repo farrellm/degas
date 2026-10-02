@@ -1,7 +1,10 @@
 import asyncio
+import socket
+import threading
 from collections.abc import Callable
 from typing import Any
 
+from degas.colab.session import BOOTSTRAP
 from degas.db import now
 
 
@@ -83,3 +86,21 @@ async def test_touch_resets_idle_deadline(harness: Any) -> None:
     assert svc.sessions.session["last_activity_at"] <= now()
     await svc.sessions.stop()
     await svc.stop()
+
+
+def test_bootstrap_waits_for_the_old_workers_port() -> None:
+    """A killed worker's port can outlive it in the process list (a 14B model takes seconds
+    to tear down): the bootstrap starts the new worker only once the port is free."""
+    with socket.socket() as old:
+        old.bind(("127.0.0.1", 0))
+        old.listen()
+        port = old.getsockname()[1]
+        code = BOOTSTRAP.replace("{port}", str(port))
+        # Only the port wait: the rest kills and starts real processes.
+        wait = code[code.index("def _port_free") : code.index("\nif _port_free():")]
+        scope: dict[str, Any] = {}
+        exec("import socket, time\n" + wait.replace("range(900)", "range(3)"), scope)
+        assert not scope["_port_free"]()
+        threading.Timer(0.2, old.close).start()
+        exec("import socket, time\n" + wait, scope)
+        assert scope["_port_free"]()
