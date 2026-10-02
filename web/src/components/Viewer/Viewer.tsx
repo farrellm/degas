@@ -220,6 +220,7 @@ export function Viewer<T extends ViewerItem>({
           ) : null}
           {spec?.image_prompts?.length ? (
             <ImagePrompts
+              key={r.id}
               id={r.id}
               prompts={spec.image_prompts}
               steps={Number(params.steps)}

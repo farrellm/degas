@@ -185,9 +185,14 @@ describe('Discretion', () => {
     // The next image's are covered until the image is tapped.
     await user.click(within(viewer).getByRole('button', { name: 'Next image' }))
     expect(prompts()).toHaveClass('covered')
-    expect(within(prompts()).getAllByRole('button', { name: 'Show image prompt' })).toHaveLength(2)
-    await user.click(within(viewer).getByRole('button', { name: 'Show image' }))
+    // Two units' lines and their three pictures; a tap on a picture uncovers, and doesn't open.
+    const hidden = within(prompts()).getAllByRole('button', { name: 'Show image prompt' })
+    expect(hidden).toHaveLength(5)
+    const picture = prompts().querySelector('.image-prompt-pictures button')
+    if (!picture) throw new Error('no picture')
+    await user.click(picture)
     expect(prompts()).not.toHaveClass('covered')
+    expect(screen.queryByRole('dialog', { name: 'Image prompt picture' })).not.toBeInTheDocument()
 
     // Or until the prompt is: the pictures go with the words.
     await user.click(within(viewer).getByRole('button', { name: 'Next image' }))

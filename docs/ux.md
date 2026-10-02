@@ -276,7 +276,7 @@ Built. SDXL gets pictures that work like the prompt (IP-Adapter; [ip-adapter.md]
 - **Chips say what to take**, not which blocks: *Everything*, *Style*, *Layout*, *Style and layout*, *Face*. Each sets the blocks, its default weight (0.6 for Everything and Face, 1 for the rest) and a model of the kind it wants (a plus model; a composition model for Layout; a face model for Face). The Model row stays underneath, and a model that doesn't suit the choice gets an ochre line (*This is a face model; it reads faces, not style.*).
 - **Steps** reuses ControlNet's range, with its own note: *Ending early keeps its influence on the big shapes and leaves the details to the prompt.*
 - **Area** is where in the output the picture applies, painted in the mask editor titled *Area* over Create's source when it has the output's shape, else over a plain canvas of that shape.
-- **On the wall label.** The viewer shows an image's image prompts under its written prompt, in Results and Library alike: each unit's pictures as 64 px squares (the squares the model read), then its model and the row's summary without the picture count (*Style, weight 1.00, steps 1–24*; *Face, weight 0.80*; *Loosely, weight 1.00*). The text sits beside one or two pictures and under three or four. There's no heading; the group is named *Image prompts* for a screen reader.
+- **On the wall label.** The viewer shows an image's image prompts under its written prompt, in Results and Library alike: each unit's pictures as 64 px squares (the squares the model read), then its model and the row's summary without the picture count (*Style, weight 1.00, steps 1–24*; *Face, weight 0.80*; *Loosely, weight 1.00*). The text sits beside one or two pictures and under three or four. There's no heading; the group is named *Image prompts* for a screen reader. A tap on a picture opens it over the viewer on the well, up to the 1024 px square that's stored, with its unit's two lines under it, *Back*, and ‹ › through the image's pictures when there are several. A covered picture uncovers on the first tap, like a tile.
 - Thumbnails are ordinary images, never rose or hatched. Discretion covers the 34 px ones in the row; the sheet is opened on purpose and stays clear.
 
 ### Phase 12: Faces
@@ -308,7 +308,7 @@ Built. FLUX.1 gets the same *Image prompts* row and sheet, showing only what Red
 | `AssetPicker` | Phase 2 | Models and LoRAs (ControlNets in Phase 7); search from 7 rows; a `footer` slot |
 | `CivitaiImport` | Civitai import | The LoRA picker's footer: link, plan, progress (`import` events) |
 | `LoraList` | Phase 2 | Single weight 0–2; paired high/low weights in Phase 4 |
-| `Viewer`, `SaveToPhotos` | Phase 3 | Shared by Results and Library; actions and extra wall-label rows are slots; `Viewer/ImagePrompts` shows a spec's image prompts |
+| `Viewer`, `SaveToPhotos` | Phase 3 | Shared by Results and Library; actions and extra wall-label rows are slots; `Viewer/ImagePrompts` shows a spec's image prompts, and `Viewer/PictureViewer` one of their pictures larger |
 | `SavedPromptsSheet` | Phase 3 | Saved prompts from the prompt block |
 | `LibraryScreen` | Phase 3 | Images / Prompts, search, day-grouped grid |
 | `ImagePicker` | Phase 4 | Recent, Library, Photos, Link; frame choice for videos |
