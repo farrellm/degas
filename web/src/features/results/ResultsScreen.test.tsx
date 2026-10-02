@@ -2,7 +2,15 @@ import { screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 
-import { JOB_DONE, LIBRARY_ITEM, RESULT, SPEC, VIDEO_RESULT, WAN_SPEC } from '@/test/fixtures'
+import {
+  IMAGE_PROMPTS,
+  JOB_DONE,
+  LIBRARY_ITEM,
+  RESULT,
+  SPEC,
+  VIDEO_RESULT,
+  WAN_SPEC,
+} from '@/test/fixtures'
 import { mockApi, VIDEO_ROUTES } from '@/test/mockApi'
 import { renderApp } from '@/test/render'
 
@@ -38,6 +46,21 @@ describe('Results', () => {
     expect(await screen.findByLabelText('Prompt')).toHaveValue('a lighthouse')
     expect(screen.getByLabelText('Seed')).toHaveValue(1234)
     expect(screen.getByRole('button', { name: '832×1216' })).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('shows a result’s image prompts in the viewer, and none where there are none', async () => {
+    const prompted = { ...RESULT, spec: { ...SPEC, image_prompts: IMAGE_PROMPTS } }
+    const plain = { ...RESULT, id: 'r2', item_index: 1, blob_sha: 'def', seed: 1235 }
+    mockApi({ 'GET /api/results': () => ({ results: [prompted, plain], cursor: null }) })
+    const user = userEvent.setup()
+    renderApp()
+    await user.click(await screen.findByRole('button', { name: /Results/ }))
+    await user.click(await screen.findByRole('button', { name: /Open image 1, seed 1234/ }))
+    const prompts = screen.getByRole('group', { name: 'Image prompts' })
+    expect(prompts.querySelectorAll('img')).toHaveLength(3)
+    expect(within(prompts).getByText('Style, weight 1.00, steps 1–24')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Next image' }))
+    expect(screen.queryByRole('group', { name: 'Image prompts' })).not.toBeInTheDocument()
   })
 
   it('keeps a result, marking its tile and group', async () => {

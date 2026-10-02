@@ -17,6 +17,7 @@ import type { FitOption } from '@/lib/fit'
 import { formatSize } from '@/lib/format'
 import type { Size } from '@/lib/geometry'
 import { type Source, toSource } from '@/lib/image'
+import type { Take } from '@/lib/imagePrompts'
 import { isGpuReady } from '@/lib/session'
 import { stepFraction } from '@/lib/steps'
 
@@ -29,7 +30,6 @@ import {
   isFaceid,
   mismatch,
   modelFor,
-  type Take,
   weightFor,
 } from './imagePrompt'
 import { PromptPictures } from './PromptPictures'

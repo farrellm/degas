@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 
 import { installShield, setDiscretion } from '@/lib/discretion'
-import { JOB_DONE, LIBRARY_ITEM, RESULT, SPEC } from '@/test/fixtures'
+import { IMAGE_PROMPTS, JOB_DONE, LIBRARY_ITEM, RESULT, SPEC } from '@/test/fixtures'
 import { mockApi } from '@/test/mockApi'
 import { renderApp } from '@/test/render'
 
@@ -158,6 +158,41 @@ describe('Discretion', () => {
     expect(within(viewer).getByRole('button', { name: 'Show model' })).toBeInTheDocument()
     await user.click(within(viewer).getByRole('button', { name: 'Show image' }))
     expect(within(viewer).queryByRole('button', { name: 'Show model' })).not.toBeInTheDocument()
+  })
+
+  it('covers an image prompt’s pictures and model until its image or prompt is shown', async () => {
+    const spec = { ...SPEC, image_prompts: IMAGE_PROMPTS }
+    const first = { ...RESULT, spec }
+    const second = { ...first, id: 'r2', item_index: 1, blob_sha: 'def', seed: 1235 }
+    const third = { ...first, id: 'r3', item_index: 2, blob_sha: 'ghi', seed: 1236 }
+    mockApi({
+      'GET /api/jobs': () => [{ ...JOB_DONE, spec, seeds: [1234, 1235, 1236] }],
+      'GET /api/results': () => ({ results: [first, second, third], cursor: null }),
+    })
+    setDiscretion(true)
+    const user = userEvent.setup()
+    renderApp()
+    await user.click(screen.getByRole('button', { name: /Results/ }))
+    await user.click(await screen.findByRole('button', { name: 'Show image 1' }))
+    await user.click(screen.getByRole('button', { name: /Open image 1/ }))
+    const viewer = screen.getByRole('dialog', { name: 'Image' })
+    const prompts = () => within(viewer).getByRole('group', { name: 'Image prompts' })
+    expect(prompts()).not.toHaveClass('covered')
+    expect(within(prompts()).getByText('Face, weight 0.80')).toBeInTheDocument()
+
+    // The next image's are covered until the image is tapped.
+    await user.click(within(viewer).getByRole('button', { name: 'Next image' }))
+    expect(prompts()).toHaveClass('covered')
+    expect(within(prompts()).getAllByRole('button', { name: 'Show image prompt' })).toHaveLength(2)
+    await user.click(within(viewer).getByRole('button', { name: 'Show image' }))
+    expect(prompts()).not.toHaveClass('covered')
+
+    // Or until the prompt is: the pictures go with the words.
+    await user.click(within(viewer).getByRole('button', { name: 'Next image' }))
+    expect(prompts()).toHaveClass('covered')
+    await user.click(within(viewer).getByRole('button', { name: 'Show prompt' }))
+    expect(prompts()).not.toHaveClass('covered')
+    expect(within(viewer).getByRole('button', { name: 'Show image' })).toBeInTheDocument()
   })
 
   it('covers library images', async () => {

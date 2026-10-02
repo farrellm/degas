@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
 
 import type { AdapterKind, Asset } from '@/api/types'
+import { adapterKind } from '@/lib/imagePrompts'
 
 import {
-  adapterKind,
   anyOblong,
   mismatch,
   modelFor,
