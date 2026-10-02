@@ -21,6 +21,15 @@ def loaded_bytes(pipe: Any) -> int:
     )
 
 
+def is_offloaded(pipe: Any) -> bool:
+    """Whether `enable_model_cpu_offload` is in effect: its hook is on the pipeline's models."""
+    return any(
+        hasattr(component, "_hf_hook")
+        for component in pipe.components.values()
+        if isinstance(component, torch.nn.Module)
+    )
+
+
 def place(pipe: Any) -> bool:
     """Move the pipeline to the GPU, or offload it if it wouldn't fit. Returns True if offloaded."""
     _free, total = torch.cuda.mem_get_info()
