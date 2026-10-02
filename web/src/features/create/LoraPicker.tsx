@@ -1,7 +1,7 @@
 import { api } from '@/api/client'
 import type { Asset, Family, LoraEntry, Variant } from '@/api/types'
 import { AssetPicker } from '@/components/AssetPicker/AssetPicker'
-import { isPair, loraChoices, loraPaths, sameLora } from '@/lib/loras'
+import { loraChoices, loraPaths, sameLora } from '@/lib/loras'
 
 import { CivitaiImport } from './CivitaiImport'
 
@@ -48,7 +48,7 @@ export function LoraPicker({
           No LoRAs for this model. Put them in Drive under <code>degas/loras/{family?.id}/</code>,
           then rescan.
           {variant?.lora_format === 'paired_hi_lo' &&
-            ' A14B LoRAs come in pairs named …_high_noise and …_low_noise.'}
+            ' A14B LoRAs come in pairs named …_high_noise and …_low_noise, or as one file whose sidecar lists the variant.'}
         </p>
       }
       footer={
@@ -72,7 +72,7 @@ export function LoraPicker({
       }
       deleting={{
         note: (row) =>
-          isPair(choices.entryFor(row))
+          loraPaths(choices.entryFor(row)).length > 1
             ? 'Both halves go to Drive’s trash.'
             : 'Its files go to Drive’s trash.',
         run: async (row) => {

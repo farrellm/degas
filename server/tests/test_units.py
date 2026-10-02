@@ -313,7 +313,17 @@ def test_wan_paired_loras() -> None:
         "l",
         "only-low",
     ]
+    # One file for both experts (a single-file Wan 2.1 LoRA) is fetched once.
+    both = {"high": {"path": "h", "weight": 0.5}, "low": {"path": "h"}}
+    spec = Wan22().validate({**WAN_SPEC, "loras": [both]})
+    assert spec["loras"] == [
+        {
+            "high": {"path": "h", "weight": 0.5, "size": None},
+            "low": {"path": "h", "weight": 1.0, "size": None},
+        }
+    ]
+    assert [a["path"] for a in spec_assets(spec)] == [WAN_SPEC["model"]["path"], "h"]
     with pytest.raises(SpecError, match="twice"):
-        Wan22().validate({**WAN_SPEC, "loras": [{"high": {"path": "h"}, "low": {"path": "h"}}]})
+        Wan22().validate({**WAN_SPEC, "loras": [both, {"low": {"path": "h"}}]})
     with pytest.raises(SpecError, match="high-noise or low-noise"):
         Wan22().validate({**WAN_SPEC, "loras": [{"path": "single"}]})

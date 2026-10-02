@@ -281,7 +281,8 @@ HALVES: tuple[Literal["high", "low"], ...] = ("high", "low")
 def validate_paired_loras(loras: Any, limit: int) -> list[PairedLora]:
     """Validate Wan A14B LoRAs: `[{high: {path, weight}, low: {path, weight}}]`.
 
-    Either half may be left out, for a LoRA trained for one expert only.
+    Either half may be left out, for a LoRA trained for one expert only. Both halves may name
+    one file: a single-file LoRA (Wan 2.1's, say) applied to both experts.
     """
     if loras is None:
         return []
@@ -295,6 +296,7 @@ def validate_paired_loras(loras: Any, limit: int) -> list[PairedLora]:
         if not isinstance(lora, dict) or not (lora.get("high") or lora.get("low")):
             raise SpecError("Each LoRA needs a high-noise or low-noise file")
         entry: PairedLora = {}
+        paths: set[str] = set()
         for half in HALVES:
             part = lora.get(half)
             if not part:
@@ -303,9 +305,10 @@ def validate_paired_loras(loras: Any, limit: int) -> list[PairedLora]:
                 raise SpecError(f"LoRA {half}-noise half needs a path")
             if part["path"] in seen:
                 raise SpecError(f"LoRA {part['path']} is listed twice")
-            seen.add(part["path"])
+            paths.add(part["path"])
             weight = _coerce("LoRA weight", LORA_WEIGHT, part.get("weight", 1.0))
             entry[half] = {"path": part["path"], "weight": weight, "size": part.get("size")}
+        seen |= paths
         out.append(entry)
     return out
 

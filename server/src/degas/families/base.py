@@ -126,8 +126,10 @@ def spec_assets(spec: Spec) -> list[NeededAsset]:
     assets: list[NeededAsset] = []
 
     def need(asset: AssetRef | None, kind: str, *, shared: bool = False) -> None:
-        # Units may share a ControlNet or an image prompt model.
-        if not asset or (shared and any(a["path"] == asset["path"] for a in assets)):
+        # Units may share a ControlNet or an image prompt model, and a Wan A14B LoRA's halves
+        # one file.
+        same = (asset["path"], kind) if asset else None
+        if not asset or (shared and any((a["path"], a["kind"]) == same for a in assets)):
             return
         assets.append({"path": asset["path"], "size": asset.get("size"), "kind": kind})
 
@@ -136,7 +138,7 @@ def spec_assets(spec: Spec) -> list[NeededAsset]:
     need(spec.get("vae"), "vae")
     for lora in spec.get("loras") or []:
         for part in lora_files(lora):
-            need(part, "lora")
+            need(part, "lora", shared=True)
     for unit in spec.get("control") or []:
         need(unit["controlnet"], "controlnet", shared=True)
     for prompt in spec.get("image_prompts") or []:
