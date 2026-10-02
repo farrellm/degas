@@ -187,6 +187,30 @@ export const LIBRARY_ITEM = {
   source_result_id: null,
 }
 
+/** Two image prompts: a pair of style pictures, and a face. */
+export const IMAGE_PROMPTS = [
+  {
+    adapter: { path: 'ip_adapters/sdxl/ip-adapter-plus_sdxl_vit-h.safetensors' },
+    images: ['sha256:pic1', 'sha256:pic2'],
+    fit: 'crop',
+    purpose: 'style',
+    weight: 1,
+    start: 0,
+    end: 0.8,
+  },
+  {
+    adapter: { path: 'ip_adapters/sdxl/ip-adapter-faceid-plusv2_sdxl.bin' },
+    images: ['sha256:face1'],
+    fit: 'crop',
+    purpose: 'all',
+    weight: 0.8,
+    start: 0,
+    end: 1,
+    structure: 1,
+    lora_weight: 0.6,
+  },
+]
+
 export const PROMPT = {
   id: 'p1',
   name: 'Harbour',

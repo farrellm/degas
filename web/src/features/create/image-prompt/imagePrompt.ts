@@ -8,13 +8,16 @@ import type {
 } from '@/api/types'
 import { ratioDiffers, type Size } from '@/lib/geometry'
 import { ref, type Source, unref } from '@/lib/image'
-import { stepSpan } from '@/lib/steps'
-
-/**
- * What to take from an image prompt's pictures, as its chips say. Each picks the blocks the
- * adapter acts in (its purpose) and the kind of model that suits it.
- */
-export type Take = Purpose | 'face'
+import {
+  adapterKind,
+  detailInfo,
+  summaryText,
+  type Take,
+  type TakeInfo,
+  takeInfo,
+  takeOf,
+  TAKES,
+} from '@/lib/imagePrompts'
 
 /** An image prompt (IP-Adapter) in the Create form. */
 export interface ImagePromptUnit {
@@ -40,41 +43,6 @@ export interface ImagePromptUnit {
 export const MAX_PROMPTS = 2
 export const MAX_PICTURES = 4
 
-interface TakeInfo {
-  id: Take
-  label: string
-  /** What the choice does, under the chips. */
-  note: string
-  weight: number
-}
-
-// Weights from docs/ip-adapter.md §2: the whole UNet follows the pictures closely, so it
-// starts lower; one or two blocks start at full strength.
-const EVERYTHING: TakeInfo = {
-  id: 'all',
-  label: 'Everything',
-  note: 'Its subject, colours and style; the prompt still counts.',
-  weight: 0.6,
-}
-
-export const TAKES: TakeInfo[] = [
-  EVERYTHING,
-  {
-    id: 'style',
-    label: 'Style',
-    note: 'Its colour, texture and strokes; the prompt decides what’s in the picture.',
-    weight: 1,
-  },
-  { id: 'layout', label: 'Layout', note: 'Where things are, not how they look.', weight: 1 },
-  {
-    id: 'style_layout',
-    label: 'Style and layout',
-    note: 'How it looks and where things are; the prompt says what they are.',
-    weight: 1,
-  },
-  { id: 'face', label: 'Face', note: 'A likeness of the face. Crop close to it.', weight: 0.6 },
-]
-
 /** SDXL's options, for a family that doesn't say. */
 export const SDXL_OPTIONS: ImagePromptOptions = {
   purposes: ['all', 'style', 'layout', 'style_layout'],
@@ -92,36 +60,6 @@ export function takesFor(options: ImagePromptOptions): TakeInfo[] {
   return takes.length > 1 ? takes : []
 }
 
-interface Detail {
-  downsample: number
-  label: string
-  note: string
-}
-
-/** Redux: how closely to follow the picture. Its 27 × 27 tokens are shrunk by `downsample`
- * (to 27, 13, 9 or 5 a side), as ComfyUI's Redux Advanced does. */
-export const DETAILS: Detail[] = [
-  {
-    downsample: 1,
-    label: 'Closely',
-    note: 'Close variations of the picture; the prompt has little say.',
-  },
-  { downsample: 2, label: 'Somewhat', note: 'Near the picture, with some room for the prompt.' },
-  {
-    downsample: 3,
-    label: 'Loosely',
-    note: 'Its look and subject, leaving the prompt room to change them.',
-  },
-  { downsample: 5, label: 'Just the gist', note: 'Its overall colour and feel; the prompt leads.' },
-]
-
-export const detailInfo = (downsample: number): Detail =>
-  DETAILS.find((d) => d.downsample === downsample) ?? {
-    downsample,
-    label: `Shrunk ${String(downsample)}×`,
-    note: '',
-  }
-
 /** FaceID finds the face itself and reads who it is, so the note says so. */
 export const FACEID_NOTE =
   'Who the person is. The model finds the face itself, so the picture needn’t be cropped.'
@@ -129,19 +67,7 @@ export const FACEID_NOTE =
 // FaceID starts a little stronger than a CLIP face model (docs/ip-adapter.md §2.2).
 const FACEID_WEIGHT = 0.8
 
-export const takeInfo = (id: Take): TakeInfo => TAKES.find((t) => t.id === id) ?? EVERYTHING
-
 export const purposeOf = (take: Take): Purpose => (take === 'face' ? 'all' : take)
-
-/** What a model was trained to carry: from its sidecar, else its file name. */
-export function adapterKind(asset: Asset | undefined, path = asset?.path ?? ''): AdapterKind {
-  if (asset?.sidecar?.purpose) return asset.sidecar.purpose
-  const name = (path.split('/').pop() ?? '').toLowerCase()
-  if (name.includes('faceid')) return 'faceid'
-  if (name.includes('face')) return 'face'
-  if (name.includes('composition')) return 'composition'
-  return 'subject'
-}
 
 /** The kind of model each choice wants, best first. */
 const WANTS: Record<Take, AdapterKind[]> = {
@@ -219,14 +145,15 @@ export function promptSummary(
 ): string {
   const n = unit.pictures.length
   const what = options.detail ? detailInfo(unit.downsample).label : takeInfo(unit.take).label
-  const parts = [n === 0 ? 'No picture yet' : what, `weight ${unit.weight.toFixed(2)}`]
-  if (n > 1) parts.push(`${String(n)} pictures`)
-  const span = stepSpan(unit.start, unit.end, steps)
-  if (span && (span.first !== 1 || span.last !== steps))
-    parts.push(`steps ${String(span.first)}–${String(span.last)}`)
-  else if (!span) parts.push('no steps')
-  if (unit.area) parts.push('in an area')
-  return parts.join(', ')
+  return summaryText({
+    what: n === 0 ? 'No picture yet' : what,
+    weight: unit.weight,
+    start: unit.start,
+    end: unit.end,
+    steps,
+    area: !!unit.area,
+    pictures: n,
+  })
 }
 
 /** Whether a unit is complete enough to submit. */
@@ -261,13 +188,11 @@ export function promptSpec(
  * everything-unit with a face model was chosen as Face.
  */
 export function promptFromSpec(p: ImagePromptSpec, output: Size): ImagePromptUnit {
-  const kind = adapterKind(undefined, p.adapter.path)
-  const face = p.purpose === 'all' && (kind === 'face' || kind === 'faceid')
   const mask = p.mask ? unref(p.mask) : null
   return {
     ...newPrompt(),
     model: p.adapter.path,
-    take: face ? 'face' : p.purpose,
+    take: takeOf(p),
     pictures: p.images.map((sha) => ({ sha: unref(sha), width: 0, height: 0 })),
     area: mask ? { sha: mask, over: { sha: mask, width: output.w, height: output.h } } : null,
     weight: p.weight,

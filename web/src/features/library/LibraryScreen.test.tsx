@@ -2,7 +2,7 @@ import { screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 
-import { LIBRARY_ITEM, PROMPT } from '@/test/fixtures'
+import { IMAGE_PROMPTS, LIBRARY_ITEM, PROMPT } from '@/test/fixtures'
 import { mockApi } from '@/test/mockApi'
 import { renderApp } from '@/test/render'
 
@@ -51,6 +51,27 @@ describe('Library', () => {
     await user.click(await screen.findByRole('button', { name: 'Open a harbour at dusk' }))
     expect(screen.getByLabelText('Tags')).toBeInTheDocument()
     expect(errors).not.toHaveBeenCalled()
+  })
+
+  it('shows the image prompts a kept image was made with', async () => {
+    const item = {
+      ...LIBRARY_ITEM,
+      config: { ...LIBRARY_ITEM.config, image_prompts: IMAGE_PROMPTS },
+    }
+    mockApi({ 'GET /api/library': () => ({ items: [item], cursor: null }) })
+    const user = userEvent.setup()
+    renderApp()
+    await user.click(await screen.findByRole('button', { name: 'Library' }))
+    await user.click(await screen.findByRole('button', { name: 'Open a harbour at dusk' }))
+    const prompts = screen.getByRole('group', { name: 'Image prompts' })
+    expect([...prompts.querySelectorAll('img')].map((img) => img.getAttribute('src'))).toEqual([
+      '/api/thumbs/pic1',
+      '/api/thumbs/pic2',
+      '/api/thumbs/face1',
+    ])
+    expect(within(prompts).getByText('ip-adapter-plus sdxl vit-h')).toBeInTheDocument()
+    expect(within(prompts).getByText('Style, weight 1.00, steps 1–24')).toBeInTheDocument()
+    expect(within(prompts).getByText('Face, weight 0.80')).toBeInTheDocument()
   })
 
   it('deletes a kept image after confirming', async () => {

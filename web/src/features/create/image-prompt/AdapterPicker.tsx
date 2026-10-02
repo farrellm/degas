@@ -1,7 +1,6 @@
 import type { Asset } from '@/api/types'
 import { AssetPicker } from '@/components/AssetPicker/AssetPicker'
-
-import { adapterKind } from './imagePrompt'
+import { adapterKind } from '@/lib/imagePrompts'
 
 const KIND_LABELS = {
   subject: 'Reads the whole picture',

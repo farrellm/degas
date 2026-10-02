@@ -1,15 +1,8 @@
 import type { ImagePromptOptions } from '@/api/types'
 import { ChoiceChips } from '@/components/ChoiceChips'
+import { detailInfo, DETAILS, type Take, takeInfo } from '@/lib/imagePrompts'
 
-import {
-  detailInfo,
-  DETAILS,
-  FACEID_NOTE,
-  type ImagePromptUnit,
-  type Take,
-  takeInfo,
-  takesFor,
-} from './imagePrompt'
+import { FACEID_NOTE, type ImagePromptUnit, takesFor } from './imagePrompt'
 
 export interface TakePickerProps {
   unit: ImagePromptUnit

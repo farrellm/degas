@@ -69,6 +69,47 @@
   font-size: 0.9375rem;
 }
 
+/* Image prompts: the pictures that worked like the prompt, each unit with its model and how
+   it was used. The text sits beside one or two pictures and under three or four. */
+.image-prompts {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.image-prompt {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.image-prompt-pictures {
+  display: flex;
+  flex: none;
+  gap: 4px;
+}
+
+.image-prompt-pictures img {
+  display: block;
+  width: 64px;
+  height: 64px;
+  border-radius: 3px;
+  background: var(--well);
+  object-fit: cover;
+}
+
+.image-prompt .lines {
+  flex: 1 1 12rem;
+  overflow-wrap: anywhere;
+}
+
+/* Covered, the two lines keep their shape. */
+.image-prompt .lines span {
+  display: block;
+}
+
 .wall-label .lines {
   display: flex;
   flex-direction: column;
@@ -76,7 +117,7 @@
   font-size: 0.9375rem;
 }
 
-.wall-label .lines span:not(:first-child) {
+.wall-label .lines > span:not(:first-child) {
   color: var(--ink-muted);
 }
 

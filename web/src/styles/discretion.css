@@ -80,6 +80,12 @@ html[data-discreet] .control-thumb {
   opacity: 0.6;
 }
 
+/* An image prompt's pictures uncover with the prompt they sit under. */
+.image-prompts.covered img {
+  filter: blur(8px) saturate(0.5);
+  opacity: 0.6;
+}
+
 html[data-discreet] .control-thumb canvas {
   filter: grayscale(1) invert(1) contrast(1.15) blur(4px);
 }

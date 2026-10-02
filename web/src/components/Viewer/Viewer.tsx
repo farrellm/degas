@@ -14,6 +14,8 @@ import { isVideo } from '@/lib/image'
 import { isPair, loraLabel } from '@/lib/loras'
 import { enumLabel } from '@/lib/schema'
 
+import { ImagePrompts } from './ImagePrompts'
+
 /** What the viewer shows: a result from the feed or a kept library item. */
 export interface ViewerItem {
   id: string
@@ -215,6 +217,15 @@ export function Viewer<T extends ViewerItem>({
                 Negative: {String(params.negative_prompt)}
               </CoveredText>
             </p>
+          ) : null}
+          {spec?.image_prompts?.length ? (
+            <ImagePrompts
+              id={r.id}
+              prompts={spec.image_prompts}
+              steps={Number(params.steps)}
+              assets={assets}
+              shown={!covered}
+            />
           ) : null}
         </div>
         <p className="lines">
