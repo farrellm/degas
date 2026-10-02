@@ -35,6 +35,7 @@ log = logging.getLogger(__name__)
 REMOTE = "/content/degas"
 WORKER_MATCH = "degas_worker.app:app"
 STARTED_MARKER = "@@degas-worker-started"
+PORT_WAIT_S = 90  # how long a new worker waits for the old one's port
 RCLONE_URL = "https://downloads.rclone.org/rclone-current-linux-amd64.zip"
 # Qwen-Image 2.1's pipeline (huggingface/diffusers#14804) isn't in a diffusers release yet
 # (design §11). This is the PR's merge commit on main.
@@ -46,23 +47,42 @@ DIFFUSERS_PIN = (
 # Runs in the Colab kernel so the worker inherits its CUDA environment (Phase 0, finding 6).
 # The old worker is killed outright: on SIGTERM uvicorn waits for its connections to close, and
 # the event stream of a running job never does, so it would live on, still running the job.
+# A killed worker leaves the process list before its port closes. One holding a 14B model in
+# RAM and on the GPU takes seconds to tear down, and a worker started meanwhile can't bind the
+# port and exits, so the bootstrap also waits for the port.
 BOOTSTRAP = f"""
-import os, subprocess, sys, time
+import os, socket, subprocess, sys, time
 subprocess.run(["pkill", "-KILL", "-f", {WORKER_MATCH!r}])
 for _ in range(100):
     if subprocess.run(["pgrep", "-f", {WORKER_MATCH!r}], stdout=subprocess.DEVNULL).returncode:
         break
     time.sleep(0.1)
-_env = dict(os.environ, PYTHONPATH="{REMOTE}/worker", DEGAS_WORKER_HOME="{REMOTE}",
-            DEGAS_CACHE_BUDGET_GB="{{budget}}", PATH="{REMOTE}/bin:" + os.environ.get("PATH", ""),
-            PYTORCH_CUDA_ALLOC_CONF="expandable_segments:True")
-_log = open("{REMOTE}/worker.log", "ab")
-_p = subprocess.Popen(
-    [sys.executable, "-m", "uvicorn", {WORKER_MATCH!r}, "--host", "127.0.0.1",
-     "--port", "{{port}}"],
-    env=_env, cwd="{REMOTE}", stdin=subprocess.DEVNULL, stdout=_log, stderr=subprocess.STDOUT,
-    start_new_session=True)
-print("{STARTED_MARKER}", _p.pid)
+def _port_free():
+    with socket.socket() as s:
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)  # as uvicorn binds
+        try:
+            s.bind(("127.0.0.1", {{port}}))
+        except OSError:
+            return False
+        return True
+for _ in range({PORT_WAIT_S * 10}):
+    if _port_free():
+        break
+    time.sleep(0.1)
+if _port_free():
+    _env = dict(os.environ, PYTHONPATH="{REMOTE}/worker", DEGAS_WORKER_HOME="{REMOTE}",
+                DEGAS_CACHE_BUDGET_GB="{{budget}}",
+                PATH="{REMOTE}/bin:" + os.environ.get("PATH", ""),
+                PYTORCH_CUDA_ALLOC_CONF="expandable_segments:True")
+    _log = open("{REMOTE}/worker.log", "ab")
+    _p = subprocess.Popen(
+        [sys.executable, "-m", "uvicorn", {WORKER_MATCH!r}, "--host", "127.0.0.1",
+         "--port", "{{port}}"],
+        env=_env, cwd="{REMOTE}", stdin=subprocess.DEVNULL, stdout=_log,
+        stderr=subprocess.STDOUT, start_new_session=True)
+    print("{STARTED_MARKER}", _p.pid)
+else:
+    print("port {{port}} is still in use {PORT_WAIT_S} s after the old worker was killed")
 """
 
 
@@ -396,7 +416,7 @@ class SessionManager:
         code = BOOTSTRAP.replace("{port}", str(self.config.colab.worker_port)).replace(
             "{budget}", str(self.config.colab.cache_budget_gb)
         )
-        out = await self.colab.exec(code, timeout=120)
+        out = await self.colab.exec(code, timeout=PORT_WAIT_S + 60)
         if STARTED_MARKER not in out:
             raise SessionError(f"Worker did not start: {out.strip()[-500:]}")
 
