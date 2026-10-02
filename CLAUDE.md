@@ -58,7 +58,26 @@ cd web && pnpm vitest run src/lib/schema.test.ts # single web test
 - Runner changes are only proven on a GPU: after touching `degas_worker/families` or
   `preprocess`, run one job per family and each preprocessor through the API on a scratch
   server. An A100 runs every family.
+- diffusers skips LoRA keys that match no module with only a log line ("unexpected keys" in
+  `worker.log`), so a LoRA can load and still be partly ignored. Per-family key fixes live in
+  `degas_worker/families/lora.py` (torch-free, unit-tested).
 - Pre-commit: hooks fix staged files on commit; `make check` runs in GitHub CI only.
+
+## Debugging a live session
+
+- Server log: `journalctl --user -u degas` (worker requests show as `httpx2` lines with the
+  tunnel's local port; `curl localhost:<that port>/state` asks the worker directly).
+- Shell on the VM, through the server's tunnel:
+  `ssh -o ControlPath=$XDG_RUNTIME_DIR/degas-%C -o BatchMode=yes root@colab-runtime '<cmd>'`.
+  There: `/content/degas/worker.log`, the bundle in `/content/degas/worker`, Drive assets
+  under `/content/models/<drive path>`. `nvidia-smi` needs `LD_LIBRARY_PATH=/usr/lib64-nvidia`.
+- diffusers/peft source is only on the VM (`/usr/local/lib/python3.13/dist-packages`): read
+  it there. A CPU-only script (`CUDA_VISIBLE_DEVICES=`) runs beside the worker, e.g. to check
+  LoRA keys against a model built with `init_empty_weights()` + `from_config`.
+- A job stuck at one step with the worker still healthy: check `top -H` on the VM for a
+  pipeline running on the CPU, and `ps` for a second `uvicorn` worker.
+- Worker-only changes need no server restart: they reach the VM at the next session start or
+  worker reset (`POST /api/session/reset-worker`, which also drops the loaded models).
 
 ## Workflow
 
