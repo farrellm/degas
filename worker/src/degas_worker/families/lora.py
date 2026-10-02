@@ -66,3 +66,35 @@ def strip_text_model(keys: dict[str, Any], prefix: str) -> dict[str, Any]:
     return {
         f"{prefix}.{k.removeprefix(old)}" if k.startswith(old) else k: v for k, v in keys.items()
     }
+
+
+def qwen21_lora_state(state: dict[str, Any]) -> dict[str, Any]:
+    """A Qwen-Image 2.1 LoRA's tensors under names diffusers' loader takes, all of them under
+    `diffusion_model.`.
+
+    Two kinds of file load wrongly as they are:
+
+    - Keys under `transformer.` with `.alpha` tensors: the alphas send the file through the
+      loader's conversion, which puts a second `transformer.` on and then matches no module.
+      It also drops the alphas of `lora_A`/`lora_B` keys, so they are folded into `lora_A` here.
+    - The original checkpoint's fused `img_mlp.gate_up`, which the diffusers model has as
+      `gate_layer` (its first half of the output rows) and `proj` (the second half): the loader
+      skips those keys. Both get the LoRA's down matrix and their half of its up matrix.
+    """
+    out: dict[str, Any] = {}
+    for name, value in state.items():
+        prefix = next((p for p in ("transformer.", "diffusion_model.") if name.startswith(p)), "")
+        out[name.removeprefix(prefix)] = value
+    for key in [k for k in out if k.endswith(".alpha")]:
+        down = key.removesuffix("alpha") + "lora_A.weight"
+        if down in out:
+            out[down] = out[down] * (float(out.pop(key)) / out[down].shape[0])
+    for key in [k for k in out if ".gate_up." in k]:
+        module, rest = key.split(".gate_up.", 1)
+        value = out.pop(key)
+        halves = (value, value)
+        if rest in ("lora_B.weight", "lora_up.weight"):
+            half = value.shape[0] // 2
+            halves = (value[:half], value[half:])
+        out[f"{module}.gate_layer.{rest}"], out[f"{module}.proj.{rest}"] = halves
+    return {f"diffusion_model.{key}": value for key, value in out.items()}

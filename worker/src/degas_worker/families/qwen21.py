@@ -13,10 +13,12 @@ from typing import Any
 import torch
 from diffusers import FlowMatchEulerDiscreteScheduler, QwenImage21Pipeline
 from PIL import Image
+from safetensors.torch import load_file
 
 from degas_worker import masks
 from degas_worker.degrid import degrid
 from degas_worker.families.base import Output, RunContext
+from degas_worker.families.lora import qwen21_lora_state
 from degas_worker.families.offload import loaded_bytes, module_bytes, place
 from degas_worker.families.runtime import (
     fetch_loras,
@@ -71,7 +73,7 @@ class Qwen21Runner:
         ctx.check_cancelled()
         ctx.progress(0, "load", 0, 1)
         self._load(path)
-        sync_loras(self.pipe, self.adapters, loras)
+        sync_loras(self.pipe, self.adapters, loras, self._load_lora)
         ctx.progress(0, "load", 1, 1)
 
         extra = SCHEDULES.get(params.get("schedule", "default"))
@@ -136,6 +138,9 @@ class Qwen21Runner:
         self.model_path = path
         self.adapters = {}
         self._scheduler_config = pipe.scheduler.config
+
+    def _load_lora(self, file: Path, name: str) -> None:
+        self.pipe.load_lora_weights(qwen21_lora_state(load_file(file)), adapter_name=name)
 
     def _kv_cache_fits(self, n_images: int, width: int, height: int) -> bool:
         """Whether an edit can keep the pipeline's KV cache on the GPU.
