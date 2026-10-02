@@ -230,8 +230,9 @@ class FamilyRunner:
   - `ti2v-5b`: text-to-video and image-to-video, minimum GPU L4.
   - `t2v-a14b`: text-to-video, minimum GPU A100.
   - `i2v-a14b`: image-to-video, minimum GPU A100.
+  - `wan21-i2v-14b`: Wan 2.1's 14B image-to-video model (the 480P or 720P diffusers folder), minimum GPU A100. It is here because it shares the pipeline and runner, and because LoRAs trained on it lose their image cross-attention layers (`k_img`, `v_img`) on Wan 2.2, which has no CLIP image encoder. It has one transformer, so no low-noise CFG or expert switch, and takes single-file LoRAs. Not yet run on a GPU.
 - **Pipelines:** diffusers `WanPipeline` and `WanImageToVideoPipeline`.
-- **LoRAs:** `paired_hi_lo` for the A14B variants. A LoRA entry names a high-noise file and a low-noise file, and each has its own weight. Both may be the same file: a single-file LoRA (Wan 2.1 14B's load on the A14B experts) whose sidecar lists an A14B variant is offered there and goes into both experts, still with a weight each. A LoRA entry for the 5B variant is a single file.
+- **LoRAs:** `paired_hi_lo` for the A14B variants. A LoRA entry names a high-noise file and a low-noise file, and each has its own weight. Both may be the same file: a single-file LoRA (Wan 2.1 14B's load on the A14B experts) whose sidecar lists an A14B variant is offered there and goes into both experts, still with a weight each. A LoRA entry for the 5B and Wan 2.1 variants is a single file; an untagged single file is offered to both, so tag it with `variants` in its sidecar.
 - **Parameters:** prompt, negative prompt, resolution preset, frame count, fps, steps, CFG (with separate values for the two experts on A14B), boundary ratio (A14B), seed, and a source image for i2v.
 - **Output:** an MP4 encoded with H.264 in `yuv420p` pixel format, so it plays inline on iOS. A poster frame is extracted, and so is the last frame, which is used for video extension.
 
@@ -293,7 +294,7 @@ MyDrive/degas/
   models/
     sdxl/          *.safetensors (+ optional *.yaml sidecar)
       inpaint/     inpainting checkpoints (9-channel UNet): the `inpaint` variant
-    wan22/         <variant>/…   (diffusers-format directories)
+    wan22/         <variant>/…   (diffusers-format directories; Wan 2.1 I2V in wan21-i2v-14b/)
     qwen21/        Qwen-Image-2.1/ (the official diffusers folder)
     flux1/         *.safetensors (single-file transformers, e.g. flux1-dev-fp8)
     klein/         FLUX.2-klein-9B/ (the official diffusers folder)
@@ -335,7 +336,7 @@ notes: "Works best with CFG 3–4"
 source: "https://civitai.com/models/<id>?modelVersionId=<version>"   # where it came from
 ```
 
-**Civitai imports** (`degas/civitai/`; `degas civitai import <link>`, or *Import from Civitai* in the LoRA picker). The version's `baseModel` picks the family: SDXL 1.0 and its fine-tunes (Pony, Illustrious, NoobAI) → `sdxl`, Flux.1 D/S/Krea → `flux1`, Flux.2 Klein 9B → `klein`, Qwen 2/2.1 → `qwen21`, and the Wan Video 2.2 bases → `wan22` with `variants` set. Anything else is refused unless a family is given. A Wan A14B file is named `<name>_high_noise` or `_low_noise` from `high`/`low` in its file or version name, so halves imported from two versions still pair up. The file streams from Civitai into `rclone rcat` on the server's writable remote (`lora.rclone_remote`), with its SHA-256 checked against Civitai's and its md5 against Drive's. A mismatch deletes it. Then a sidecar (label, trigger words, weight 0.8, the base model in `notes`, `source`) and a 768 px preview from the first example image (a still, for a video) are written, and Drive is rescanned. A file whose SHA-256 is already in the index, or whose name is taken, is refused unless forced. `degas civitai backfill` writes sidecars for LoRAs already in Drive, looked up by SHA-256.
+**Civitai imports** (`degas/civitai/`; `degas civitai import <link>`, or *Import from Civitai* in the LoRA picker). The version's `baseModel` picks the family: SDXL 1.0 and its fine-tunes (Pony, Illustrious, NoobAI) → `sdxl`, Flux.1 D/S/Krea → `flux1`, Flux.2 Klein 9B → `klein`, Qwen 2/2.1 → `qwen21`, and the Wan Video 2.2 bases, and Wan 2.1's two 14B i2v bases, → `wan22` with `variants` set. Anything else is refused unless a family is given. A Wan A14B file is named `<name>_high_noise` or `_low_noise` from `high`/`low` in its file or version name, so halves imported from two versions still pair up. The file streams from Civitai into `rclone rcat` on the server's writable remote (`lora.rclone_remote`), with its SHA-256 checked against Civitai's and its md5 against Drive's. A mismatch deletes it. Then a sidecar (label, trigger words, weight 0.8, the base model in `notes`, `source`) and a 768 px preview from the first example image (a still, for a video) are written, and Drive is rescanned. A file whose SHA-256 is already in the index, or whose name is taken, is refused unless forced. `degas civitai backfill` writes sidecars for LoRAs already in Drive, looked up by SHA-256.
 
 **Drive access.** Degas does not use `drivemount`, because it needs interactive consent on every new VM (Phase 0). Instead:
 

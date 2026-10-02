@@ -14,7 +14,7 @@ from degas.blobs import SHA256
 from degas.civitai.client import still_url
 from degas.errors import DegasError
 
-# Civitai's `baseModel` → (family, the Wan 2.2 variants its LoRAs are for). Pony, Illustrious
+# Civitai's `baseModel` → (family, the Wan variants its LoRAs are for). Pony, Illustrious
 # and NoobAI are SDXL fine-tunes: their LoRAs load on any SDXL checkpoint but look right only on
 # their own base, which the sidecar's notes record. Pony V7 is AuraFlow, so it isn't here.
 BASE_MODELS: dict[str, tuple[str, list[str] | None]] = {
@@ -36,6 +36,8 @@ BASE_MODELS: dict[str, tuple[str, list[str] | None]] = {
     "Wan Video 2.2 TI2V-5B": ("wan22", ["ti2v-5b"]),
     "Wan Video 2.2 T2V-A14B": ("wan22", ["t2v-a14b"]),
     "Wan Video 2.2 I2V-A14B": ("wan22", ["i2v-a14b"]),
+    "Wan Video 14B i2v 480p": ("wan22", ["wan21-i2v-14b"]),
+    "Wan Video 14B i2v 720p": ("wan22", ["wan21-i2v-14b"]),
 }
 PAIRED_VARIANTS = {"t2v-a14b", "i2v-a14b"}
 LORA_TYPES = {"LORA", "LoCon", "DoRA"}

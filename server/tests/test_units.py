@@ -10,7 +10,7 @@ from degas.config import load_config
 from degas.db import Database
 from degas.families.base import SpecError, spec_assets
 from degas.families.sdxl import Sdxl
-from degas.families.wan22 import Wan22
+from degas.families.wan22 import Wan22, extend_variant
 
 # -- colab CLI -----------------------------------------------------------------------------
 
@@ -292,6 +292,31 @@ def test_wan_i2v_needs_a_source_and_a_matching_model() -> None:
         Wan22().validate({**i2v, "model": WAN_SPEC["model"], "inputs": {"source": source}})
     with pytest.raises(SpecError, match="can't do"):
         Wan22().validate({**WAN_SPEC, "mode": "i2v"})
+
+
+def test_wan21_i2v_has_one_transformer_and_single_loras() -> None:
+    wan21 = {
+        **WAN_SPEC,
+        "variant": "wan21-i2v-14b",
+        "mode": "i2v",
+        "model": {"path": "models/wan22/wan21-i2v-14b/Wan2.1-I2V-14B-720P-Diffusers"},
+        "inputs": {"source": "sha256:" + "a" * 64},
+        "loras": [{"path": "loras/wan22/spin.safetensors", "weight": 0.9}],
+    }
+    spec = Wan22().validate(wan21)
+    params = spec["params"]
+    assert (params["fps"], params["steps"], params["cfg"]) == (16, 40, 5.0)
+    assert "cfg_low" not in params
+    assert "boundary_ratio" not in params
+    assert spec["loras"] == [{"path": "loras/wan22/spin.safetensors", "weight": 0.9, "size": None}]
+    with pytest.raises(SpecError, match="can't do"):
+        Wan22().validate({**wan21, "mode": "t2v"})
+    assert [extend_variant(v.id) for v in Wan22().variants] == [
+        "ti2v-5b",
+        "i2v-a14b",
+        "i2v-a14b",
+        "wan21-i2v-14b",
+    ]
 
 
 def test_wan_paired_loras() -> None:

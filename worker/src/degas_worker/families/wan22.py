@@ -3,7 +3,9 @@
 Models are diffusers-format directories. The 5B (TI2V) loads as `WanPipeline` and
 does image-to-video through `WanImageToVideoPipeline.from_pipe`, which shares its
 components. The A14B variants have two experts (`transformer` for high noise,
-`transformer_2` for low noise), and their LoRAs come in high/low pairs.
+`transformer_2` for low noise), and their LoRAs come in high/low pairs. Wan 2.1's 14B
+image-to-video model loads as `WanImageToVideoPipeline` with one transformer and a CLIP
+image encoder.
 """
 
 import contextlib
