@@ -26,7 +26,7 @@ from degas.events import EventBus
 from degas.families import FAMILIES
 from degas.inputs import Inputs
 from degas.library import sweep
-from degas.notices import RESULTS_URL, SESSION_URL, idle_notice, job_notice
+from degas.notices import RESULTS_URL, SESSION_URL, idle_notice, job_notice, ready_notice
 from degas.preprocess import Preprocessing
 from degas.push import Push, Sender
 from degas.rclone import AsyncRclone, Remote
@@ -155,7 +155,12 @@ def build_services(
             url=SESSION_URL,
         )
 
+    def session_launched() -> None:
+        gpu = sessions.session["gpu"] if sessions.session else "The GPU"
+        push.notify(ready_notice(gpu), tag="session", url=SESSION_URL)
+
     dispatcher.on_finish.append(job_finished)
+    sessions.on_launched.append(session_launched)
     sessions.on_idle_warning.append(idle_warning)
 
     remote = remote or AsyncRclone()

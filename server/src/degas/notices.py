@@ -33,5 +33,10 @@ def idle_notice(gpu: str, left: timedelta) -> str:
     return f"{gpu} stops in {seconds // 60}:{seconds % 60:02d} if no job runs."
 
 
+def ready_notice(gpu: str) -> str:
+    """A new session (or a reset worker) is ready: "L4 is ready."."""
+    return f"{gpu} is ready."
+
+
 def _clip(text: str) -> str:
     return text if len(text) <= BODY_CHARS else text[: BODY_CHARS - 1].rstrip() + "…"

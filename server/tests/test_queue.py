@@ -7,7 +7,7 @@ from typing import Any
 
 from fastapi.testclient import TestClient
 
-from degas.notices import idle_notice, job_notice
+from degas.notices import idle_notice, job_notice, ready_notice
 from degas.push import application_server_key, load_vapid
 
 from .test_api import SPEC, job, wait_for
@@ -98,7 +98,9 @@ def test_finished_job_sends_a_notification(client: TestClient, harness: Any) -> 
     first = submit(client, "a lighthouse at dusk", n=2)
     client.post("/api/session", json={"gpu": "L4"})
     wait_for(lambda: job(client, first)["status"] == "done")
-    endpoint, payload = wait_for(lambda: harness.pushed and harness.pushed[0])
+    endpoint, payload = wait_for(
+        lambda: next((p for p in harness.pushed if p[1]["tag"] == first), None)
+    )
     assert endpoint == SUB["endpoint"]
     assert payload == {
         "title": "2 images finished",
@@ -129,12 +131,28 @@ async def test_idle_warning_is_pushed_once(harness: Any) -> None:
     await svc.start()
     try:
         await svc.sessions.start("L4", high_mem=False)
-        await until(lambda: harness.pushed)
-        _, payload = harness.pushed[0]
-        assert payload["title"] == "L4 stops in 0:10 if no job runs."
-        assert payload["url"] == "/?sheet=session"
+        idle = lambda: [p for _, p in harness.pushed if p["tag"] == "idle"]  # noqa: E731
+        await until(idle)
+        assert idle()[0]["title"] == "L4 stops in 0:10 if no job runs."
+        assert idle()[0]["url"] == "/?sheet=session"
         await until(lambda: svc.sessions.state == "stopped")
-        assert len(harness.pushed) == 1
+        assert len(idle()) == 1
+    finally:
+        await svc.stop()
+
+
+async def test_ready_is_pushed_on_launch_and_worker_reset(harness: Any) -> None:
+    svc = harness.build()
+    svc.db.add_push_subscription(SUB["endpoint"], SUB["keys"])
+    await svc.start()
+    ready = {"title": "L4 is ready.", "body": "", "tag": "session", "url": "/?sheet=session"}
+    try:
+        await svc.sessions.start("L4", high_mem=False)
+        await until(lambda: harness.pushed)
+        assert [p for _, p in harness.pushed] == [ready]
+        await svc.sessions.reset_worker()
+        await until(lambda: len(harness.pushed) == 2)
+        assert harness.pushed[1][1] == ready
     finally:
         await svc.stop()
 
@@ -142,6 +160,7 @@ async def test_idle_warning_is_pushed_once(harness: Any) -> None:
 def test_notice_wording() -> None:
     assert idle_notice("L4", timedelta(seconds=115)) == "L4 stops in 2:00 if no job runs."
     assert idle_notice("A100", timedelta(seconds=61)) == "A100 stops in 1:10 if no job runs."
+    assert ready_notice("A100") == "A100 is ready."
     clip = {"status": "done", "seeds": [1], "spec": {"family": "wan22", "params": {}}}
     assert job_notice(clip) == ("Clip finished", "")
     failed = {"status": "error", "error": "CUDA out of memory", "seeds": [1], "spec": {}}

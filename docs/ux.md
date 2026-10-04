@@ -188,7 +188,7 @@ Built. Notes on what shipped: the drag handle is three strokes of hatching, sinc
 - **Reorder and cancel.** Queued groups in Results get a drag handle (long-press to lift) and a *Move to top* action. Cancelling a queued job shows an *Undo* link in a toast for 5 s.
 - **Seeds for batches.** When the batch size is above 1, the Seed row becomes a two-way choice: *Random seeds* or *Count up from 1234*. A fixed seed with a batch is disallowed, as the design doc says.
 - **PWA.** The icon is an italic *D* in chalk on slate paper, with rose hatching across its lower half. `theme-color` is already set per scheme.
-- **Notifications.** Degas asks once, after the first job finishes while installed to the home screen: *Get a notification when images finish?* with *Allow* and *Not now*. After that it's a toggle in the GPU session sheet. The idle warning 2 minutes before shutdown uses the same wording as the sheet: *L4 stops in 2:00 if no job runs.*
+- **Notifications.** Degas asks once, after the first job finishes while installed to the home screen: *Get a notification when images finish?* with *Allow* and *Not now*. After that it's a toggle in the GPU session sheet. The idle warning 2 minutes before shutdown uses the same wording as the sheet: *L4 stops in 2:00 if no job runs.* When a new session or a reset worker is ready: *L4 is ready.*
 
 ### Phase 6: Image-to-image, inpaint and outpaint
 

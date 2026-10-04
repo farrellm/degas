@@ -64,6 +64,7 @@ async def test_recover_reattaches_to_a_live_vm(harness: Any) -> None:
     await first.stop()  # server shutdown: the VM keeps running
 
     second = harness.build()
+    second.db.add_push_subscription("https://push.example/sub/1", {"p256dh": "k", "auth": "a"})
     await second.start()
     try:
         await until(lambda: second.sessions.state == "ready")
@@ -71,6 +72,8 @@ async def test_recover_reattaches_to_a_live_vm(harness: Any) -> None:
         assert harness.colab.calls.count("exec") == 1
         assert len(harness.tunnels[1].uploads) == 0
         assert second.sessions.session["last_activity_at"] > old_activity
+        await second.push.drain()
+        assert harness.pushed == []  # reattaching isn't a launch: no "ready" push
     finally:
         await second.stop()
 

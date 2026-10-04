@@ -1,8 +1,9 @@
 """Web Push (design §8.3): VAPID keys, subscriptions and notifications.
 
-The phone gets a notification when a job finishes or fails, and when an idle
-session is about to stop. iOS delivers them only to a PWA installed to the home
-screen. Delivery is best effort: a failure is logged and never affects a job.
+The phone gets a notification when a job finishes or fails, when a new session
+(or a reset worker) is ready, and when an idle session is about to stop. iOS
+delivers them only to a PWA installed to the home screen. Delivery is best effort:
+a failure is logged and never affects a job.
 """
 
 import asyncio

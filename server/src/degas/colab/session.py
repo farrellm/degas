@@ -156,6 +156,8 @@ class SessionManager:
         self._lock = asyncio.Lock()
         self.on_ready: list[Callable[[], None]] = []
         self.on_end: list[Callable[[], None]] = []
+        # A new VM or a reset worker is ready (not a reattach or a silent recovery).
+        self.on_launched: list[Callable[[], None]] = []
         # Called with the time left when an idle session is about to stop.
         self.on_idle_warning: list[Callable[[timedelta], None]] = []
         self._idle_warned: datetime | None = None  # the deadline already warned about
@@ -344,6 +346,9 @@ class SessionManager:
             self._step(None)
             self._update(state="ready", last_activity_at=now())
             self._monitor = asyncio.create_task(self._watch())
+            if allocate or restart_worker:
+                for cb in self.on_launched:
+                    cb()
         except asyncio.CancelledError:
             raise
         except Exception as e:
