@@ -1,4 +1,5 @@
 import type { Result } from '@/api/types'
+import { SavePrompt } from '@/components/Viewer/SavePrompt'
 import { SaveToPhotos } from '@/components/Viewer/SaveToPhotos'
 import { draftFromSpec, draftWithSource, useSourceTarget } from '@/features/create/draft'
 import { isVideo } from '@/lib/image'
@@ -39,6 +40,7 @@ export function ResultActions({
         {r.library_id ? 'Kept' : 'Keep'}
       </button>
       <SaveToPhotos item={r} />
+      <SavePrompt item={r} />
       <button
         type="button"
         className="btn quiet"

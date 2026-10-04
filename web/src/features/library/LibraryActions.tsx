@@ -1,5 +1,6 @@
 import { useState } from 'react'
 
+import { SavePrompt } from '@/components/Viewer/SavePrompt'
 import { SaveToPhotos } from '@/components/Viewer/SaveToPhotos'
 
 import type { Kept } from './kept'
@@ -50,6 +51,7 @@ export function LibraryActions({
         Remix
       </button>
       <SaveToPhotos item={item} />
+      <SavePrompt item={item} />
       {onExtend && (
         <button type="button" className="btn quiet" onClick={onExtend}>
           Extend

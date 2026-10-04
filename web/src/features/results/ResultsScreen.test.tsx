@@ -48,6 +48,25 @@ describe('Results', () => {
     expect(screen.getByRole('button', { name: '832×1216' })).toHaveAttribute('aria-pressed', 'true')
   })
 
+  it("saves a result's prompt to the saved prompts", async () => {
+    const saved: unknown[] = []
+    mockApi({
+      'GET /api/results': () => ({ results: [RESULT], cursor: null }),
+      'GET /api/prompts': () => [],
+      'POST /api/prompts': (init) => {
+        saved.push(JSON.parse(init?.body as string))
+        return { id: 'p2' }
+      },
+    })
+    const user = userEvent.setup()
+    renderApp()
+    await user.click(await screen.findByRole('button', { name: /Results/ }))
+    await user.click(await screen.findByRole('button', { name: /Open image 1, seed 1234/ }))
+    await user.click(screen.getByRole('button', { name: 'Save prompt' }))
+    expect(await screen.findByRole('button', { name: 'Prompt saved' })).toBeDisabled()
+    expect(saved).toEqual([{ prompt: 'a lighthouse', negative_prompt: '', family: 'sdxl' }])
+  })
+
   it('shows a result’s image prompts in the viewer, and none where there are none', async () => {
     const prompted = { ...RESULT, spec: { ...SPEC, image_prompts: IMAGE_PROMPTS } }
     const plain = { ...RESULT, id: 'r2', item_index: 1, blob_sha: 'def', seed: 1235 }

@@ -53,6 +53,25 @@ describe('Library', () => {
     expect(errors).not.toHaveBeenCalled()
   })
 
+  it("saves a kept image's prompt, and knows one already saved", async () => {
+    const saved: unknown[] = []
+    mockApi({
+      'GET /api/library': () => ({ items: [LIBRARY_ITEM], cursor: null }),
+      'GET /api/prompts': () => (saved.length ? [{ ...PROMPT, prompt: 'a harbour at dusk' }] : []),
+      'POST /api/prompts': (init) => {
+        saved.push(JSON.parse(init?.body as string))
+        return PROMPT
+      },
+    })
+    const user = userEvent.setup()
+    renderApp()
+    await user.click(await screen.findByRole('button', { name: 'Library' }))
+    await user.click(await screen.findByRole('button', { name: 'Open a harbour at dusk' }))
+    await user.click(screen.getByRole('button', { name: 'Save prompt' }))
+    expect(await screen.findByRole('button', { name: 'Prompt saved' })).toBeDisabled()
+    expect(saved).toEqual([{ prompt: 'a harbour at dusk', negative_prompt: '', family: 'sdxl' }])
+  })
+
   it('shows the image prompts a kept image was made with', async () => {
     const item = {
       ...LIBRARY_ITEM,
