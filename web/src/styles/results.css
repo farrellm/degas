@@ -27,6 +27,17 @@
   -webkit-box-orient: vertical;
 }
 
+/*
+ * A covered title's button is an atomic inline box, which the clamp above can't cut
+ * between lines, so it clamps itself.
+ */
+.group-caption .title .covered-text {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
 .group-caption .title.untitled {
   color: var(--ink-muted);
 }
