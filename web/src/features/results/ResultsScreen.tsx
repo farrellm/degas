@@ -160,6 +160,10 @@ export function ResultsScreen({ onRemix, onCreate }: ResultsScreenProps) {
             onCancel={(job) => {
               cancel.mutate(job)
             }}
+            onRemix={(job) => {
+              draftFromSpec(job.spec, null)
+              onRemix()
+            }}
             deleting={remove.isPending && remove.variables.id === g.id}
             onDelete={() => {
               remove.mutate(g)

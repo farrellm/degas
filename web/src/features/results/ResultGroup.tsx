@@ -22,6 +22,7 @@ export function ResultGroup({
   sectionRef,
   onOpen,
   onCancel,
+  onRemix,
   deleting,
   onDelete,
 }: {
@@ -32,6 +33,8 @@ export function ResultGroup({
   sectionRef: (el: HTMLElement | null) => void
   onOpen: (id: string) => void
   onCancel: (job: Job) => void
+  /** Load a pending job's spec into Create. */
+  onRemix: (job: Job) => void
   deleting: boolean
   onDelete: () => void
 }) {
@@ -123,6 +126,15 @@ export function ResultGroup({
                 }}
               >
                 Cancel
+              </button>
+              <button
+                type="button"
+                className="btn quiet small"
+                onClick={() => {
+                  onRemix(job)
+                }}
+              >
+                Remix
               </button>
               {queued && queued.index > 0 && (
                 <button type="button" className="btn quiet small" onClick={queued.onTop}>

@@ -36,6 +36,21 @@ describe('Results', () => {
     expect(screen.getByRole('img', { name: 'Image 2: Denoising 12/30' })).toBeInTheDocument()
   })
 
+  it('remixes a queued job before it runs', async () => {
+    mockApi({
+      'GET /api/jobs': () => [
+        { ...JOB_DONE, status: 'queued', spec: { ...SPEC, params: { ...SPEC.params, seed: 42 } } },
+      ],
+    })
+    const user = userEvent.setup()
+    renderApp()
+    await user.click(await screen.findByRole('button', { name: /Results/ }))
+    const group = await screen.findByRole('region', { name: 'a lighthouse' })
+    await user.click(within(group).getByRole('button', { name: 'Remix' }))
+    expect(await screen.findByLabelText('Prompt')).toHaveValue('a lighthouse')
+    expect(screen.getByLabelText('Seed')).toHaveValue(42)
+  })
+
   it("remixes a result's settings in the form", async () => {
     mockApi({ 'GET /api/results': () => ({ results: [RESULT], cursor: null }) })
     const user = userEvent.setup()
