@@ -75,6 +75,11 @@ class FamilyDescriptor(Protocol):
         """Return a normalized spec (defaults filled, values clamped) or raise SpecError."""
         ...
 
+    def extend_variant(self, variant: str) -> str | None:
+        """The variant that continues a clip made by `variant` from its last frame (in `i2v`),
+        or None if the family's videos can't be extended."""
+        ...
+
 
 def gpu_rank(gpu: str) -> int:
     return GPUS.index(gpu) if gpu in GPUS else -1
@@ -88,6 +93,7 @@ def describe(family: FamilyDescriptor) -> dict[str, Any]:
         "lora_format": family.lora_format,
         "supports_control": family.supports_control,
         "supports_image_prompts": family.supports_image_prompts,
+        "extendable": any(family.extend_variant(v.id) for v in family.variants),
         "image_prompt_options": (
             asdict(family.image_prompt_options) if family.image_prompt_options else None
         ),

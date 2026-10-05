@@ -226,6 +226,7 @@ export const WAN = {
   label: 'Wan 2.2',
   media: 'video',
   lora_format: 'paired_hi_lo',
+  extendable: true,
   variants: [
     {
       id: 'ti2v-5b',

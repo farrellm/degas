@@ -19,7 +19,7 @@ from degas_worker.spec import (
 
 LORA_WEIGHT: JsonSchema = {"type": "number", "minimum": -2, "maximum": 2}
 # Modes that start from a source image.
-SOURCE_MODES = frozenset({"i2i", "i2v", "edit", "inpaint", "outpaint"})
+SOURCE_MODES = frozenset({"i2i", "i2v", "flf2v", "edit", "inpaint", "outpaint"})
 
 
 def validate_model(model: Any, variant: Variant) -> AssetRef:
@@ -34,7 +34,8 @@ def validate_model(model: Any, variant: Variant) -> AssetRef:
 
 
 def validate_inputs(inputs: Any, mode: str) -> SpecInputs:
-    """Source-image inputs: `{source, fit, extends?}`. Transforms are recorded by the server."""
+    """Source-image inputs: `{source, fit, extends?}`, with the mask, placement or last frame
+    the mode needs. Transforms are recorded by the server."""
     if mode not in SOURCE_MODES:
         return {}
     inputs = inputs if isinstance(inputs, dict) else {}
@@ -52,6 +53,11 @@ def validate_inputs(inputs: Any, mode: str) -> SpecInputs:
         out["mask"] = mask
     if mode == "outpaint":
         out["place"] = inputs.get("place")
+    if mode == "flf2v":
+        end = inputs.get("end")
+        if not is_ref(end):
+            raise SpecError("Choose the last frame")
+        out["end"] = end
     extends = inputs.get("extends")
     if extends is not None:
         if not is_ref(extends):

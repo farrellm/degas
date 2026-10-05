@@ -7,6 +7,7 @@ import { Tile } from '@/components/Tile'
 import { Viewer } from '@/components/Viewer/Viewer'
 import { draftFromSpec, draftWithSource, useSourceTarget } from '@/features/create/draft'
 import { useAssets } from '@/hooks/useAssets'
+import { useExtendable } from '@/hooks/useExtendable'
 import { useNow } from '@/hooks/useNow'
 import { isVideo } from '@/lib/image'
 
@@ -34,6 +35,7 @@ export function LibraryImages({ q, onRemix }: { q: string; onRemix: () => void }
   const assets = useAssets()
   const [open, setOpen] = useState<string | null>(null)
   const sourceTarget = useSourceTarget()
+  const extendable = useExtendable()
   const extend = useMutation({
     mutationFn: api.extendLibraryItem,
     onSuccess: (ext) => {
@@ -140,7 +142,7 @@ export function LibraryImages({ q, onRemix }: { q: string; onRemix: () => void }
                 onRemix()
               }}
               onExtend={
-                item.kind === 'video' && item.config.family === 'wan22'
+                item.kind === 'video' && extendable(item.config.family)
                   ? () => {
                       extend.mutate(item.id)
                     }

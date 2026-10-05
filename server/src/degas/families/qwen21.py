@@ -120,6 +120,9 @@ class Qwen21:
             }
         return params_schema(props)
 
+    def extend_variant(self, variant: str) -> str | None:
+        return None  # images
+
     def validate(self, spec: dict[str, Any]) -> Spec:
         variant = spec.get("variant", "base")
         mode = spec.get("mode", "t2i")

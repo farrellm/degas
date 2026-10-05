@@ -37,6 +37,8 @@ export interface FamilyDraft {
   mask?: MaskRef | null
   /** Outpaint: where the source sits on the canvas. */
   place?: Place | null
+  /** First and last frame: the last frame. */
+  end?: Source | null
   /** ControlNet units (SDXL). */
   control?: ControlUnit[]
   /** Edit (and Qwen's inpaint): the images after the source, in the order the model reads them. */
@@ -202,6 +204,15 @@ export function draftFromSpec(spec: Spec, seed: number | null, source?: BlobInfo
             ? { sha: unref(spec.inputs.mask), source: unref(spec.inputs.source) }
             : null,
         place: spec.inputs?.place ?? null,
+        // Fitted to the output size, like the source; an extension starts without one.
+        end:
+          spec.inputs?.end && !source
+            ? {
+                sha: unref(spec.inputs.end),
+                width: Number(spec.params.width),
+                height: Number(spec.params.height),
+              }
+            : null,
         control: (spec.control ?? []).map((c) =>
           unitFromSpec(c, { w: Number(spec.params.width), h: Number(spec.params.height) }),
         ),

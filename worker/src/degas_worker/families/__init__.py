@@ -23,6 +23,12 @@ def _klein() -> FamilyRunner:
     return KleinRunner()
 
 
+def _ltx2() -> FamilyRunner:
+    from degas_worker.families.ltx2 import Ltx2Runner  # noqa: PLC0415 - imports diffusers lazily
+
+    return Ltx2Runner()
+
+
 def _qwen21() -> FamilyRunner:
     from degas_worker.families.qwen21 import Qwen21Runner  # noqa: PLC0415 - diffusers, lazily
 
@@ -41,4 +47,5 @@ RUNNERS: dict[str, Callable[[], FamilyRunner]] = {
     "klein": _klein,
     "qwen21": _qwen21,
     "wan22": _wan22,
+    "ltx2": _ltx2,
 }

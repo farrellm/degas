@@ -274,6 +274,21 @@ class FamilyRunner:
 - **LoRAs:** single files, in `loras/klein/`, loaded by the pipeline's `Flux2LoraLoaderMixin`.
 - **Not in v1:** `inpaint` (it could work like Qwen's, as an edit pasted back through the mask); the 4B and undistilled base models.
 
+**LTX-2 (`ltx2`)**
+
+- **Model.** Lightricks' LTX-2.3 (March 2026) and LTX-2.5 (August 2026): a 22B audio-video DiT that makes a clip and its sound together. LTX-2.3's text encoder is Gemma 3 12B and LTX-2.5's is Gemma 4 12B. Both load in diffusers as `LTX2Pipeline`. That needs diffusers `main` and transformers 5.10.1 or later (for Gemma 4), which the bootstrap installs when the image's are older (§11).
+- **Variants**, each a diffusers folder under `models/ltx2/<variant>/`, all minimum GPU A100 with the usual offload rule:
+  - `ltx25`: `Lightricks/LTX-2.5-Diffusers` without `transformer_full/` (about 72 GB). Its default transformer is distilled.
+  - `ltx23-distilled`: `diffusers/LTX-2.3-Distilled-Diffusers`.
+  - `ltx23`: `diffusers/LTX-2.3-Diffusers`, the full model, at 30 steps with CFG 3, audio CFG 7 and STG 1 (spatio-temporal guidance).
+- **Distilled variants** run diffusers' fixed 8-sigma schedule (`DISTILLED_SIGMA_VALUES`), with CFG, STG and modality guidance all off, so each step is one forward pass. Their form has no *Steps* or *CFG*.
+- **Upscale 2×** (distilled variants only). The clip is made at half the size, `LTX2LatentUpsamplePipeline` doubles its latents, and 3 sigmas (`STAGE_2_DISTILLED_SIGMA_VALUES`) refine them at full size, with the sound's latents carried over. Sizes then step by 64 rather than 32. The upsampler is read from the model folder's `latent_upsampler/`. If that folder is missing, the job fails with a message saying to copy it in.
+- **Modes:** `t2v`; `i2v` (`LTX2ImageToVideoPipeline`); and `flf2v`, first and last frame (`LTX2ConditionPipeline` with the source at frame 0 and `inputs.end` at the last frame). An upscaled `i2v` or `flf2v` passes its images to both passes. The server fits the last frame to the output size, as it does the source.
+- **Parameters:** prompt, negative prompt, width and height (multiples of 32, up to 1536×1024, default 960×544), frames (8k + 1, 17–257, default 121), frame rate (default 24), seed; Upscale on the distilled variants; steps, CFG, audio CFG and STG on `ltx23`.
+- **LoRAs:** single files, in `loras/ltx2/`, loaded by `LTX2LoraLoaderMixin`. Civitai's `LTXV 2.3` LoRAs are tagged for both 2.3 variants and `LTXV 2.5` for `ltx25`. LTX-2.0 (`LTXV2`, 19B) LoRAs aren't imported.
+- **Output:** H.264 as for Wan, plus the vocoder's sound as AAC in the same MP4. The viewer starts it muted (iOS autoplays only muted video), and its controls unmute it. Extension and stitching keep the sound (§6.4).
+- **Not in v1:** LTX-2.5's full transformer (`transformer_full/`, 30 steps with CFG), its prompt enhancer and duration head, IC-LoRAs, and upscaling on `ltx23` (stage 2 needs the distilled LoRA).
+
 ### 4.4 Preprocessors
 
 Preprocessors run on the GPU, in the worker, as a family-independent registry:
@@ -298,12 +313,14 @@ MyDrive/degas/
     qwen21/        Qwen-Image-2.1/ (the official diffusers folder)
     flux1/         *.safetensors (single-file transformers, e.g. flux1-dev-fp8)
     klein/         FLUX.2-klein-9B/ (the official diffusers folder)
+    ltx2/          <variant>/…   (diffusers folders: ltx25/, ltx23-distilled/, ltx23/; latent_upsampler/ inside for Upscale)
   loras/
     sdxl/          *.safetensors (+ *.yaml, preview *.jpg/png)
     wan22/         *.safetensors; A14B pairs named *_high_noise.safetensors / *_low_noise.safetensors or declared in sidecar
     qwen21/        *.safetensors
     flux1/         *.safetensors
     klein/         *.safetensors
+    ltx2/          *.safetensors (sidecar `variants` from Civitai: ltx23 + ltx23-distilled, or ltx25)
   controlnets/
     sdxl/          *.safetensors or diffusers dirs
   ip_adapters/
@@ -435,9 +452,9 @@ Saving an image or video stores a config that is self-contained and can be repla
 }
 ```
 
-For a Wan 2.2 A14B LoRA, the entry has the form `{ "high": {path, weight}, "low": {path, weight} }`. If an input image came from a URL, the config also records `inputs.origins: { "<sha256>": "<url>" }` for provenance. Replay always uses the stored blob, so the URL is never fetched again. Video extension records the parent video in `inputs.extends` (the parent's blob hash) and the extracted frame in `inputs.source`. A Qwen-Image 2.1 edit records its extra reference images, in order, in `inputs.refs` (a list of blob hashes; the source is image 1). SDXL image prompts are a top-level `image_prompts` list, `[{adapter: {path, size}, images: [sha…], purpose, weight, start, end, mask?}]`; each picture is fitted to a square (cropped, or letterboxed with `fit: pad`) and its area to the output size, both recorded in `inputs.transforms`.
+For a Wan 2.2 A14B LoRA, the entry has the form `{ "high": {path, weight}, "low": {path, weight} }`. If an input image came from a URL, the config also records `inputs.origins: { "<sha256>": "<url>" }` for provenance. Replay always uses the stored blob, so the URL is never fetched again. Video extension records the parent video in `inputs.extends` (the parent's blob hash) and the extracted frame in `inputs.source`. Any family whose descriptor gives an `extend_variant` can be extended (Wan 2.2 and LTX-2; `/families` says `extendable`). A first-and-last-frame video (`flf2v`) records its last frame in `inputs.end`. A Qwen-Image 2.1 edit records its extra reference images, in order, in `inputs.refs` (a list of blob hashes; the source is image 1). SDXL image prompts are a top-level `image_prompts` list, `[{adapter: {path, size}, images: [sha…], purpose, weight, start, end, mask?}]`; each picture is fitted to a square (cropped, or letterboxed with `fit: pad`) and its area to the output size, both recorded in `inputs.transforms`.
 
-**Video extension output.** An extend job produces the new continuation clip as its result. When it completes, the server uses `ffmpeg` to create a second result: the stitched chain, which is the parent (itself possibly stitched) followed by the continuation, with the duplicated boundary frame dropped. Both results can be saved. The stitched result's config records the ordered list of segment configs, so every segment of the chain can be reproduced.
+**Video extension output.** An extend job produces the new continuation clip as its result. When it completes, the server uses `ffmpeg` to create a second result: the stitched chain, which is the parent (itself possibly stitched) followed by the continuation, with the duplicated boundary frame dropped. If either clip has sound, the chain does too: a silent clip contributes silence, and the continuation's sound loses the length of the dropped frame. Both results can be saved. The stitched result's config records the ordered list of segment configs, so every segment of the chain can be reproduced.
 
 If an input was cropped or resized, `inputs.transforms` maps the derived blob to the original blob and the operations applied to it. Replay uses the derived blob. The original is kept so the crop can be adjusted during a remix.
 
@@ -652,6 +669,7 @@ Phases are numbered from 0.
     - Not FaceID's doing, but seen here: after an SDXL LoRA has been loaded and removed, a job without one differs slightly from a fresh worker's (mean 0.8 of 255, nothing visible), and stays that way until the worker restarts. Removing FaceID or Plus Face adds nothing to it.
     - Still to do: which onnxruntime provider InsightFace gets next to SDXL (a face takes 0.3 s either way), a T4 or L4, and a character LoRA.
 13. **FLUX.1 Redux.** ✅ Built, not yet tested on a live GPU. Image prompts for FLUX.1 (§4.3; ip-adapter.md Plan C and §6.1): Redux's tokens appended to the prompt's, shrunk by *How closely* and scaled by the weight, as ComfyUI does, rather than diffusers' summing prior pipeline. Families now send `image_prompt_options`, and the *Image prompts* sheet shows only what the family's allow. Live test to do, on an L4 (high memory) and an A100: Redux's load time and memory next to the fp8 transformer, with and without offload; each *How closely* setting on a fixed seed against no image prompt; two pictures; a LoRA with Redux.
+14. **LTX-2.** ✅ Built, not yet tested on a live GPU. The `ltx2` family (§4.3): LTX-2.5, LTX-2.3 Distilled and LTX-2.3 as variants, with `t2v`, `i2v` and `flf2v` (first and last frame), and *Upscale 2×* on the distilled variants. Video now has sound: `encode_mp4` muxes the vocoder's waveform as AAC, `media.probe` reports `audio`, and stitching carries it (silence for a silent clip). Extension is no longer Wan-only: descriptors give `extend_variant`, and the UI asks `extendable`. `flf2v` is a generic mode with an `inputs.end` image (validated, fitted, staged and kept like the source), shown as a *Last frame* row in Create. Civitai `LTXV 2.3` / `LTXV 2.5` LoRAs import to `loras/ltx2/`. The diffusers pin moved to a `main` commit with LTX-2.5, and the bootstrap upgrades transformers when it lacks Gemma 4. Live test to do, on an A100 (high memory): the cold copy, load and per-clip time for each variant at 960×544 and 121 frames; `t2v`, `i2v` and `flf2v` (that the clip ends on the last frame); Upscale on both distilled variants, including `flf2v` with its conditions in the refine pass; sound in sync, after extending and stitching too; a Civitai LTX LoRA (no unexpected keys in `worker.log`); and SDXL, Wan, Qwen, Flux and klein jobs again on the new diffusers pin and transformers.
 
 ## 11. Risks and open questions
 
@@ -669,12 +687,12 @@ Phases are numbered from 0.
 | diffusers API churn for newer Wan and ControlNet classes | Upgrades break the worker | Pin versions in `requirements-worker.txt`; record versions in each saved config |
 | fp8 layerwise casting is newer diffusers code, used here with model CPU offload and PEFT LoRAs | FLUX.1 fails to load a LoRA, or runs slowly, on an L4 | `_adapters_in_bf16` keeps adapters out of fp8; the live test covers offload and a LoRA; on an A100 and up, a bf16 folder model skips fp8 entirely |
 | diffusers' IP-Adapter layers and PEFT LoRAs on the same attention modules; `unload_ip_adapter` resets every processor | A LoRA or a regional ControlNet misbehaves after image prompts are added or removed | The live test adds and removes each with the other loaded; the runner remakes derived pipelines whenever the adapter set changes |
-| Qwen-Image 2.1 needs diffusers `main` (not in 0.40.0) | The pinned commit also runs SDXL and Wan, and could break them | Install the pin only when the image's diffusers lacks `QwenImage21Pipeline`; re-test SDXL and Wan on it; move to the first release that has the pipeline |
+| Qwen-Image 2.1 and LTX-2.5 need diffusers `main` (not in 0.40.0), and LTX-2 needs transformers 5.10.1+ (Gemma 4) | The pinned commit and the newer transformers also run every other family, and could break them | Install each only when the image's lacks what's needed (`QwenImage21Pipeline`, `LTX2Pipeline` and `LTX2DurationHead`; `Gemma4UnifiedForConditionalGeneration`); re-test every family on them; move to the first releases that have them |
 
 ## 12. Future work
 
 - Video control for Wan 2.2 (VACE / Fun-Control): pose- or depth-driven video, reusing the preprocessors and control-unit UI.
-- Additional families such as SD3.5, FLUX.2 [dev] and Hunyuan/LTX video, added through the plugin interface.
+- Additional families such as SD3.5, FLUX.2 [dev] and Hunyuan video, added through the plugin interface.
 - Upscaling / hires-fix passes, and video frame interpolation.
 - Live latent previews during sampling using TAESD / TAEW.
 - Regional LoRA.

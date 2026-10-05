@@ -23,7 +23,7 @@ from degas_worker.app import create_app as create_worker_app
 from degas_worker.families.base import FamilyRunner, Output, RunContext
 from degas_worker.paths import Paths
 from degas_worker.preprocess.base import trace
-from degas_worker.video import encode_mp4
+from degas_worker.video import Audio, encode_mp4
 
 
 class FakeColab:
@@ -170,6 +170,35 @@ class FakeWan:
         pass
 
 
+class FakeLtx:
+    """Encodes a few solid frames with a second of silence; records each mode's images."""
+
+    frames = 5
+    rate = 24000
+
+    def __init__(self) -> None:
+        self.images: list[dict[str, tuple[int, int]]] = []
+
+    def run(self, spec: dict[str, Any], seeds: list[int], ctx: RunContext) -> Iterator[Output]:
+        params = spec["params"]
+        w, h = params["width"], params["height"]
+        sizes = {}
+        for key in ("source", "end"):
+            if key in (spec.get("inputs") or {}):
+                with Image.open(ctx.blob(spec["inputs"][key])) as im:
+                    sizes[key] = im.size
+        self.images.append(sizes)
+        silence = Audio(bytes(4 * self.rate), self.rate)
+        for item, seed in enumerate(seeds):
+            ctx.progress(item, "denoise", 1, 1)
+            frame = bytes([seed % 256, 80, 120]) * (w * h)
+            data = encode_mp4([frame] * self.frames, w, h, params["fps"], audio=silence)
+            yield Output(item, seed, data, "video/mp4", "mp4")
+
+    def unload(self) -> None:
+        pass
+
+
 class FakeQwen:
     """Records the sizes of the condition images (source first, then references) and mask.
 
@@ -272,6 +301,7 @@ class Harness:
         self.tunnels: list[FakeTunnel] = []
         self.runner = FakeSdxl()
         self.wan = FakeWan()
+        self.ltx = FakeLtx()
         self.qwen = FakeQwen()
         self.flux = FakeQwen()
         self.klein = FakeQwen()
@@ -296,6 +326,7 @@ class Harness:
             {
                 "sdxl": runner_factory,
                 "wan22": lambda: self.wan,
+                "ltx2": lambda: self.ltx,
                 "qwen21": lambda: self.qwen,
                 "flux1": lambda: self.flux,
                 "klein": lambda: self.klein,
@@ -490,6 +521,13 @@ KLEIN = {
     "drive_file_id": "k9",
     "size": 35,
 }
+LTX25 = {
+    "path": "models/ltx2/ltx25/LTX-2.5-Diffusers",
+    "family": "ltx2",
+    "kind": "model",
+    "drive_file_id": "l25",
+    "size": 72,
+}
 WAN_I2V = {
     "path": "models/wan22/i2v-a14b/Wan2.2-I2V-A14B-Diffusers",
     "family": "wan22",
@@ -511,6 +549,7 @@ def client(harness: Harness) -> Iterator[TestClient]:
                 *CONFIGS,
                 WAN_5B,
                 WAN_I2V,
+                LTX25,
                 QWEN,
                 FLUX1,
                 FLUX1_BASE,

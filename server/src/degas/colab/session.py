@@ -37,12 +37,19 @@ WORKER_MATCH = "degas_worker.app:app"
 STARTED_MARKER = "@@degas-worker-started"
 PORT_WAIT_S = 90  # how long a new worker waits for the old one's port
 RCLONE_URL = "https://downloads.rclone.org/rclone-current-linux-amd64.zip"
-# Qwen-Image 2.1's pipeline (huggingface/diffusers#14804) isn't in a diffusers release yet
-# (design §11). This is the PR's merge commit on main.
+# Qwen-Image 2.1's pipeline (huggingface/diffusers#14804) and LTX-2.5's (its duration head and
+# Gemma 4 text encoder) aren't in a diffusers release yet (design §11). A commit on main with both.
 DIFFUSERS_PIN = (
     "diffusers @ git+https://github.com/huggingface/diffusers"
-    "@6256aa7666cedd47443adc8f82da9a10e110b09c"
+    "@c2798cc7859f258c6cfc5b2460e82b6cac71f235"
 )
+# What the pin needs that an older diffusers lacks.
+DIFFUSERS_CHECK = (
+    "from diffusers import QwenImage21Pipeline, LTX2Pipeline;"
+    " from diffusers.pipelines.ltx2 import LTX2DurationHead"
+)
+# diffusers' LTX-2 pipelines import Gemma 4's text encoder, added in transformers 5.10.1.
+TRANSFORMERS_MIN = "5.10.1"
 
 # Runs in the Colab kernel so the worker inherits its CUDA environment (Phase 0, finding 6).
 # The old worker is killed outright: on SIGTERM uvicorn waits for its connections to close, and
@@ -410,9 +417,15 @@ class SessionManager:
             " 2>/dev/null || python3 -m pip uninstall -y -q torchao 2>/dev/null; true",
             timeout=120,
         )
-        # Install the pinned diffusers only when the image's can't make Qwen-Image 2.1.
+        # Upgrade transformers and install the pinned diffusers only when the image's are too
+        # old for LTX-2.5 and Qwen-Image 2.1.
         await t.run(
-            "python3 -c 'from diffusers import QwenImage21Pipeline' 2>/dev/null"
+            "python3 -c 'from transformers import Gemma4UnifiedForConditionalGeneration'"
+            f" 2>/dev/null || python3 -m pip install -q 'transformers>={TRANSFORMERS_MIN}'",
+            timeout=600,
+        )
+        await t.run(
+            f"python3 -c '{DIFFUSERS_CHECK}' 2>/dev/null"
             f" || python3 -m pip install -q '{DIFFUSERS_PIN}'",
             timeout=600,
         )

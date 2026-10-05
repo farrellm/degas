@@ -29,7 +29,7 @@ import { SavedPromptsSheet } from './SavedPromptsSheet'
 import { SchemaForm } from './schema-form/SchemaForm'
 import { useCreateForm } from './useCreateForm'
 
-type Picker = 'model' | 'lora' | 'prompts' | 'image' | 'ref' | null
+type Picker = 'model' | 'lora' | 'prompts' | 'image' | 'end' | 'ref' | null
 
 export interface CreateFormProps extends CreateScreenProps {
   familyId: string
@@ -41,9 +41,11 @@ export function CreateForm({ familyId, onFamily, onOpenSession, onShowResults }:
   const form = useCreateForm(familyId, onFamily)
   const [picker, setPicker] = useState<Picker>(null)
   const [painting, setPainting] = useState(false)
-  // The image being cropped, and for a reference, its place in the Images row (one past the
-  // end adds it).
-  const [cropping, setCropping] = useState<{ sha: string; ref?: number } | null>(null)
+  // The image being cropped: the source, the last frame (`end`), or a reference at its place
+  // in the Images row (one past the end adds it).
+  const [cropping, setCropping] = useState<{ sha: string; ref?: number; end?: boolean } | null>(
+    null,
+  )
   const promptRef = useRef<HTMLTextAreaElement>(null)
   const promptFocused = useRef(false)
 
@@ -55,7 +57,7 @@ export function CreateForm({ familyId, onFamily, onOpenSession, onShowResults }:
     )
   }
 
-  const { params, selection, input, refs, control, prompts, target, steps } = form
+  const { params, selection, input, refs, lastFrame, control, prompts, target, steps } = form
   const { family, mode, model, modelMissing, variant, needsSource, takesRefs } = selection
   const { source, mask, maskFits } = input
   const video = family?.media === 'video'
@@ -69,7 +71,7 @@ export function CreateForm({ familyId, onFamily, onOpenSession, onShowResults }:
     <>
       {needsSource && (
         <SourceRow
-          label={takesRefs ? 'Image 1' : 'Source'}
+          label={takesRefs ? 'Image 1' : mode === 'flf2v' ? 'First frame' : 'Source'}
           source={source}
           gone={input.gone}
           continuesClip={!!input.extendsClip}
@@ -88,6 +90,22 @@ export function CreateForm({ familyId, onFamily, onOpenSession, onShowResults }:
           fit={input.fit}
           onFit={input.setFit}
           onOutpaint={variant?.modes.includes('outpaint') ? form.outpaintInstead : undefined}
+        />
+      )}
+      {mode === 'flf2v' && (
+        <SourceRow
+          label="Last frame"
+          source={lastFrame.image}
+          gone={lastFrame.gone}
+          continuesClip={false}
+          onPick={() => {
+            setPicker('end')
+          }}
+          onCrop={() => {
+            if (lastFrame.image) setCropping({ sha: lastFrame.image.sha, end: true })
+          }}
+          onRemove={lastFrame.remove}
+          onGone={lastFrame.markGone}
         />
       )}
       {mode === 'inpaint' && source && !input.gone && (
@@ -265,6 +283,19 @@ export function CreateForm({ familyId, onFamily, onOpenSession, onShowResults }:
           onClose={closePicker}
         />
       )}
+      {picker === 'end' && (
+        <ImagePicker
+          onUse={(image) => {
+            lastFrame.take(image)
+            closePicker()
+          }}
+          onCrop={(image) => {
+            closePicker()
+            setCropping({ sha: image.sha256, end: true })
+          }}
+          onClose={closePicker}
+        />
+      )}
       {picker === 'ref' && (
         <ImagePicker
           onUse={(image) => {
@@ -336,7 +367,8 @@ export function CreateForm({ familyId, onFamily, onOpenSession, onShowResults }:
           refsKeepSize={variant.ref_max_pixels != null}
           onApply={(image, out) => {
             const at = cropping.ref
-            if (at === undefined) form.takeSource(image, true, out)
+            if (cropping.end) lastFrame.take(image)
+            else if (at === undefined) form.takeSource(image, true, out)
             else form.setRefs([...refs.slice(0, at), toSource(image), ...refs.slice(at + 1)])
             setCropping(null)
           }}

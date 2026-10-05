@@ -199,6 +199,16 @@ def test_plan_wan21_i2v_is_a_single_file() -> None:
     assert p.variants == ["wan21-i2v-14b"]
 
 
+def test_plan_ltx_loras_name_their_variants() -> None:
+    v = version(baseModel="LTXV 2.3", files=[wan_file("dolly_ltx23.safetensors", 1)])
+    p = plan(v)
+    assert [(f.path.split("/")[1], f.half) for f in p.files] == [("ltx2", None)]
+    assert p.variants == ["ltx23", "ltx23-distilled"]
+    assert plan({**v, "baseModel": "LTXV 2.5"}).variants == ["ltx25"]
+    with pytest.raises(PlanError, match="which Degas doesn't run"):
+        plan({**v, "baseModel": "LTXV2"})
+
+
 def test_slug() -> None:
     assert slug("Tést Style XL") == "test_style_xl"
     assert slug("Slap (and Self Slap) - Wan 2.2") == "slap_and_self_slap_wan_2.2"

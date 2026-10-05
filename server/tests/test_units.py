@@ -10,7 +10,7 @@ from degas.config import load_config
 from degas.db import Database
 from degas.families.base import SpecError, spec_assets
 from degas.families.sdxl import Sdxl
-from degas.families.wan22 import Wan22, extend_variant
+from degas.families.wan22 import Wan22
 
 # -- colab CLI -----------------------------------------------------------------------------
 
@@ -311,7 +311,7 @@ def test_wan21_i2v_has_one_transformer_and_single_loras() -> None:
     assert spec["loras"] == [{"path": "loras/wan22/spin.safetensors", "weight": 0.9, "size": None}]
     with pytest.raises(SpecError, match="can't do"):
         Wan22().validate({**wan21, "mode": "t2v"})
-    assert [extend_variant(v.id) for v in Wan22().variants] == [
+    assert [Wan22().extend_variant(v.id) for v in Wan22().variants] == [
         "ti2v-5b",
         "i2v-a14b",
         "i2v-a14b",

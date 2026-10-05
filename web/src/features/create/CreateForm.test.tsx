@@ -10,6 +10,7 @@ import {
   RUNNING,
   SCHEMA,
   SPEC,
+  WAN,
   WAN_ASSETS,
 } from '@/test/fixtures'
 import { FakeEventSource, mockApi, VIDEO_ROUTES } from '@/test/mockApi'
@@ -632,6 +633,84 @@ describe('Create', () => {
     renderApp()
     expect(await screen.findByRole('button', { name: 'Add image' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Crop image 4' })).toBeInTheDocument()
+  })
+
+  it('makes a video between a first and a last frame', async () => {
+    const [fiveB, ...rest] = WAN.variants
+    const wan = { ...WAN, variants: [{ ...fiveB, modes: ['t2v', 'i2v', 'flf2v'] }, ...rest] }
+    mockApi({ ...VIDEO_ROUTES, 'GET /api/families': () => [...FAMILIES, wan] })
+    localStorage.setItem(
+      'degas.create.draft',
+      JSON.stringify({
+        family: 'wan22',
+        families: {
+          wan22: {
+            model: 'models/wan22/ti2v-5b',
+            mode: 'flf2v',
+            params: { prompt: 'a door opens', width: 1280, height: 704 },
+            source: { sha: 'aaa', width: 1280, height: 704 },
+          },
+        },
+      }),
+    )
+    const user = userEvent.setup()
+    renderApp()
+    expect(await screen.findByRole('button', { name: 'First and last' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    expect(screen.getByRole('button', { name: /^First frame/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^Last frame Choose an image/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Generate' })).toBeDisabled()
+
+    // The other image modes don't show the slot.
+    await user.click(screen.getByRole('button', { name: 'From image' }))
+    expect(screen.queryByRole('button', { name: /^Last frame/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^Source/ })).toBeInTheDocument()
+  })
+
+  it('sends the last frame with a first-and-last-frame job', async () => {
+    const [fiveB, ...rest] = WAN.variants
+    const wan = { ...WAN, variants: [{ ...fiveB, modes: ['t2v', 'i2v', 'flf2v'] }, ...rest] }
+    const submitted: { spec: { mode: string; inputs?: unknown } }[] = []
+    mockApi({
+      ...VIDEO_ROUTES,
+      'GET /api/families': () => [...FAMILIES, wan],
+      'POST /api/jobs': (init) => {
+        submitted.push(JSON.parse(init?.body as string) as (typeof submitted)[number])
+        return { id: 'j6' }
+      },
+    })
+    const frame = { sha: 'aaa', width: 1280, height: 704 }
+    localStorage.setItem(
+      'degas.create.draft',
+      JSON.stringify({
+        family: 'wan22',
+        families: {
+          wan22: {
+            model: 'models/wan22/ti2v-5b',
+            mode: 'flf2v',
+            params: { prompt: 'a door opens', width: 1280, height: 704 },
+            source: frame,
+            end: { ...frame, sha: 'zzz' },
+          },
+        },
+      }),
+    )
+    const user = userEvent.setup()
+    renderApp()
+    await user.click(await screen.findByRole('button', { name: 'Generate' }))
+    await screen.findByText('Queued 1 clip.')
+    expect(submitted[0]?.spec).toMatchObject({
+      mode: 'flf2v',
+      inputs: { source: 'sha256:aaa', end: 'sha256:zzz' },
+    })
+
+    // The first frame's Remove, then the last frame's.
+    const [, removeLast] = screen.getAllByRole('button', { name: 'Remove' })
+    if (removeLast) await user.click(removeLast)
+    expect(screen.getByRole('button', { name: /^Last frame Choose an image/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Generate' })).toBeDisabled()
   })
 
   it('pairs A14B LoRAs with a weight per expert, and warns about a small GPU', async () => {

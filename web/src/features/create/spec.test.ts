@@ -24,6 +24,7 @@ const INPUTS: NonNullable<FormState['inputs']> = {
   extends: null,
   mask: null,
   place: null,
+  end: null,
   refs: [],
 }
 
@@ -77,6 +78,20 @@ describe('buildJob', () => {
       fit: 'crop',
       extends: 'sha256:clip',
       refs: ['sha256:bbb'],
+    })
+  })
+
+  it('sends the last frame only for a first-and-last-frame video', () => {
+    const end = { sha: 'zzz', width: 960, height: 544 }
+    const inputs = { ...INPUTS, end }
+    expect(buildJob({ ...FORM, mode: 'flf2v', inputs }).spec.inputs).toEqual({
+      source: 'sha256:aaa',
+      fit: 'crop',
+      end: 'sha256:zzz',
+    })
+    expect(buildJob({ ...FORM, mode: 'i2v', inputs }).spec.inputs).toEqual({
+      source: 'sha256:aaa',
+      fit: 'crop',
     })
   })
 })

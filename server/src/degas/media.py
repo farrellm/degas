@@ -292,14 +292,13 @@ async def _run(*args: str, timeout: float = 120) -> bytes:
 
 
 async def probe(path: Path) -> dict[str, Any] | None:
-    """Width, height, duration (s), fps and container of a video; None if it isn't one."""
+    """Width, height, duration (s), fps, container and whether there's sound, of a video;
+    None if it isn't one."""
     try:
         out = await _run(
             "ffprobe",
             "-v",
             "error",
-            "-select_streams",
-            "v:0",
             "-show_entries",
             "stream=width,height,avg_frame_rate,nb_frames,codec_type:format=duration,format_name",
             "-of",
@@ -310,9 +309,10 @@ async def probe(path: Path) -> dict[str, Any] | None:
         return None
     info = json.loads(out)
     streams = info.get("streams") or []
-    if not streams or streams[0].get("codec_type") != "video":
+    video = [s for s in streams if s.get("codec_type") == "video"]
+    if not video:
         return None
-    stream, fmt = streams[0], info.get("format") or {}
+    stream, fmt = video[0], info.get("format") or {}
     num, _, den = str(stream.get("avg_frame_rate", "0/1")).partition("/")
     fps = float(num) / float(den) if den and float(den) else 0.0
     duration = float(fmt.get("duration") or 0)
@@ -325,6 +325,7 @@ async def probe(path: Path) -> dict[str, Any] | None:
         "fps": round(fps, 3),
         "frames": int(stream["nb_frames"]) if str(stream.get("nb_frames", "")).isdigit() else None,
         "format": str(fmt.get("format_name", "")),
+        "audio": any(s.get("codec_type") == "audio" for s in streams),
     }
 
 
@@ -352,17 +353,34 @@ async def extract_frame(path: Path, at: str | float) -> bytes:
 
 
 async def stitch(first: Path, second: Path, fps: float) -> bytes:
-    """`first` followed by `second` minus its first frame (the frame they share), as H.264."""
-    info = await probe(first)
+    """`first` followed by `second` minus its first frame (the frame they share), as H.264.
+
+    If either clip has sound, so does the chain (AAC): a silent clip gets silence, and the
+    continuation's sound loses the frame's length its video does.
+    """
+    info, after = await probe(first), await probe(second)
     if info is None:
         raise MediaError("The clip being extended can't be read")
+    if after is None:
+        raise MediaError("The new clip can't be read")
     w, h = info["width"], info["height"]
     rate = fps or info["fps"] or 16
-    graph = (
+    video = (
         f"[0:v]fps={rate},setsar=1[a];"
         f"[1:v]fps={rate},trim=start_frame=1,setpts=PTS-STARTPTS,scale={w}:{h},setsar=1[b];"
-        "[a][b]concat=n=2:v=1:a=0,format=yuv420p[v]"
     )
+    sound = info["audio"] or after["audio"]
+    if sound:
+        graph = (
+            video
+            + _stitch_audio(0, info, 0.0, "x")
+            + _stitch_audio(1, after, 1 / rate, "y")
+            + "[a][x][b][y]concat=n=2:v=1:a=1[c][s];[c]format=yuv420p[v]"
+        )
+        audio_args = ["-map", "[s]", "-c:a", "aac", "-b:a", "192k"]
+    else:
+        graph = video + "[a][b]concat=n=2:v=1:a=0,format=yuv420p[v]"
+        audio_args = []
     with tempfile.TemporaryDirectory() as tmp:
         out = Path(tmp) / "chain.mp4"
         await _run(
@@ -378,6 +396,7 @@ async def stitch(first: Path, second: Path, fps: float) -> bytes:
             graph,
             "-map",
             "[v]",
+            *audio_args,
             "-c:v",
             "libx264",
             "-crf",
@@ -390,3 +409,13 @@ async def stitch(first: Path, second: Path, fps: float) -> bytes:
             timeout=600,
         )
         return out.read_bytes()
+
+
+AUDIO_FORMAT = "aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo"
+
+
+def _stitch_audio(n: int, info: dict[str, Any], start: float, label: str) -> str:
+    """Input `n`'s sound (or silence) from `start` to the end of its video, as `[label]`."""
+    end = info["duration"]
+    source = f"[{n}:a]{AUDIO_FORMAT}," if info["audio"] else "anullsrc=r=48000:cl=stereo,"
+    return f"{source}apad,atrim=start={start:.6f}:end={end:.6f},asetpts=PTS-STARTPTS[{label}];"

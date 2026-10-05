@@ -23,6 +23,7 @@ const family = (id: string, variants: Variant[], extra: Partial<Family> = {}): F
   lora_format: 'single',
   supports_control: false,
   supports_image_prompts: false,
+  extendable: false,
   variants,
   ...extra,
 })

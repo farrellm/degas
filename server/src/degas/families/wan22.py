@@ -195,7 +195,5 @@ class Wan22:
             "control": [],
         }
 
-
-def extend_variant(variant: str) -> str:
-    """The variant that continues a clip made by `variant` from its last frame."""
-    return "i2v-a14b" if variant == "t2v-a14b" else variant
+    def extend_variant(self, variant: str) -> str | None:
+        return "i2v-a14b" if variant == "t2v-a14b" else variant

@@ -19,7 +19,6 @@ from degas import media
 from degas.blobs import THUMB_SIZE, BlobStore, ref, unref
 from degas.db import Database, SavedConfig
 from degas.families.base import FamilyDescriptor
-from degas.families.wan22 import extend_variant
 from degas.media import MediaError
 from degas_worker.spec import ControlUnit, ImagePromptUnit, Lora, PairedLora, Spec, Transform
 
@@ -169,9 +168,10 @@ class Inputs:
         return await self.derive(original, ops)
 
     async def resolve(self, spec: Spec) -> None:
-        """Fit the source (and its mask) and every control image (and its area) to the output
-        size, image prompts' pictures to squares (and their areas to the output size), and
-        record every transform in the spec, references' crops included (§6.5).
+        """Fit the source (and its mask), a video's last frame and every control image (and
+        its area) to the output size, image prompts' pictures to squares (and their areas to
+        the output size), and record every transform in the spec, references' crops included
+        (§6.5).
 
         After this the spec has no `fit`, its source is exactly the output size (for an
         outpaint, the size it is placed at), each control image exactly the output size, and
@@ -201,15 +201,16 @@ class Inputs:
                 inputs["mask"] = mask
                 if await self._mask_empty(mask):
                     raise MediaError("The mask is empty. Paint the area to redraw.")
-        # References go as they are: the pipeline sizes each one itself. A cropped one keeps
-        # its original, so a remix can crop it again.
-        for n, value in enumerate(inputs.get("refs") or [], 2):
-            sha = unref(value)
-            if self.blobs.is_video(sha) or self.blobs.image_size(sha) is None:
-                raise MediaError(f"Image {n} is no longer stored. Choose it again.")
-            record = self.db.get_transform(sha)
-            if record and self.blobs.path(record["original"]):
-                transforms[value] = {"original": ref(record["original"]), "ops": record["ops"]}
+        if inputs.get("end"):
+            inputs["end"], _ = await self._fit(
+                inputs["end"],
+                None,
+                output,
+                fit,
+                transforms,
+                "The last frame is no longer stored. Choose it again.",
+            )
+        self._check_refs(inputs.get("refs") or [], transforms)
         for n, unit in enumerate(spec.get("control") or [], 1):
             await self._fit_control(n, unit, output, transforms)
         for n, prompt in enumerate(spec.get("image_prompts") or [], 1):
@@ -218,6 +219,17 @@ class Inputs:
             spec.setdefault("inputs", inputs)["transforms"] = transforms
         else:
             inputs.pop("transforms", None)
+
+    def _check_refs(self, refs: list[str], transforms: dict[str, Transform]) -> None:
+        """References go as they are: the pipeline sizes each one itself. A cropped one keeps
+        its original, so a remix can crop it again."""
+        for n, value in enumerate(refs, 2):
+            sha = unref(value)
+            if self.blobs.is_video(sha) or self.blobs.image_size(sha) is None:
+                raise MediaError(f"Image {n} is no longer stored. Choose it again.")
+            record = self.db.get_transform(sha)
+            if record and self.blobs.path(record["original"]):
+                transforms[value] = {"original": ref(record["original"]), "ops": record["ops"]}
 
     async def _fit_control(
         self,
@@ -376,12 +388,12 @@ class Inputs:
         self, family: FamilyDescriptor, sha: str, spec: Spec | SavedConfig
     ) -> dict[str, Any]:
         """A spec that continues a clip from its last frame (design §6.4), for editing in Create."""
-        if family.id != "wan22" or not self.blobs.is_video(sha):
-            raise MediaError("Only Wan 2.2 videos can be extended")
+        variant = family.extend_variant(spec["variant"])
+        if variant is None or not self.blobs.is_video(sha):
+            raise MediaError("This video can't be extended")
         path = self.blobs.path(sha)
         assert path is not None
         frame = self._put_image(await media.extract_frame(path, "last"))
-        variant = extend_variant(spec["variant"])
         model: dict[str, Any] = {"path": spec["model"]["path"]}
         if variant != spec["variant"]:
             v = next(v for v in family.variants if v.id == variant)

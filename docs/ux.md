@@ -296,6 +296,15 @@ Built. FLUX.1 gets the same *Image prompts* row and sheet, showing only what Red
 - **Weight starts at 1.** The row reads *Loosely, weight 1.00*.
 - Pictures are still cut square: SigLIP squashes them to 384 px squares.
 
+### Phase 14: LTX-2
+
+Built. LTX-2 is a video family found under the Model button. Its form comes from the schema, with one new row.
+
+- **First and last.** A third video mode chip after *From text* and *From image*. The Source row becomes *First frame*, and a *Last frame* row under it works the same way: *Choose an image* opens the image picker, and it has *Crop* (at the output's shape) and *Remove*. *Generate* stays disabled until both frames are set. The last frame is fitted to the output with the source's *Fit*. A family offers the chip only if a variant declares `flf2v`.
+- **Sound.** LTX clips have sound. The viewer still starts every clip muted and looping, because iOS autoplays only muted video. The player's own controls unmute it, and there's no separate sound button. A stitched chain keeps its sound.
+- **Distilled variants** (LTX-2.5 and LTX-2.3 Distilled) have no *Steps* or *CFG*: the schedule is fixed. Under More settings they have *Upscale 2×* (*Make the video at half size, then upsample and refine it*). LTX-2.3 has *Steps*, *CFG*, and under More settings *Audio CFG* and *STG*.
+- **Extend** shows for every family that can continue a clip (`extendable`), so LTX clips get it too. It is no longer tied to Wan.
+
 ## 5. Component inventory
 
 | Component | Status | Notes |

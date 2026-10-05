@@ -1,6 +1,7 @@
 """MP4 encoding with ffmpeg (preinstalled on Colab). Free of torch so it can be tested anywhere.
 
-H.264 in yuv420p with the index at the front, so it plays inline on iOS (design §4.3).
+H.264 in yuv420p with the index at the front, so it plays inline on iOS (design §4.3), and
+AAC for a model that makes sound (LTX-2).
 """
 
 import subprocess
@@ -8,18 +9,36 @@ import tempfile
 import threading
 from collections.abc import Iterable
 from pathlib import Path
+from typing import NamedTuple
 
 
 class EncodeError(RuntimeError):
     pass
 
 
+class Audio(NamedTuple):
+    pcm: bytes  # float32 little-endian samples, interleaved when there are several channels
+    rate: int
+    channels: int = 1
+
+
 def encode_mp4(
-    frames: Iterable[bytes], width: int, height: int, fps: float, crf: int = 18
+    frames: Iterable[bytes],
+    width: int,
+    height: int,
+    fps: float,
+    crf: int = 18,
+    audio: Audio | None = None,
 ) -> bytes:
-    """Encode raw RGB24 frames (`width * height * 3` bytes each)."""
+    """Encode raw RGB24 frames (`width * height * 3` bytes each), with `audio` if given."""
     with tempfile.TemporaryDirectory() as tmp:
         out = Path(tmp) / "out.mp4"
+        sound: list[str] = []
+        if audio is not None:
+            pcm = Path(tmp) / "audio.f32"
+            pcm.write_bytes(audio.pcm)
+            sound = ["-f", "f32le", "-ar", str(audio.rate), "-ac", str(audio.channels)]
+            sound += ["-i", str(pcm)]
         cmd = [
             "ffmpeg",
             "-v",
@@ -35,6 +54,8 @@ def encode_mp4(
             f"{fps:g}",
             "-i",
             "-",
+            *sound,
+            *(["-c:a", "aac", "-b:a", "192k", "-shortest"] if audio is not None else []),
             "-c:v",
             "libx264",
             "-pix_fmt",

@@ -56,6 +56,7 @@ def _refs(spec: Spec | SavedConfig, *, provenance: bool) -> Iterator[Any]:
     inputs = spec.get("inputs") or {}
     yield inputs.get("source")
     yield inputs.get("mask")
+    yield inputs.get("end")
     if provenance:
         yield inputs.get("extends")
     yield from inputs.get("refs") or []

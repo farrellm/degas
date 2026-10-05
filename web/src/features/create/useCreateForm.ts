@@ -10,6 +10,7 @@ import { useAutoDismiss } from '@/hooks/useAutoDismiss'
 import { variantFor } from '@/lib/assets'
 import { ratioDiffers, type Size } from '@/lib/geometry'
 import { belowGpu } from '@/lib/gpu'
+import type { Source } from '@/lib/image'
 import { loraPaths, sameLora } from '@/lib/loras'
 import { initialParams } from '@/lib/schema'
 import { isActive } from '@/lib/session'
@@ -43,6 +44,9 @@ export function useCreateForm(familyId: string, onFamily: (id: string) => void) 
   const input = useSourceInput(draft)
   const { source, mask, maskFits } = input
   const [refs, setRefs] = useState(draft.refs ?? [])
+  const [end, setEnd] = useState<Source | null>(draft.end ?? null)
+  // The server no longer stores the last frame (its thumbnail failed to load).
+  const [endGone, setEndGone] = useState(false)
   const control = useUnitList(draft.control ?? [])
   const prompts = useUnitList(draft.prompts ?? [])
   const [batchCount, setBatchCount] = useState(draft.batchCount)
@@ -80,6 +84,7 @@ export function useCreateForm(familyId: string, onFamily: (id: string) => void) 
         extends: input.extendsClip,
         mask,
         place: input.place,
+        end,
         control: control.units,
         refs,
         prompts: prompts.units,
@@ -98,6 +103,7 @@ export function useCreateForm(familyId: string, onFamily: (id: string) => void) 
     input.extendsClip,
     mask,
     input.place,
+    end,
     control.units,
     refs,
     prompts.units,
@@ -135,6 +141,7 @@ export function useCreateForm(familyId: string, onFamily: (id: string) => void) 
                 extends: input.extendsClip,
                 mask,
                 place,
+                end: mode === 'flf2v' ? end : null,
                 refs: takesRefs ? refs : [],
               }
             : null,
@@ -192,6 +199,26 @@ export function useCreateForm(familyId: string, onFamily: (id: string) => void) 
     place,
     refs,
     setRefs,
+    /** First and last frame: the last frame, which is fitted to the output like the source. */
+    lastFrame: {
+      image: end,
+      gone: endGone,
+      take: (image: BlobInfo) => {
+        setEnd({
+          sha: image.sha256,
+          width: image.width ?? target.w,
+          height: image.height ?? target.h,
+        })
+        setEndGone(false)
+      },
+      remove: () => {
+        setEnd(null)
+        setEndGone(false)
+      },
+      markGone: () => {
+        setEndGone(true)
+      },
+    },
     loras,
     setLoras,
     control,
@@ -227,6 +254,7 @@ export function useCreateForm(familyId: string, onFamily: (id: string) => void) 
       String(params.prompt ?? '').trim() === '' ||
       (needsSource && !sourceUsable) ||
       (mode === 'inpaint' && !maskFits) ||
+      (mode === 'flf2v' && (!end || endGone)) ||
       (withControl && !control.units.every(unitReady)) ||
       (withPrompts && !prompts.units.every(promptReady)),
 

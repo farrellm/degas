@@ -46,6 +46,7 @@ class Place(TypedDict):
 class SpecInputs(TypedDict, total=False):
     source: str
     mask: str
+    end: str  # first-and-last-frame video: the last frame (the source is the first)
     refs: list[str]  # reference images after the source, in the order the prompt numbers them
     extends: str  # the clip this one continues
     place: Place

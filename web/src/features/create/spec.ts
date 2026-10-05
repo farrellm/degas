@@ -21,6 +21,8 @@ export interface FormState {
     extends: string | null
     mask: MaskRef | null
     place: Place | null
+    /** First and last frame: the last frame (the source is the first). */
+    end: Source | null
     /** The images after the source, when the mode reads any. */
     refs: Source[]
   } | null
@@ -52,6 +54,7 @@ export function buildJob(form: FormState): { spec: Spec; seedMode: SeedMode } {
           ...(inputs.extends && { extends: inputs.extends }),
           ...(mode === 'inpaint' && inputs.mask && { mask: ref(inputs.mask.sha) }),
           ...(mode === 'outpaint' && inputs.place && { place: inputs.place }),
+          ...(mode === 'flf2v' && inputs.end && { end: ref(inputs.end.sha) }),
           ...(inputs.refs.length > 0 && { refs: inputs.refs.map((r) => ref(r.sha)) }),
         },
       }),

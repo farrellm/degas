@@ -14,7 +14,7 @@ from degas.blobs import SHA256
 from degas.civitai.client import still_url
 from degas.errors import DegasError
 
-# Civitai's `baseModel` → (family, the Wan variants its LoRAs are for). Pony, Illustrious
+# Civitai's `baseModel` → (family, the Wan or LTX variants its LoRAs are for). Pony, Illustrious
 # and NoobAI are SDXL fine-tunes: their LoRAs load on any SDXL checkpoint but look right only on
 # their own base, which the sidecar's notes record. Pony V7 is AuraFlow, so it isn't here.
 BASE_MODELS: dict[str, tuple[str, list[str] | None]] = {
@@ -38,6 +38,9 @@ BASE_MODELS: dict[str, tuple[str, list[str] | None]] = {
     "Wan Video 2.2 I2V-A14B": ("wan22", ["i2v-a14b"]),
     "Wan Video 14B i2v 480p": ("wan22", ["wan21-i2v-14b"]),
     "Wan Video 14B i2v 720p": ("wan22", ["wan21-i2v-14b"]),
+    # LTX-2.0 (Civitai's "LTXV2") is a 19B model, and its LoRAs don't fit the 22B ones.
+    "LTXV 2.3": ("ltx2", ["ltx23", "ltx23-distilled"]),
+    "LTXV 2.5": ("ltx2", ["ltx25"]),
 }
 PAIRED_VARIANTS = {"t2v-a14b", "i2v-a14b"}
 LORA_TYPES = {"LORA", "LoCon", "DoRA"}
@@ -122,7 +125,7 @@ def _half(text: str) -> str | None:
 def _family(
     base: str, model_name: str, family: str | None, families: set[str]
 ) -> tuple[str, list[str] | None, list[str]]:
-    """(family, Wan variants, warnings): the base model's, unless `family` overrides it."""
+    """(family, Wan or LTX variants, warnings): the base model's, unless `family` overrides it."""
     mapped, variants = BASE_MODELS.get(base, (None, None))
     if family is None:
         if mapped is None:

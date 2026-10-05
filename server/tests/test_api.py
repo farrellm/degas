@@ -45,7 +45,7 @@ def test_health(client: TestClient) -> None:
 
 def test_families_and_schema(client: TestClient) -> None:
     families = client.get("/api/families").json()
-    assert [f["id"] for f in families] == ["sdxl", "flux1", "qwen21", "klein", "wan22"]
+    assert [f["id"] for f in families] == ["sdxl", "flux1", "qwen21", "klein", "wan22", "ltx2"]
     by_id = {f["id"]: f for f in families}
     assert by_id["sdxl"]["variants"][0]["modes"] == ["t2i", "i2i", "inpaint", "outpaint"]
     assert by_id["flux1"]["variants"][0]["modes"] == ["t2i"]

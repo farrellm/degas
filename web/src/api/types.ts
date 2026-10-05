@@ -29,6 +29,8 @@ export interface Family {
   supports_control: boolean
   /** Whether jobs take image prompts (IP-Adapter for SDXL, Redux for FLUX.1). */
   supports_image_prompts: boolean
+  /** Whether its videos can be extended from their last frame (Wan 2.2, LTX-2). */
+  extendable: boolean
   /** What those image prompts can do. */
   image_prompt_options?: ImagePromptOptions | null
   variants: Variant[]
@@ -165,8 +167,10 @@ export type LoraEntry = LoraRef | LoraPair
 export type Fit = 'crop' | 'pad' | 'stretch'
 
 export interface Inputs {
-  /** `sha256:…` of the source image (i2i, edit, inpaint, outpaint, i2v). */
+  /** `sha256:…` of the source image (i2i, edit, inpaint, outpaint, i2v, flf2v). */
   source?: string
+  /** First and last frame (flf2v): `sha256:…` of the last frame; the source is the first. */
+  end?: string
   /** Edit (and Qwen's inpaint): `sha256:…` of the images after the source, in reading order. */
   refs?: string[]
   /** `sha256:…` of the inpaint mask, painted over the source (white is redrawn). */
