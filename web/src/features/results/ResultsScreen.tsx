@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useState } from 'react'
+import { type CSSProperties, useState } from 'react'
 
 import { api } from '@/api/client'
 import { queries, queryKeys } from '@/api/queries'
@@ -11,9 +11,10 @@ import { useAutoDismiss } from '@/hooks/useAutoDismiss'
 import { useNow } from '@/hooks/useNow'
 
 import { ClearResults } from './ClearResults'
-import { buildGroups, type Group, PENDING, reorder } from './groups'
+import { buildGroups, feedItems, type Group, PENDING, reorder, resultKey } from './groups'
 import { ResultActions } from './ResultActions'
 import { ResultGroup } from './ResultGroup'
+import { SketchTile } from './SketchTile'
 import { useQueueDrag } from './useQueueDrag'
 
 // How long "Cancelled · Undo" stays up.
@@ -34,6 +35,7 @@ export function ResultsScreen({ onRemix, onCreate }: ResultsScreenProps) {
   const results = useQuery(queries.results())
   // The job just cancelled, while it can still be brought back.
   const [undo, setUndo] = useState<string | null>(null)
+  // The open feed item's key.
   const [open, setOpen] = useState<string | null>(null)
 
   const refreshJobs = () => qc.invalidateQueries({ queryKey: queryKeys.jobs })
@@ -88,7 +90,7 @@ export function ResultsScreen({ onRemix, onCreate }: ResultsScreenProps) {
   const remove = useMutation({
     mutationFn: (g: Group) => api.deleteJobResults(g.jobId, g.chain),
     onSuccess: (_, g) => {
-      if (g.results.some((r) => r.id === open)) setOpen(null)
+      if (g.results.some((r) => resultKey(r) === open)) setOpen(null)
     },
     onSettled: refreshResultsAnd('jobs'),
   })
@@ -106,8 +108,8 @@ export function ResultsScreen({ onRemix, onCreate }: ResultsScreenProps) {
   }
 
   const groups = buildGroups(jobs.data, results.data.results)
-  const flat = groups.flatMap((g) => g.results)
-  const openIndex = flat.findIndex((r) => r.id === open)
+  const flat = feedItems(groups)
+  const openIndex = flat.findIndex((x) => x.key === open)
   const queue = groups.filter((g) => !g.chain && g.job?.status === 'queued').map((g) => g.id)
   const finished = groups.some((g) => !PENDING.has(g.job?.status ?? ''))
   const error = move.error ?? cancel.error ?? restore.error ?? remove.error
@@ -160,10 +162,6 @@ export function ResultsScreen({ onRemix, onCreate }: ResultsScreenProps) {
             onCancel={(job) => {
               cancel.mutate(job)
             }}
-            onRemix={(job) => {
-              draftFromSpec(job.spec, null)
-              onRemix()
-            }}
             deleting={remove.isPending && remove.variables.id === g.id}
             onDelete={() => {
               remove.mutate(g)
@@ -198,26 +196,49 @@ export function ResultsScreen({ onRemix, onCreate }: ResultsScreenProps) {
           assets={assets.data}
           index={openIndex}
           onIndex={(i) => {
-            setOpen(flat[i]?.id ?? null)
+            setOpen(flat[i]?.key ?? null)
           }}
           onClose={() => {
             setOpen(null)
           }}
-          actions={(r) => (
-            <ResultActions
-              result={r}
-              keeping={keep.isPending}
-              extending={extend.isPending}
-              error={(keep.error ?? extend.error)?.message}
-              onKeep={() => {
-                keep.mutate(r)
-              }}
-              onExtend={() => {
-                extend.mutate(r)
-              }}
-              onRemix={onRemix}
-            />
-          )}
+          sketch={(x) =>
+            x.job && (
+              <div
+                className="viewer-sketch"
+                style={{ '--w': x.width ?? 1, '--h': x.height ?? 1 } as CSSProperties}
+              >
+                <SketchTile job={x.job} item={x.item} done={new Set()} />
+              </div>
+            )
+          }
+          actions={(r) =>
+            r.job ? (
+              <button
+                type="button"
+                className="btn quiet"
+                onClick={() => {
+                  draftFromSpec(r.job.spec, r.seed)
+                  onRemix()
+                }}
+              >
+                Remix
+              </button>
+            ) : (
+              <ResultActions
+                result={r}
+                keeping={keep.isPending}
+                extending={extend.isPending}
+                error={(keep.error ?? extend.error)?.message}
+                onKeep={() => {
+                  keep.mutate(r)
+                }}
+                onExtend={() => {
+                  extend.mutate(r)
+                }}
+                onRemix={onRemix}
+              />
+            )
+          }
         />
       )}
     </>

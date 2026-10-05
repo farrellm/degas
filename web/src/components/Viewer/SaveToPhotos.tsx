@@ -18,7 +18,7 @@ export function SaveToPhotos({
   item,
   className = 'btn quiet',
 }: {
-  item: ViewerItem
+  item: ViewerItem & { blob_sha: string }
   className?: string
 }) {
   const [error, setError] = useState<string | null>(null)

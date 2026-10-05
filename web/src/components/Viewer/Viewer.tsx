@@ -19,7 +19,8 @@ import { ImagePrompts } from './ImagePrompts'
 /** What the viewer shows: a result from the feed or a kept library item. */
 export interface ViewerItem {
   id: string
-  blob_sha: string
+  /** Null while it's still being made: the viewer draws `sketch` instead. */
+  blob_sha: string | null
   media_type: string
   seed: number | null
   width: number | null
@@ -55,6 +56,8 @@ export interface ViewerProps<T extends ViewerItem> {
   actions: (item: T) => ReactNode
   /** Extra wall-label content under the settings lines (e.g. tags). */
   extra?: (item: T) => ReactNode
+  /** What stands in for an item that has no picture yet. */
+  sketch?: (item: T) => ReactNode
 }
 
 /** Full-screen image on the well, with its settings as a wall label. */
@@ -66,6 +69,7 @@ export function Viewer<T extends ViewerItem>({
   onClose,
   actions,
   extra,
+  sketch,
 }: ViewerProps<T>) {
   const r = items[index]
   const ref = useDialog()
@@ -178,7 +182,9 @@ export function Viewer<T extends ViewerItem>({
           if (dx > 50 && index > 0) onIndex(index - 1)
         }}
       >
-        {video ? (
+        {r.blob_sha === null ? (
+          sketch?.(r)
+        ) : video ? (
           <video
             key={r.blob_sha}
             src={blobUrl(r.blob_sha)}
@@ -192,7 +198,7 @@ export function Viewer<T extends ViewerItem>({
         ) : (
           <img src={blobUrl(r.blob_sha)} alt={String(params.prompt ?? '')} draggable={false} />
         )}
-        {covered && (
+        {covered && r.blob_sha !== null && (
           <button
             type="button"
             className="cover-button"

@@ -8,7 +8,7 @@ import { isVideo } from '@/lib/image'
 import { hoursLeft, shortTime, timeLeft } from '@/lib/time'
 
 import { DragHandle, type Queued } from './DragHandle'
-import { deleteQuestion, type Group, modelLine, PENDING } from './groups'
+import { deleteQuestion, type Group, modelLine, PENDING, resultKey, slotKey } from './groups'
 import { SketchTile } from './SketchTile'
 
 // Unkept images closer than this to deletion get a warning colour.
@@ -22,7 +22,6 @@ export function ResultGroup({
   sectionRef,
   onOpen,
   onCancel,
-  onRemix,
   deleting,
   onDelete,
 }: {
@@ -31,10 +30,9 @@ export function ResultGroup({
   assets: Asset[] | undefined
   queued?: Queued
   sectionRef: (el: HTMLElement | null) => void
-  onOpen: (id: string) => void
+  /** Open the viewer at a feed item's `key`. */
+  onOpen: (key: string) => void
   onCancel: (job: Job) => void
-  /** Load a pending job's spec into Create. */
-  onRemix: (job: Job) => void
   deleting: boolean
   onDelete: () => void
 }) {
@@ -87,7 +85,7 @@ export function ResultGroup({
         label={`Open ${what}, seed ${String(r.seed)}${r.library_id ? ', kept' : ''}`}
         coveredLabel={`Show ${what}`}
         onOpen={() => {
-          onOpen(r.id)
+          onOpen(resultKey(r))
         }}
       />
     )
@@ -126,15 +124,6 @@ export function ResultGroup({
                 }}
               >
                 Cancel
-              </button>
-              <button
-                type="button"
-                className="btn quiet small"
-                onClick={() => {
-                  onRemix(job)
-                }}
-              >
-                Remix
               </button>
               {queued && queued.index > 0 && (
                 <button type="button" className="btn quiet small" onClick={queued.onTop}>
@@ -200,7 +189,17 @@ export function ResultGroup({
           const r = results.find((x) => x.item_index === i)
           if (r) return tile(r, i)
           if (!pending) return null
-          return <SketchTile key={`s${String(i)}`} job={job} item={i} done={done} />
+          return (
+            <SketchTile
+              key={`s${String(i)}`}
+              job={job}
+              item={i}
+              done={done}
+              onOpen={() => {
+                onOpen(slotKey(job.id, i))
+              }}
+            />
+          )
         })}
       </div>
     </section>

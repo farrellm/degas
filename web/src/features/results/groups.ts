@@ -1,4 +1,5 @@
 import type { Asset, Job, Result, Spec } from '@/api/types'
+import type { ViewerItem } from '@/components/Viewer/Viewer'
 import { assetLabel } from '@/lib/assets'
 import { isVideo } from '@/lib/image'
 
@@ -17,6 +18,53 @@ export interface Group {
 }
 
 export const PENDING = new Set(['queued', 'running'])
+
+/** An image or clip a pending job hasn't made yet, for the viewer. */
+export interface SketchItem extends ViewerItem {
+  key: string
+  blob_sha: null
+  job: Job
+  item: number
+}
+
+/** What the viewer moves through: the feed's results and its sketches, in feed order. */
+export type FeedItem = (Result & { key: string; job?: undefined }) | SketchItem
+
+/**
+ * Where an item sits in the feed, kept while a sketch turns into its result so the viewer
+ * stays on it. A chain has its own group, apart from the job's clips.
+ */
+export const slotKey = (jobId: string, item: number) => `${jobId}:${String(item)}`
+export const resultKey = (r: Result) => (r.segments ? r.id : slotKey(r.job_id, r.item_index))
+
+export function feedItems(groups: Group[]): FeedItem[] {
+  return groups.flatMap((g) => {
+    const items: FeedItem[] = g.results.map((r) => ({ ...r, key: resultKey(r) }))
+    const { job } = g
+    if (g.chain || !job || !PENDING.has(job.status)) return items
+    const done = new Set(g.results.map((r) => r.item_index))
+    const { params } = job.spec
+    const size = (v: unknown) => (typeof v === 'number' ? v : null)
+    job.seeds.forEach((seed, item) => {
+      if (done.has(item)) return
+      const key = slotKey(job.id, item)
+      items.push({
+        key,
+        id: key,
+        blob_sha: null,
+        media_type: params.num_frames == null ? 'image/png' : 'video/mp4',
+        seed,
+        width: size(params.width),
+        height: size(params.height),
+        spec: job.spec,
+        job,
+        item,
+      })
+    })
+    const at = (x: FeedItem) => (x.job ? x.item : x.item_index)
+    return items.toSorted((a, b) => at(a) - at(b))
+  })
+}
 
 /** "Studio XL v10 + 2 LoRAs" for a group caption. */
 export function modelLine(spec: Spec, assets: Asset[] | undefined): string {

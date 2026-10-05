@@ -188,3 +188,13 @@
 .tags-field input:focus {
   outline: none;
 }
+
+/* A pending item's sketch, at the size its picture will have. */
+.viewer-sketch {
+  width: min(100%, calc((100dvh - 180px) * var(--w) / var(--h)));
+}
+
+.viewer-sketch .tile {
+  aspect-ratio: var(--w) / var(--h);
+  border-radius: 0;
+}

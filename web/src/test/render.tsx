@@ -8,11 +8,12 @@ import { App } from '@/app/App'
 export function renderApp() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   // StrictMode as in main.tsx, so effects that don't survive a remount show up here.
-  return render(
+  const view = render(
     <StrictMode>
       <QueryClientProvider client={client}>
         <App />
       </QueryClientProvider>
     </StrictMode>,
   )
+  return { ...view, client }
 }

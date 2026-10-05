@@ -33,22 +33,42 @@ describe('Results', () => {
     await user.click(screen.getByRole('button', { name: /Results/ }))
     expect(await screen.findByText('Denoising 12/30')).toBeInTheDocument()
     expect(screen.getByText('a lighthouse')).toBeInTheDocument()
-    expect(screen.getByRole('img', { name: 'Image 2: Denoising 12/30' })).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'Open image 2: Denoising 12/30' }),
+    ).toBeInTheDocument()
   })
 
-  it('remixes a queued job before it runs', async () => {
-    mockApi({
-      'GET /api/jobs': () => [
-        { ...JOB_DONE, status: 'queued', spec: { ...SPEC, params: { ...SPEC.params, seed: 42 } } },
-      ],
-    })
+  it('opens a queued job in the viewer and remixes it', async () => {
+    mockApi({ 'GET /api/jobs': () => [{ ...JOB_DONE, status: 'queued', seeds: [42] }] })
     const user = userEvent.setup()
     renderApp()
     await user.click(await screen.findByRole('button', { name: /Results/ }))
     const group = await screen.findByRole('region', { name: 'a lighthouse' })
-    await user.click(within(group).getByRole('button', { name: 'Remix' }))
+    expect(within(group).queryByRole('button', { name: 'Remix' })).not.toBeInTheDocument()
+    await user.click(within(group).getByRole('button', { name: 'Open image 1: Queued' }))
+    const viewer = screen.getByRole('dialog')
+    expect(within(viewer).getByRole('img', { name: 'Queued' })).toBeInTheDocument()
+    expect(within(viewer).getByText(/seed 42/)).toBeInTheDocument()
+    await user.click(within(viewer).getByRole('button', { name: 'Remix' }))
     expect(await screen.findByLabelText('Prompt')).toHaveValue('a lighthouse')
     expect(screen.getByLabelText('Seed')).toHaveValue(42)
+  })
+
+  it('stays on a sketch in the viewer as it finishes', async () => {
+    let finished = false
+    mockApi({
+      'GET /api/jobs': () => [{ ...JOB_DONE, status: finished ? 'done' : 'running' }],
+      'GET /api/results': () => ({ results: finished ? [RESULT] : [], cursor: null }),
+    })
+    const user = userEvent.setup()
+    const { client } = renderApp()
+    await user.click(await screen.findByRole('button', { name: /Results/ }))
+    await user.click(await screen.findByRole('button', { name: /Open image 1:/ }))
+    finished = true
+    await client.invalidateQueries()
+    const viewer = screen.getByRole('dialog')
+    expect(await within(viewer).findByRole('img', { name: 'a lighthouse' })).toBeInTheDocument()
+    expect(within(viewer).getByRole('button', { name: 'Keep' })).toBeInTheDocument()
   })
 
   it("remixes a result's settings in the form", async () => {
