@@ -409,6 +409,13 @@ class SessionManager:
             "python3 -c 'import ftfy' 2>/dev/null || python3 -m pip install -q ftfy",
             timeout=300,
         )
+        # LTX-2 re-compresses its conditioning images with H.264 through PyAV, as the model was
+        # trained. diffusers checks for it once, when it's imported, so it goes in before the
+        # worker starts.
+        await t.run(
+            "python3 -c 'import av' 2>/dev/null || python3 -m pip install -q av",
+            timeout=300,
+        )
         # The image's torchao (0.10) is older than peft accepts, and peft then refuses to load
         # any LoRA ("incompatible version of torchao"). Nothing here uses torchao: remove it.
         await t.run(

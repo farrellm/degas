@@ -8,7 +8,6 @@ fixed 8-sigma schedule without guidance, and can upscale 2x: the video is made a
 3 more sigmas refine them at full size.
 """
 
-import contextlib
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -175,9 +174,9 @@ class Ltx2Runner:
         )
         # A 22B transformer and a 12B Gemma: offloaded on an A100, resident on an 80 GB card.
         place(pipe)
-        pipe.vae.enable_tiling()  # decodes otherwise peak well above the denoiser
-        with contextlib.suppress(AttributeError):
-            pipe.audio_vae.enable_tiling()
+        # Video decodes otherwise peak well above the denoiser. The audio VAE is small and
+        # can't tile (diffusers raises NotImplementedError).
+        pipe.vae.enable_tiling()
         pipe.set_progress_bar_config(disable=True)
         self.pipe = pipe
         self.model_path = path

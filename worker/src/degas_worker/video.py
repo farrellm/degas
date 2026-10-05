@@ -30,13 +30,19 @@ def encode_mp4(
     crf: int = 18,
     audio: Audio | None = None,
 ) -> bytes:
-    """Encode raw RGB24 frames (`width * height * 3` bytes each), with `audio` if given."""
+    """Encode raw RGB24 frames (`width * height * 3` bytes each), with `audio` if given.
+
+    The sound is padded with silence or cut to the video's length, so every frame is kept
+    (LTX's sound comes out a little short of its 8k + 1 frames) and the clip lasts exactly
+    as long as its video.
+    """
     with tempfile.TemporaryDirectory() as tmp:
         out = Path(tmp) / "out.mp4"
         sound: list[str] = []
         if audio is not None:
+            frames = list(frames)
             pcm = Path(tmp) / "audio.f32"
-            pcm.write_bytes(audio.pcm)
+            pcm.write_bytes(fit_pcm(audio, len(frames) / fps))
             sound = ["-f", "f32le", "-ar", str(audio.rate), "-ac", str(audio.channels)]
             sound += ["-i", str(pcm)]
         cmd = [
@@ -55,7 +61,7 @@ def encode_mp4(
             "-i",
             "-",
             *sound,
-            *(["-c:a", "aac", "-b:a", "192k", "-shortest"] if audio is not None else []),
+            *(["-c:a", "aac", "-b:a", "192k"] if audio is not None else []),
             "-c:v",
             "libx264",
             "-pix_fmt",
@@ -99,3 +105,9 @@ def encode_mp4(
         if code != 0:
             raise EncodeError(f"ffmpeg failed: {b''.join(stderr).decode(errors='replace')[-300:]}")
         return out.read_bytes()
+
+
+def fit_pcm(audio: Audio, seconds: float) -> bytes:
+    """`audio`'s samples padded with silence or cut to last `seconds`."""
+    size = round(seconds * audio.rate) * audio.channels * 4  # float32 samples
+    return audio.pcm[:size].ljust(size, b"\0")
