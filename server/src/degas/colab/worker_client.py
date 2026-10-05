@@ -1,7 +1,8 @@
 """HTTP client for the worker (through the SSH tunnel's forwarded port)."""
 
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
+from contextlib import contextmanager
 from typing import Any
 
 import httpx2
@@ -18,6 +19,10 @@ class WorkerBusyError(WorkerError):
     pass
 
 
+class WorkerUnreachableError(WorkerError):
+    """No answer through the tunnel (dropped, or closed by a reconnect): the worker may be fine."""
+
+
 class WorkerClient:
     def __init__(self, base_url: str, transport: httpx2.AsyncBaseTransport | None = None) -> None:
         self._http = httpx2.AsyncClient(
@@ -29,11 +34,20 @@ class WorkerClient:
     async def aclose(self) -> None:
         await self._http.aclose()
 
-    async def _json(self, method: str, path: str, **kwargs: Any) -> Any:
+    @contextmanager
+    def _errors(self, what: str) -> Iterator[None]:
+        if self._http.is_closed:
+            raise WorkerUnreachableError(f"{what}: the connection was closed")
         try:
-            resp = await self._http.request(method, path, **kwargs)
+            yield
+        except httpx2.TransportError as e:
+            raise WorkerUnreachableError(f"{what}: {e!r}") from e
         except httpx2.HTTPError as e:
-            raise WorkerError(f"{method} {path}: {e!r}") from e
+            raise WorkerError(f"{what}: {e!r}") from e
+
+    async def _json(self, method: str, path: str, **kwargs: Any) -> Any:
+        with self._errors(f"{method} {path}"):
+            resp = await self._http.request(method, path, **kwargs)
         if resp.status_code == 409:
             raise WorkerBusyError(resp.text)
         if resp.status_code >= 400:
@@ -49,7 +63,8 @@ class WorkerClient:
         return result
 
     async def has_blob(self, sha: str) -> bool:
-        resp = await self._http.head(f"/blobs/{sha}")
+        with self._errors(f"HEAD /blobs/{sha}"):
+            resp = await self._http.head(f"/blobs/{sha}")
         return resp.status_code == 200
 
     async def put_blob(self, sha: str, data: bytes) -> None:
@@ -61,7 +76,7 @@ class WorkerClient:
     async def events(self, job_id: str) -> AsyncIterator[dict[str, Any]]:
         """Job events; replays from the start of the job on every call."""
         timeout = httpx2.Timeout(30, read=None)
-        try:
+        with self._errors(f"events {job_id}"):
             async with self._http.sse(f"/jobs/{job_id}/events", timeout=timeout) as source:
                 if source.response.status_code >= 400:
                     await source.response.aread()
@@ -72,13 +87,11 @@ class WorkerClient:
                 async for sse in source:
                     if sse.data:
                         yield json.loads(sse.data)
-        except httpx2.HTTPError as e:
-            raise WorkerError(f"events {job_id}: {e!r}") from e
 
     async def fetch_assets(self, assets: list[dict[str, Any]]) -> AsyncIterator[dict[str, Any]]:
         """Copy Drive assets into the VM's cache, yielding `copy` progress, then done/error."""
         timeout = httpx2.Timeout(30, read=None)
-        try:
+        with self._errors("fetch assets"):
             async with self._http.sse(
                 "/assets/fetch", method="POST", json={"assets": assets}, timeout=timeout
             ) as source:
@@ -91,8 +104,6 @@ class WorkerClient:
                 async for sse in source:
                     if sse.data:
                         yield json.loads(sse.data)
-        except httpx2.HTTPError as e:
-            raise WorkerError(f"fetch assets: {e!r}") from e
 
     async def preprocess(self, body: dict[str, Any]) -> dict[str, Any]:
         """Run a preprocessor; the first use copies and loads its model, so allow minutes."""
@@ -106,10 +117,8 @@ class WorkerClient:
         return bool(body["cancelled"])
 
     async def get_output(self, job_id: str, item: int) -> tuple[bytes, str]:
-        try:
+        with self._errors(f"output {job_id}/{item}"):
             resp = await self._http.get(f"/outputs/{job_id}/{item}")
-        except httpx2.HTTPError as e:
-            raise WorkerError(f"output {job_id}/{item}: {e!r}") from e
         if resp.status_code >= 400:
             raise WorkerError(f"output {job_id}/{item}: HTTP {resp.status_code}")
         return resp.content, resp.headers.get("content-type", "application/octet-stream")

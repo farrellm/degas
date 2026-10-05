@@ -3,7 +3,8 @@
 import io
 import json
 import stat
-from collections.abc import Callable, Iterator
+import threading
+from collections.abc import AsyncIterator, Callable, Iterator
 from pathlib import Path
 from typing import Any
 
@@ -58,6 +59,7 @@ class FakeTunnel:
         self.commands: list[str] = []
         self.uploads: list[str] = []
         self.opened = False
+        self.dropped = False  # the SSH connection died: requests through it fail
 
     @property
     def local_port(self) -> int:
@@ -80,6 +82,41 @@ class FakeTunnel:
         self.uploads.append(remote)
 
 
+class TunnelTransport(httpx2.AsyncBaseTransport):
+    """The worker app reached through a FakeTunnel: once it drops, requests fail to connect
+    and open streams break at their next chunk."""
+
+    def __init__(self, inner: httpx2.AsyncBaseTransport, tunnel: FakeTunnel) -> None:
+        self.inner = inner
+        self.tunnel = tunnel
+
+    async def handle_async_request(self, request: httpx2.Request) -> httpx2.Response:
+        if self.tunnel.dropped:
+            raise httpx2.ConnectError("All connection attempts failed", request=request)
+        resp = await self.inner.handle_async_request(request)
+        return httpx2.Response(
+            resp.status_code,
+            headers=resp.headers,
+            stream=_BreakingStream(resp.stream, self.tunnel),  # type: ignore[arg-type]
+            extensions=resp.extensions,
+        )
+
+
+class _BreakingStream(httpx2.AsyncByteStream):
+    def __init__(self, inner: httpx2.AsyncByteStream, tunnel: FakeTunnel) -> None:
+        self.inner = inner
+        self.tunnel = tunnel
+
+    async def __aiter__(self) -> AsyncIterator[bytes]:
+        async for chunk in self.inner:
+            if self.tunnel.dropped:
+                raise httpx2.RemoteProtocolError("peer closed connection")
+            yield chunk
+
+    async def aclose(self) -> None:
+        await self.inner.aclose()
+
+
 def png(seed: int) -> bytes:
     buf = io.BytesIO()
     Image.new("RGB", (64, 48), (seed % 256, 0, 0)).save(buf, format="PNG")
@@ -97,6 +134,8 @@ echo '{"level":"notice","msg":"stats","stats":{"bytes":10,"totalBytes":10}}' >&2
 class FakeSdxl:
     fail: str | None = None
     fetch = False  # copy the spec's model and LoRAs into the VM cache, like the real runner
+    # When set, each job pauses after its first step until the test sets it.
+    gate: threading.Event | None = None
 
     def __init__(self) -> None:
         self.inputs: list[dict[str, Any]] = []  # sizes of the staged inputs
@@ -137,6 +176,8 @@ class FakeSdxl:
             for step in range(2):
                 ctx.check_cancelled()
                 ctx.progress(item, "denoise", step + 1, 2)
+                if self.gate is not None and item == step == 0:
+                    self.gate.wait(5)
             if self.fail:
                 raise RuntimeError(self.fail)
             yield Output(item, seed, png(seed), "image/png", "png")
@@ -357,8 +398,10 @@ class Harness:
         self.tunnels.append(tunnel)
         return tunnel
 
-    def worker_factory(self, _tunnel: Tunnel) -> WorkerClient:
-        return WorkerClient("http://worker", transport=httpx2.ASGITransport(app=self.worker_app))
+    def worker_factory(self, tunnel: Tunnel) -> WorkerClient:
+        inner = httpx2.ASGITransport(app=self.worker_app)
+        assert isinstance(tunnel, FakeTunnel)
+        return WorkerClient("http://worker", transport=TunnelTransport(inner, tunnel))
 
     def build(self, config: Config | None = None) -> Services:
         svc = build_services(

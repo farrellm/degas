@@ -11,6 +11,7 @@ followed by the continuation (design §6.4).
 """
 
 import asyncio
+import contextlib
 import logging
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -19,7 +20,12 @@ from typing import Any
 from degas import media
 from degas.blobs import BlobStore, unref
 from degas.colab.session import SessionManager
-from degas.colab.worker_client import WorkerBusyError, WorkerClient, WorkerError
+from degas.colab.worker_client import (
+    WorkerBusyError,
+    WorkerClient,
+    WorkerError,
+    WorkerUnreachableError,
+)
 from degas.db import Database, JobRow, JobRuntime, SavedConfig, now
 from degas.events import EventBus
 from degas.families.base import spec_assets
@@ -31,6 +37,7 @@ log = logging.getLogger(__name__)
 
 TERMINAL = ("done", "error", "cancelled")
 MAX_REATTACH = 5
+RECONNECT_POLL = 0.5  # seconds between checks while the session reconnects a dropped tunnel
 
 
 class Dispatcher:
@@ -173,8 +180,7 @@ class Dispatcher:
         self.sessions.set_busy(True)
         try:
             if not resume:
-                await self._stage_inputs(worker, job["spec"])
-                await worker.start_job(job_id, job["spec"], job["seeds"])
+                worker = await self._start(worker, job)
             if job_id in self._cancel_requested:
                 await worker.cancel(job_id)
             status, error = await self._follow(worker, job_id)
@@ -225,6 +231,37 @@ class Dispatcher:
             except Exception:
                 log.exception("job finish callback failed")
 
+    async def _reconnect(self) -> WorkerClient | None:
+        """Wait for the worker to answer again (the session's health check reconnects a dropped
+        tunnel, or restarts the worker); None if the session ends instead."""
+        while self.sessions.active:
+            worker = self.sessions.worker
+            if worker is not None and self.sessions.running:
+                with contextlib.suppress(WorkerError):
+                    await worker.health()
+                    return worker
+            await asyncio.sleep(RECONNECT_POLL)
+        return None
+
+    async def _start(self, worker: WorkerClient, job: JobRow) -> WorkerClient:
+        """Stage the inputs and start the job, waiting out a dropped tunnel; returns the worker
+        it started on."""
+        while True:
+            try:
+                await self._stage_inputs(worker, job["spec"])
+                await worker.start_job(job["id"], job["spec"], job["seeds"])
+                return worker
+            except WorkerUnreachableError as e:
+                log.warning("lost the worker starting %s: %s", job["id"], e)
+                reconnected = await self._reconnect()
+                if reconnected is None:
+                    raise
+                worker = reconnected
+            # The start may have reached the worker before the tunnel dropped.
+            with contextlib.suppress(WorkerUnreachableError):
+                if ((await worker.state()).get("job") or {}).get("id") == job["id"]:
+                    return worker
+
     async def _stage_inputs(self, worker: WorkerClient, spec: Spec) -> None:
         """Send input blobs (content-addressed, so at most once per session)."""
         for sha in staged_blobs(spec):
@@ -236,23 +273,9 @@ class Dispatcher:
             await worker.put_blob(sha, path.read_bytes())
 
     async def _follow(self, worker: WorkerClient, job_id: str) -> tuple[str, str | None]:
-        for _attempt in range(MAX_REATTACH):
-            terminal: dict[str, Any] | None = None
-            try:
-                async for event in worker.events(job_id):
-                    kind = event.get("t")
-                    if kind == "progress":
-                        self.progress[job_id] = event
-                        self.bus.publish({"type": "progress", **event})
-                        if event.get("phase") != "copy":
-                            self._start_prefetch(worker, job_id)
-                    elif kind == "output":
-                        await self._fetch_output(worker, job_id, event)
-                    elif kind in TERMINAL:
-                        terminal = event
-                        break
-            except WorkerError as e:
-                log.warning("event stream for %s broke: %s", job_id, e)
+        attempts = 0
+        while attempts < MAX_REATTACH:
+            terminal = await self._relay(worker, job_id)
             if terminal is not None:
                 await self._collect(worker, job_id)
                 if terminal["t"] == "error":
@@ -262,8 +285,17 @@ class Dispatcher:
             # The stream ended without a terminal event: reconcile via /state.
             try:
                 state = await worker.state()
+            except WorkerUnreachableError as e:
+                # The job keeps running on the VM: follow it again once the tunnel is back.
+                log.warning("lost the worker following %s: %s", job_id, e)
+                reconnected = await self._reconnect()
+                if reconnected is None:
+                    return "error", f"Lost contact with the worker: {e}"
+                worker = reconnected
+                continue
             except WorkerError as e:
                 return "error", f"Lost contact with the worker: {e}"
+            attempts += 1
             current = state.get("job") or {}
             if current.get("id") != job_id:
                 await self._collect(worker, job_id, state.get("outputs"))
@@ -272,6 +304,24 @@ class Dispatcher:
                 continue  # finished meanwhile: replaying the events gives the outcome
             await asyncio.sleep(1)
         return "error", "Could not follow the job's progress"
+
+    async def _relay(self, worker: WorkerClient, job_id: str) -> dict[str, Any] | None:
+        """Relay the job's events until its terminal one (returned), or the stream breaks."""
+        try:
+            async for event in worker.events(job_id):
+                kind = event.get("t")
+                if kind == "progress":
+                    self.progress[job_id] = event
+                    self.bus.publish({"type": "progress", **event})
+                    if event.get("phase") != "copy":
+                        self._start_prefetch(worker, job_id)
+                elif kind == "output":
+                    await self._fetch_output(worker, job_id, event)
+                elif kind in TERMINAL:
+                    return event
+        except WorkerError as e:
+            log.warning("event stream for %s broke: %s", job_id, e)
+        return None
 
     def _failed(self, job_id: str, event: dict[str, Any]) -> str:
         """Keep the worker's traceback in the job's log, and return the message to show."""

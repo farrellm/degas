@@ -1,6 +1,8 @@
 """Phase 5: queue reordering, undoing a cancel, and Web Push."""
 
 import base64
+import threading
+import time
 from datetime import timedelta
 from pathlib import Path
 from typing import Any
@@ -10,7 +12,8 @@ from fastapi.testclient import TestClient
 from degas.notices import idle_notice, job_notice, ready_notice
 from degas.push import application_server_key, load_vapid
 
-from .test_api import SPEC, job, wait_for
+from .conftest import FastIntervals
+from .test_api import SPEC, job, session_state, wait_for
 from .test_session import until
 
 SUB = {
@@ -178,3 +181,50 @@ def test_vapid_key_is_generated_once(tmp_path: Path) -> None:
     key = application_server_key(load_vapid(path))
     assert path.stat().st_mode & 0o777 == 0o600
     assert application_server_key(load_vapid(path)) == key
+
+
+def results(client: TestClient, job_id: str) -> list[dict[str, Any]]:
+    return list(client.get(f"/api/results?job={job_id}").json()["results"])
+
+
+def test_a_dropped_tunnel_fails_no_jobs(client: TestClient, harness: Any) -> None:
+    """The SSH tunnel dies mid-job while the worker carries on: the running job is followed
+    again once the session reconnects, and the queued ones still run."""
+    sessions = client.app.state.services.sessions  # type: ignore[attr-defined]
+    harness.runner.gate = threading.Event()
+    client.post("/api/session", json={"gpu": "L4"})
+    a, b = submit(client, "a", n=2), submit(client, "b")
+    wait_for(lambda: job(client, a)["status"] == "running")
+    sessions.iv = SlowHealth()  # the stream breaks before the health check notices
+    harness.tunnels[0].dropped = True
+    harness.runner.gate.set()
+    wait_for(lambda: job(client, b)["status"] != "queued")
+    assert len(harness.tunnels) == 2  # reconnected
+    wait_for(lambda: job(client, b)["status"] == "done")
+    assert job(client, a)["status"] == "done"
+    assert len(results(client, a)) == 2
+
+
+def test_a_job_waits_for_the_tunnel_to_start(client: TestClient, harness: Any) -> None:
+    sessions = client.app.state.services.sessions  # type: ignore[attr-defined]
+    client.post("/api/session", json={"gpu": "L4"})
+    wait_for(lambda: session_state(client) == "ready")
+    sessions.iv = NoHealth()
+    harness.runner.gate = threading.Event()
+    harness.tunnels[0].dropped = True
+    a = submit(client, "a")
+    time.sleep(0.3)
+    assert job(client, a)["status"] == "running"  # waiting, not failed
+    harness.tunnels[0].dropped = False  # the connection came back by itself
+    harness.runner.gate.set()
+    wait_for(lambda: job(client, a)["status"] == "done")
+    assert len(results(client, a)) == 1
+    assert len(harness.tunnels) == 1
+
+
+class NoHealth(FastIntervals):
+    health = 3600
+
+
+class SlowHealth(FastIntervals):
+    health = 0.3
