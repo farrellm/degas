@@ -1,11 +1,11 @@
-"""Wan 2.2 runner: text- and image-to-video with LoRAs (design §4.3).
+"""Wan 2.2 runner: text-, image- and first-and-last-frame-to-video with LoRAs (design §4.3).
 
 Models are diffusers-format directories. The 5B (TI2V) loads as `WanPipeline` and
 does image-to-video through `WanImageToVideoPipeline.from_pipe`, which shares its
 components. The A14B variants have two experts (`transformer` for high noise,
 `transformer_2` for low noise), and their LoRAs come in high/low pairs. Wan 2.1's 14B
-image-to-video model loads as `WanImageToVideoPipeline` with one transformer and a CLIP
-image encoder.
+image-to-video and first-and-last-frame models load as `WanImageToVideoPipeline` with one
+transformer and a CLIP image encoder. A last frame goes in as the pipeline's `last_image`.
 """
 
 import contextlib
@@ -31,6 +31,8 @@ from degas_worker.video import encode_mp4
 
 # (LoRA asset path, local file, weight, component it goes into)
 LoraLoad = tuple[str, Path, float, str]
+# The modes that start from a source image.
+IMAGE_MODES = frozenset({"i2v", "flf2v"})
 
 
 class Wan22Runner:
@@ -54,10 +56,9 @@ class Wan22Runner:
             )
             for part, component in expert_loras(spec)
         ]
-        image = None
-        if mode == "i2v":
-            with Image.open(ctx.blob(spec["inputs"]["source"])) as im:
-                image = im.convert("RGB")
+        inputs = spec.get("inputs") or {}
+        image = _open(ctx.blob(inputs["source"])) if mode in IMAGE_MODES else None
+        last = _open(ctx.blob(inputs["end"])) if mode == "flf2v" else None
         ctx.check_cancelled()
         ctx.progress(0, "load", 0, 1)
         self._load(path)
@@ -80,6 +81,8 @@ class Wan22Runner:
         }
         if image is not None:
             kwargs["image"] = image
+        if last is not None:
+            kwargs["last_image"] = last
         if getattr(pipe, "transformer_2", None) is not None:
             kwargs["guidance_scale_2"] = float(params.get("cfg_low") or params["cfg"])
             if params.get("boundary_ratio"):
@@ -122,9 +125,12 @@ class Wan22Runner:
 
     def _pipe_for(self, mode: str) -> Any:
         if isinstance(self.pipe, WanImageToVideoPipeline):
-            if mode != "i2v":
+            if mode not in IMAGE_MODES:
                 raise ValueError("This model only makes video from an image")
             return self.pipe
+        if mode == "flf2v":
+            # The 5B's pipeline would ignore the last frame.
+            raise ValueError("This model can't make video between a first and a last frame")
         if mode != "i2v":
             return self.pipe
         if self.i2v is None:
@@ -177,3 +183,8 @@ class Wan22Runner:
         self.model_path = None
         self.adapters = {}
         free_gpu_memory()
+
+
+def _open(path: Path) -> Image.Image:
+    with Image.open(path) as im:
+        return im.convert("RGB")

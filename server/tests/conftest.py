@@ -187,20 +187,26 @@ class FakeSdxl:
 
 
 class FakeWan:
-    """Encodes a few solid frames at the spec's size; i2v checks its source was staged."""
+    """Encodes a few solid frames at the spec's size; i2v and flf2v check their images were
+    staged."""
 
     frames = 5
     sources: list[tuple[int, int]]
+    ends: list[tuple[int, int]]
 
     def __init__(self) -> None:
         self.sources = []
+        self.ends = []
 
     def run(self, spec: dict[str, Any], seeds: list[int], ctx: RunContext) -> Iterator[Output]:
         params = spec["params"]
         w, h = params["width"], params["height"]
-        if spec["mode"] == "i2v":
+        if spec["mode"] in ("i2v", "flf2v"):
             with Image.open(ctx.blob(spec["inputs"]["source"])) as im:
                 self.sources.append(im.size)
+        if spec["mode"] == "flf2v":
+            with Image.open(ctx.blob(spec["inputs"]["end"])) as im:
+                self.ends.append(im.size)
         for item, seed in enumerate(seeds):
             ctx.progress(item, "denoise", 1, 1)
             frame = bytes([seed % 256, 80, 120]) * (w * h)

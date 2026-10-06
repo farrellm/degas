@@ -7,9 +7,10 @@ from fastapi.testclient import TestClient
 from PIL import Image
 
 from degas.families import FAMILIES
+from degas.library import staged_blobs
 from degas.media import MediaError, apply_ops, fit_ops, validate_ops
 
-from .conftest import WAN_5B, Harness
+from .conftest import WAN_5B, WAN_I2V, Harness
 from .test_api import job, wait_for
 
 WAN_SPEC: dict[str, Any] = {
@@ -178,6 +179,24 @@ def test_image_to_video_fits_the_source(client: TestClient, harness: Harness) ->
     resp = client.post("/api/jobs", json={"spec": gone})
     assert resp.status_code == 400
     assert "no longer stored" in resp.json()["detail"]
+
+
+def test_first_and_last_frame(client: TestClient, harness: Harness) -> None:
+    first = upload(client, image(600, 900))
+    last = upload(client, image(1280, 720))
+    spec = {
+        **WAN_SPEC,
+        "variant": "i2v-a14b",
+        "mode": "flf2v",
+        "model": {"path": WAN_I2V["path"]},
+        "inputs": {"source": f"sha256:{first['sha256']}", "end": f"sha256:{last['sha256']}"},
+    }
+    done = run(client, spec)
+    inputs = done["spec"]["inputs"]
+    assert inputs["source"] in inputs["transforms"]
+    assert inputs["end"] == f"sha256:{last['sha256']}"
+    assert (harness.wan.sources, harness.wan.ends) == ([(1280, 720)], [(1280, 720)])
+    assert last["sha256"] in staged_blobs(done["spec"])
 
 
 def test_extend_a_clip_and_stitch_the_chain(client: TestClient, harness: Harness) -> None:

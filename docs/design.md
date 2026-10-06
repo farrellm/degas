@@ -12,7 +12,7 @@ The initial model families are Stable Diffusion XL (images) and Wan 2.2 (video).
 
 - Mobile-first PWA that feels good on iPhone Safari and can be installed to the home screen.
 - Text-to-image, image-to-image, inpainting and outpainting with SDXL.
-- Text-to-video, image-to-video and video extension (last frame → i2v) with Wan 2.2.
+- Text-to-video, image-to-video, first-and-last-frame video and video extension (last frame → i2v) with Wan 2.2.
 - LoRA support for every family, including Wan 2.2 A14B high/low-noise LoRA pairs.
 - SDXL ControlNet with:
   - control images: uploaded, or generated as depth, pose or canny;
@@ -229,11 +229,12 @@ class FamilyRunner:
 - **Variants:**
   - `ti2v-5b`: text-to-video and image-to-video, minimum GPU L4.
   - `t2v-a14b`: text-to-video, minimum GPU A100.
-  - `i2v-a14b`: image-to-video, minimum GPU A100.
+  - `i2v-a14b`: image-to-video and first and last frame (`flf2v`), minimum GPU A100.
   - `wan21-i2v-14b`: Wan 2.1's 14B image-to-video model (the 480P or 720P diffusers folder), minimum GPU A100. It is here because it shares the pipeline and runner, and because LoRAs trained on it lose their image cross-attention layers (`k_img`, `v_img`) on Wan 2.2, which has no CLIP image encoder. It has one transformer, so no low-noise CFG or expert switch, and takes single-file LoRAs. Live test on an A100 40 GB (2026-10-02, diffusers 0.41.0.dev0, 480P): 656×592, 81 frames, 28 steps, CFG 5. The cold copy of the 90 GB folder and load took about 8 minutes, and a clip about 9.5 minutes (roughly 20 s a step). At a fixed seed, Remade-AI's Squish LoRA (a Wan 2.1 I2V LoRA) turned a hand pressing a rigid figurine into the squish effect, and the worker logged no unexpected LoRA keys. The pipeline needs `ftfy`, which the bootstrap installs.
-- **Pipelines:** diffusers `WanPipeline` and `WanImageToVideoPipeline`.
+  - `wan21-flf2v-14b`: Wan 2.1's 14B first-and-last-frame model (`Wan-AI/Wan2.1-FLF2V-14B-720P-diffusers`), minimum GPU A100, `flf2v` only: its image embedding expects two pictures. It is fine-tuned from the I2V 720P model, so it takes the same single-file LoRAs (Civitai's `Wan Video 14B i2v` LoRAs are tagged for both), and its clips are extended with `wan21-i2v-14b`. Defaults from diffusers' example: 50 steps, CFG 5.5.
+- **Pipelines:** diffusers `WanPipeline` and `WanImageToVideoPipeline`. In `flf2v`, `inputs.end` goes in as the pipeline's `last_image`, fitted to the output like the source. The 5B doesn't offer `flf2v`: its pipeline conditions on the first frame only and would ignore the last.
 - **LoRAs:** `paired_hi_lo` for the A14B variants. A LoRA entry names a high-noise file and a low-noise file, and each has its own weight. Both may be the same file: a single-file LoRA (Wan 2.1 14B's load on the A14B experts) whose sidecar lists an A14B variant is offered there and goes into both experts, still with a weight each. A LoRA entry for the 5B and Wan 2.1 variants is a single file; an untagged single file is offered to both, so tag it with `variants` in its sidecar.
-- **Parameters:** prompt, negative prompt, resolution preset, frame count, fps, steps, CFG (with separate values for the two experts on A14B), boundary ratio (A14B), seed, and a source image for i2v.
+- **Parameters:** prompt, negative prompt, resolution preset, frame count, fps, steps, CFG (with separate values for the two experts on A14B), boundary ratio (A14B), seed, a source image for i2v, and a first and last frame for flf2v.
 - **Output:** an MP4 encoded with H.264 in `yuv420p` pixel format, so it plays inline on iOS. A poster frame is extracted, and so is the last frame, which is used for video extension.
 
 **Qwen-Image 2.1 (`qwen21`)**
@@ -677,6 +678,8 @@ Phases are numbered from 0.
     - Both clips push in smoothly and end on the last frame, with stereo AAC at 48 kHz. LTX-2.5's sound is very quiet for this prompt (mean −54 dB); LTX-2.3's is louder (−31 dB).
     - Fixed on the way: `AutoencoderKLLTX2Audio` can't tile (diffusers raises `NotImplementedError`), so only the video VAE tiles. diffusers re-compresses conditioning images with H.264 through PyAV (`av`), which the image lacks and which diffusers checks for only when it is imported, so the bootstrap installs it. `encode_mp4`'s `-shortest` cut the last video frame, because LTX's audio is about 30 ms short; `encode_mp4` now pads the sound with silence, or cuts it, to the video's exact length (`fit_pcm`), with no `-shortest`. The two kept clips were made before that fix and have 120 frames.
     - Still to do: `t2v` and `i2v`; Upscale; LTX-2.3 (the full model); extend and stitch with sound; an LTX LoRA; and the other families on the new pin.
+
+15. **Wan first and last frame.** ✅ Built, not yet tested on a live GPU. `flf2v` on `i2v-a14b` (diffusers' `last_image`) and a new `wan21-flf2v-14b` variant (§4.3). Live test to do, on an A100: copy the FLF2V folder into `models/wan22/wan21-flf2v-14b/`; `flf2v` on both at 1280×720, 81 frames (that the clip ends on the last frame); a Wan 2.1 I2V LoRA on FLF2V with no unexpected keys in `worker.log`; extending an FLF2V clip with `wan21-i2v-14b`; and one `t2v`/`i2v` job per other Wan variant.
 
 ## 11. Risks and open questions
 

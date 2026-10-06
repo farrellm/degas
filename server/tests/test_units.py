@@ -316,7 +316,35 @@ def test_wan21_i2v_has_one_transformer_and_single_loras() -> None:
         "i2v-a14b",
         "i2v-a14b",
         "wan21-i2v-14b",
+        "wan21-i2v-14b",
     ]
+
+
+def test_wan_first_and_last_frame() -> None:
+    source, end = "sha256:" + "a" * 64, "sha256:" + "b" * 64
+    flf2v = {
+        **WAN_SPEC,
+        "variant": "wan21-flf2v-14b",
+        "mode": "flf2v",
+        "model": {"path": "models/wan22/wan21-flf2v-14b/Wan2.1-FLF2V-14B-720P-diffusers"},
+        "inputs": {"source": source, "end": end},
+    }
+    spec = Wan22().validate(flf2v)
+    assert spec["inputs"] == {"source": source, "end": end, "fit": "crop"}
+    params = spec["params"]
+    assert (params["width"], params["height"], params["steps"], params["cfg"]) == (
+        1280,
+        720,
+        50,
+        5.5,
+    )
+    with pytest.raises(SpecError, match="Choose the last frame"):
+        Wan22().validate({**flf2v, "inputs": {"source": source}})
+    # It needs two pictures, and the 5B ignores a last frame.
+    with pytest.raises(SpecError, match="can't do"):
+        Wan22().validate({**flf2v, "mode": "i2v"})
+    with pytest.raises(SpecError, match="can't do"):
+        Wan22().validate({**WAN_SPEC, "mode": "flf2v", "inputs": {"source": source, "end": end}})
 
 
 def test_wan_paired_loras() -> None:

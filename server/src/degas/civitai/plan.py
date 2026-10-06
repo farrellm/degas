@@ -36,8 +36,9 @@ BASE_MODELS: dict[str, tuple[str, list[str] | None]] = {
     "Wan Video 2.2 TI2V-5B": ("wan22", ["ti2v-5b"]),
     "Wan Video 2.2 T2V-A14B": ("wan22", ["t2v-a14b"]),
     "Wan Video 2.2 I2V-A14B": ("wan22", ["i2v-a14b"]),
-    "Wan Video 14B i2v 480p": ("wan22", ["wan21-i2v-14b"]),
-    "Wan Video 14B i2v 720p": ("wan22", ["wan21-i2v-14b"]),
+    # Wan 2.1's FLF2V model is fine-tuned from its I2V 720P one, so their LoRAs fit it too.
+    "Wan Video 14B i2v 480p": ("wan22", ["wan21-i2v-14b", "wan21-flf2v-14b"]),
+    "Wan Video 14B i2v 720p": ("wan22", ["wan21-i2v-14b", "wan21-flf2v-14b"]),
     # LTX-2.0 (Civitai's "LTXV2") is a 19B model, and its LoRAs don't fit the 22B ones.
     "LTXV 2.3": ("ltx2", ["ltx23", "ltx23-distilled"]),
     "LTXV 2.5": ("ltx2", ["ltx25"]),

@@ -196,7 +196,7 @@ def test_plan_wan21_i2v_is_a_single_file() -> None:
     v = version(baseModel="Wan Video 14B i2v 720p", files=[wan_file("spin_i2v.safetensors", 1)])
     p = plan(v)
     assert [(f.path.split("/")[1], f.half) for f in p.files] == [("wan22", None)]
-    assert p.variants == ["wan21-i2v-14b"]
+    assert p.variants == ["wan21-i2v-14b", "wan21-flf2v-14b"]
 
 
 def test_plan_ltx_loras_name_their_variants() -> None:
