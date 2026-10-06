@@ -679,7 +679,13 @@ Phases are numbered from 0.
     - Fixed on the way: `AutoencoderKLLTX2Audio` can't tile (diffusers raises `NotImplementedError`), so only the video VAE tiles. diffusers re-compresses conditioning images with H.264 through PyAV (`av`), which the image lacks and which diffusers checks for only when it is imported, so the bootstrap installs it. `encode_mp4`'s `-shortest` cut the last video frame, because LTX's audio is about 30 ms short; `encode_mp4` now pads the sound with silence, or cuts it, to the video's exact length (`fit_pcm`), with no `-shortest`. The two kept clips were made before that fix and have 120 frames.
     - Still to do: `t2v` and `i2v`; Upscale; LTX-2.3 (the full model); extend and stitch with sound; an LTX LoRA; and the other families on the new pin.
 
-15. **Wan first and last frame.** ✅ Built, not yet tested on a live GPU. `flf2v` on `i2v-a14b` (diffusers' `last_image`) and a new `wan21-flf2v-14b` variant (§4.3). Live test to do, on an A100: copy the FLF2V folder into `models/wan22/wan21-flf2v-14b/`; `flf2v` on both at 1280×720, 81 frames (that the clip ends on the last frame); a Wan 2.1 I2V LoRA on FLF2V with no unexpected keys in `worker.log`; extending an FLF2V clip with `wan21-i2v-14b`; and one `t2v`/`i2v` job per other Wan variant.
+15. **Wan first and last frame.** ✅ Built and tested on an A100. `flf2v` on `i2v-a14b` (diffusers' `last_image`) and a new `wan21-flf2v-14b` variant (§4.3).
+
+    Live test on an A100 80 GB, high memory (2026-10-06, diffusers 0.41.0.dev0 at the pinned commit, torch 2.11.0): 960², seed 42. The first frame was a 1024² library image and the last a 2× centre crop of it, so the clip is a push-in.
+    - `wan21-flf2v-14b`, 81 frames, 30 steps: 44 minutes including the cold copy of the 90 GB folder and load, about 70 s a step. The clip pushes in smoothly. Its first and last frames match the inputs (mean difference about 5 of 255). The log notes `CLIPVisionModelWithProjection` where `CLIPVisionModel` is expected, which is harmless.
+    - The same with Remade-AI's Squish LoRA (a Wan 2.1 I2V LoRA), 49 frames, 20 steps: 11.5 minutes. A hand enters and squeezes the figure, and the clip still ends on the last frame. No unexpected LoRA keys in `worker.log`.
+    - `i2v-a14b` `flf2v`, 81 frames, 30 steps: 43 minutes including the cold copy of the 126 GB folder. It also ends on the last frame (mean difference about 4).
+    - Regressions: `i2v` on `i2v-a14b` (49 frames, 20 steps, 12 minutes) and `t2v` on `ti2v-5b` (49 frames, 30 steps) both made sensible clips. Extending an FLF2V clip offers `wan21-i2v-14b` in `i2v` mode, with the first Wan 2.1 I2V folder in the index (480P here).
 
 ## 11. Risks and open questions
 
