@@ -813,6 +813,42 @@ describe('Create', () => {
     ])
   })
 
+  it('imports a source image from a link without queueing a job', async () => {
+    const variant = FAMILIES[0]?.variants[0]
+    const jobs: unknown[] = []
+    const fetched: unknown[] = []
+    mockApi({
+      'GET /api/families': () => [
+        { ...FAMILIES[0], variants: [{ ...variant, modes: ['t2i', 'i2i'] }] },
+      ],
+      'POST /api/blobs/from-url': (init) => {
+        fetched.push(JSON.parse(init?.body as string))
+        return {
+          sha256: 'u1',
+          media_type: 'image/jpeg',
+          width: 1200,
+          height: 1200,
+        }
+      },
+      'POST /api/jobs': (init) => {
+        jobs.push(init?.body)
+        return { id: 'j2' }
+      },
+    })
+    const user = userEvent.setup()
+    renderApp()
+    await user.type(await screen.findByLabelText('Prompt'), 'a lighthouse')
+    await user.click(screen.getByRole('button', { name: 'From image' }))
+    await user.click(await screen.findByRole('button', { name: /Choose an image/ }))
+    const picker = screen.getByRole('dialog', { name: 'Choose image' })
+    await user.click(within(picker).getByRole('tab', { name: 'Link' }))
+    const link = 'https://example.com/is/image/x?wid=1200&hei=1200'
+    await user.type(within(picker).getByLabelText('Image link'), `${link}{Enter}`)
+    expect(await within(picker).findByRole('button', { name: 'Use image' })).toBeInTheDocument()
+    expect(fetched).toEqual([{ url: link }])
+    expect(jobs).toEqual([])
+  })
+
   it('chooses how a batch gets its seeds', async () => {
     const submitted: { spec: { params: { seed: number } }; seed_mode: string }[] = []
     mockApi({

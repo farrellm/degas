@@ -10,14 +10,13 @@ export function LinkTab({ onPick }: { onPick: (p: Picked) => void }) {
   const [pasteFailed, setPasteFailed] = useState(false)
   const fetchUrl = useMutation({ mutationFn: api.fromUrl, onSuccess: onPick })
   const canPaste = typeof navigator !== 'undefined' && 'clipboard' in navigator
+  const submit = () => {
+    if (url.trim()) fetchUrl.mutate(url.trim())
+  }
   return (
-    <form
-      className="picker-source"
-      onSubmit={(e) => {
-        e.preventDefault()
-        if (url.trim()) fetchUrl.mutate(url.trim())
-      }}
-    >
+    // Not a <form>: the picker renders inside Create's, and a nested submit would bubble up
+    // and queue a generation.
+    <div className="picker-source">
       <div className="link-row">
         <input
           type="url"
@@ -29,6 +28,11 @@ export function LinkTab({ onPick }: { onPick: (p: Picked) => void }) {
           value={url}
           onChange={(e) => {
             setUrl(e.target.value)
+          }}
+          onKeyDown={(e) => {
+            if (e.key !== 'Enter') return
+            e.preventDefault()
+            submit()
           }}
         />
         {canPaste && (
@@ -51,12 +55,17 @@ export function LinkTab({ onPick }: { onPick: (p: Picked) => void }) {
           </button>
         )}
       </div>
-      <button type="submit" className="btn" disabled={!url.trim() || fetchUrl.isPending}>
+      <button
+        type="button"
+        className="btn"
+        onClick={submit}
+        disabled={!url.trim() || fetchUrl.isPending}
+      >
         {fetchUrl.isPending ? 'Importing…' : 'Import'}
       </button>
       <p>A link to an image, or directly to an MP4 or WebM video.</p>
       {pasteFailed && <p role="alert">Couldn’t read the clipboard. Paste into the field.</p>}
       {fetchUrl.error && <p role="alert">{fetchUrl.error.message}</p>}
-    </form>
+    </div>
   )
 }
