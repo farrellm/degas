@@ -107,6 +107,11 @@ class Ltx2Runner:
                         return_dict=False,
                     )
                     ctx.check_cancelled()
+                    if self.offloaded:
+                        # A latent pass has no decode, whose VAE would offload the transformer,
+                        # and the derived pipeline's end-of-call offload is a no-op: the next
+                        # pass's text encoder would not fit beside it.
+                        self.pipe.transformer.to("cpu")
                     latents = self._upsample(latents, width // 2, height // 2, num_frames)
                     refined = {**kwargs, "sigmas": STAGE_2_DISTILLED_SIGMA_VALUES}
                     video, audio = pipe(
