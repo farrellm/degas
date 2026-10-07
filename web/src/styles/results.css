@@ -61,6 +61,11 @@
   white-space: nowrap;
 }
 
+/* The corner's buttons (Retry and Delete, Cancel and Move to top) share one width. */
+.group-caption .aside .btn {
+  align-self: stretch;
+}
+
 .group-caption .aside .soon {
   color: var(--warn);
 }
