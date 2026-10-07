@@ -26,7 +26,7 @@ from PIL import Image
 from safetensors.torch import load_file
 
 from degas_worker.families.base import Output, RunContext
-from degas_worker.families.lora import fold_alphas
+from degas_worker.families.lora import fold_alphas, peft_lora_names
 from degas_worker.families.offload import place, reoffload
 from degas_worker.families.runtime import (
     StepCallback,
@@ -173,7 +173,9 @@ class Ltx2Runner:
         self.adapters = {}
 
     def _load_lora(self, file: Path, name: str) -> None:
-        self.pipe.load_lora_weights(fold_alphas(load_file(file)), adapter_name=name)
+        self.pipe.load_lora_weights(
+            fold_alphas(peft_lora_names(load_file(file))), adapter_name=name
+        )
 
     def _pipe_for(self, mode: str) -> Any:
         if mode == "t2v":

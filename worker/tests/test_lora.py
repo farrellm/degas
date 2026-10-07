@@ -4,6 +4,7 @@ from degas_worker.families.lora import (
     adapter_name,
     expert_loras,
     fold_alphas,
+    peft_lora_names,
     plan_loras,
     qwen21_lora_state,
     single_loras,
@@ -108,6 +109,19 @@ def test_fold_alphas_scales_lora_a_and_drops_the_alpha() -> None:
     }
     assert _rows(fold_alphas(state)) == {
         f"{block}.lora_A.weight": [[2.0, 4.0], [6.0, 8.0]],
+        f"{block}.lora_B.weight": [[5.0, 6.0]],
+    }
+
+
+def test_kohya_up_down_names_become_peft_names_and_alphas_fold_in() -> None:
+    block = "diffusion_model.transformer_blocks.0.attn1.to_k"
+    state = {
+        f"{block}.lora_down.weight": _Tensor([[1.0, 2.0], [3.0, 4.0]]),  # rank 2
+        f"{block}.lora_up.weight": _Tensor([[5.0, 6.0]]),
+        f"{block}.alpha": _Tensor(1.0),
+    }
+    assert _rows(fold_alphas(peft_lora_names(state))) == {
+        f"{block}.lora_A.weight": [[0.5, 1.0], [1.5, 2.0]],
         f"{block}.lora_B.weight": [[5.0, 6.0]],
     }
 

@@ -83,6 +83,17 @@ def fold_alphas(state: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def peft_lora_names(state: dict[str, Any]) -> dict[str, Any]:
+    """Rename kohya's `lora_down`/`lora_up` matrices to PEFT's `lora_A`/`lora_B`.
+
+    Some diffusers loaders (LTX-2's) leave them as they are, and PEFT then matches no module.
+    """
+    return {
+        key.replace(".lora_down.", ".lora_A.").replace(".lora_up.", ".lora_B."): value
+        for key, value in state.items()
+    }
+
+
 def qwen21_lora_state(state: dict[str, Any]) -> dict[str, Any]:
     """A Qwen-Image 2.1 LoRA's tensors under names diffusers' loader takes, all of them under
     `diffusion_model.`.
