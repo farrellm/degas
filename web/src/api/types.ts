@@ -341,9 +341,9 @@ export interface Result {
   spec: Spec | null
 }
 
-/** What importing a Civitai or Hugging Face link would do. */
+/** What importing a Civitai, CivArchive or Hugging Face link would do. */
 export interface CivitaiPlan {
-  origin: 'civitai' | 'huggingface'
+  origin: 'civitai' | 'civarchive' | 'huggingface'
   model_name: string
   /** A Civitai version's name, or a Hugging Face repo. */
   version_name: string

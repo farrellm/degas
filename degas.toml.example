@@ -31,6 +31,9 @@ rclone_remote = "gdrive:"    # local rclone remote that can write to the same Dr
 # token_file = "~/.config/civitai/token"   # API key (civitai.com → Account → API keys); many downloads need one
 # api_base = "https://civitai.com"
 
+[civarchive]
+# api_base = "https://civarchive.com"   # LoRAs deleted from Civitai, from their mirrors
+
 [huggingface]
 # token_file = "~/.cache/huggingface/token"   # access token, for gated repos (`hf auth login` writes it)
 # api_base = "https://huggingface.co"

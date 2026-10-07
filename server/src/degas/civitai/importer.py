@@ -1,5 +1,5 @@
-"""Copy a LoRA from Civitai or Hugging Face into Drive, checked against the site's hash, with
-a sidecar and preview.
+"""Copy a LoRA from Civitai, CivArchive or Hugging Face into Drive, checked against the site's
+hash, with a sidecar and preview.
 
 The file streams from the site straight into `rclone rcat`, so nothing large touches the disk.
 Its SHA-256 is compared with the site's and its md5 with Drive's, and a mismatch deletes it.
@@ -12,11 +12,20 @@ import logging
 import secrets
 import tempfile
 import time
+import urllib.parse
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
 from contextlib import AbstractAsyncContextManager
 from pathlib import Path
 from typing import Any, Protocol
 
+from degas.civitai import client
+from degas.civitai.civarchive import (
+    CivArchive,
+    CivArchiveError,
+    civitai_version,
+    is_civarchive_link,
+    parse_civarchive_ref,
+)
 from degas.civitai.client import Civitai, CivitaiError
 from degas.civitai.huggingface import HuggingFace, HuggingFaceError, is_hf_link, parse_hf_ref
 from degas.civitai.plan import (
@@ -24,6 +33,7 @@ from degas.civitai.plan import (
     ImportPlan,
     PlanError,
     PlannedFile,
+    pair_key,
     plan_hf_import,
     plan_import,
 )
@@ -44,7 +54,7 @@ class CivitaiImportError(DegasError):
 
 
 class Source(Protocol):
-    """Where a plan's files come from: Civitai or Hugging Face."""
+    """Where a plan's files come from: Civitai, CivArchive or Hugging Face."""
 
     def download(
         self, url: str
@@ -55,7 +65,7 @@ class Source(Protocol):
     async def aclose(self) -> None: ...
 
 
-SOURCE_ERRORS = (CivitaiError, HuggingFaceError)
+SOURCE_ERRORS = (CivitaiError, CivArchiveError, HuggingFaceError)
 
 
 def find_duplicates(plan: ImportPlan, index: Sequence[Mapping[str, Any]]) -> list[str]:
@@ -98,9 +108,11 @@ class Importer:
         drive_root: str,
         families: set[str],
         hf: HuggingFace | None = None,
+        civarchive: CivArchive | None = None,
     ) -> None:
         self.civitai = civitai
         self.hf = hf or HuggingFace()
+        self.civarchive = civarchive or CivArchive()
         self.remote = remote
         self.base = f"{rclone_remote}{drive_root.strip('/')}"
         self.families = families
@@ -121,6 +133,8 @@ class Importer:
         options: dict[str, Any] = {"family": family, "name": name, "weight": weight}
         if is_hf_link(ref):
             plan = await self._plan_hf(ref, hint=hint, **options)
+        elif is_civarchive_link(ref):
+            plan = await self._plan_civarchive(ref, index, name=name, options=options)
         else:
             plan = await self._plan_civitai(ref, index, name=name, options=options)
         duplicates = find_duplicates(plan, index)
@@ -167,8 +181,43 @@ class Importer:
             drop_halves_in_drive(plan, index, rename=name is None)
         return plan
 
-    def _source(self, plan: ImportPlan) -> Source:
-        return self.hf if plan.origin == "huggingface" else self.civitai
+    async def _plan_civarchive(
+        self,
+        ref: str,
+        index: Sequence[Mapping[str, Any]],
+        *,
+        name: str | None,
+        options: dict[str, Any],
+    ) -> ImportPlan:
+        model_id, version_id = parse_civarchive_ref(ref)
+        data = await self.civarchive.model(model_id, version_id)
+        version = civitai_version(data)
+        plan = plan_import(version, families=self.families, **options)
+        if len(plan.files) == 1 and plan.files[0].half is not None:
+            # As on Civitai, a Wan pair's other half may be another version: fetch the ones
+            # named the same but for high/low (CivArchive lists only their names).
+            key = pair_key(plan.version_name)
+            siblings = [
+                civitai_version(await self.civarchive.model(model_id, int(v["id"])))
+                for v in data.get("versions") or []
+                if int(v["id"]) != version["id"] and pair_key(str(v.get("name") or "")) == key
+            ]
+            plan = plan_import(version, families=self.families, siblings=siblings, **options)
+            drop_halves_in_drive(plan, index, rename=name is None)
+        plan.origin = "civarchive"
+        plan.source = self.civarchive.page(model_id, version["id"])
+        return plan
+
+    def _source(self, plan: ImportPlan, url: str) -> Source:
+        if plan.origin == "huggingface":
+            return self.hf
+        if plan.origin == "civarchive":
+            # A file's mirrors are on Civitai or Hugging Face; its example images elsewhere.
+            if is_hf_link(url):
+                return self.hf
+            if urllib.parse.urlsplit(url).hostname not in client.HOSTS:
+                return self.civarchive
+        return self.civitai
 
     async def run(self, plan: ImportPlan, progress: Progress | None = None) -> list[str]:
         """Upload the plan's files, sidecars and preview; return the LoRAs' Drive paths."""
@@ -186,7 +235,7 @@ class Importer:
             def downloaded(n: int, before: int = done) -> None:
                 report("download", before + n, total)
 
-            await self._upload(self._source(plan), f, downloaded)
+            await self._upload_any(plan, f, downloaded)
             done += f.size
         report("sidecar", total, total)
         sidecar = plan.sidecar().encode()
@@ -219,7 +268,7 @@ class Importer:
     async def _preview(self, plan: ImportPlan, target: str) -> None:
         assert plan.preview_url
         try:
-            data = await self._source(plan).fetch(plan.preview_url)
+            data = await self._source(plan, plan.preview_url).fetch(plan.preview_url)
             if VIDEO.search(plan.preview_url):
                 data = await _first_frame(data)
             jpeg = preview_jpeg(data)
@@ -229,15 +278,28 @@ class Importer:
             return
         await self.remote.run("rcat", target, stdin=jpeg)
 
+    async def _upload_any(
+        self, plan: ImportPlan, f: PlannedFile, progress: Callable[[int], None]
+    ) -> None:
+        """Upload from the file's first mirror that works and has the right file."""
+        *mirrors, last = [f.url, *f.mirrors]
+        for url in mirrors:
+            try:
+                await self._upload(self._source(plan, url), f, url, progress)
+                return
+            except (*SOURCE_ERRORS, CivitaiImportError) as e:
+                log.warning("%s from %s failed, trying the next mirror: %s", f.path, url, e)
+        await self._upload(self._source(plan, last), f, last, progress)
+
     async def _upload(
-        self, source: Source, f: PlannedFile, progress: Callable[[int], None]
+        self, source: Source, f: PlannedFile, url: str, progress: Callable[[int], None]
     ) -> None:
         target = f"{self.base}/{f.path}"
         sha = hashlib.sha256()
         md5 = hashlib.md5(usedforsecurity=False)
         count = 0
 
-        async with source.download(f.url) as (size, chunks):
+        async with source.download(url) as (size, chunks):
             if size is not None and f.size and abs(size - f.size) > 1024:
                 raise CivitaiImportError(
                     f"The download is {size} bytes for {f.civitai_name}, expected about {f.size}"
@@ -365,3 +427,4 @@ class Imports:
                 await self._task
         await self.importer.civitai.aclose()
         await self.importer.hf.aclose()
+        await self.importer.civarchive.aclose()

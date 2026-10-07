@@ -56,6 +56,10 @@ class CivitaiConfig(Section):
     api_base: str = "https://civitai.com"
 
 
+class CivArchiveConfig(Section):
+    api_base: str = "https://civarchive.com"
+
+
 class HuggingFaceConfig(Section):
     # A Hugging Face token (huggingface.co → Settings → Access Tokens), for gated repos.
     token_file: Path = Path("~/.cache/huggingface/token")
@@ -73,6 +77,7 @@ class Config(Section):
     push: PushConfig = PushConfig()
     lora: LoraConfig = LoraConfig()
     civitai: CivitaiConfig = CivitaiConfig()
+    civarchive: CivArchiveConfig = CivArchiveConfig()
     huggingface: HuggingFaceConfig = HuggingFaceConfig()
 
     @property

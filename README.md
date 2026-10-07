@@ -77,6 +77,8 @@ A Hugging Face link can name a file (`…/blob/main/<file>.safetensors`) or a re
 uv run degas civitai import 'https://huggingface.co/<user>/<repo>/blob/main/<file>.safetensors' --dry-run
 ```
 
+A [CivArchive](https://civarchive.com) link (`civarchive.com` or `civitaiarchive.com`, `/models/<id>?modelVersionId=<v>`) imports a LoRA that Civitai took down, as a Civitai link would, from CivArchive's record of the version. The file comes from its first live mirror: Civitai if it's still there, otherwise one of the Hugging Face repos holding a copy. Each mirror is checked against the archived SHA-256, and a mirror that fails or has a different file is skipped for the next one.
+
 ## Development
 
 Requires [uv](https://docs.astral.sh/uv/), Node ≥ 24 and pnpm.

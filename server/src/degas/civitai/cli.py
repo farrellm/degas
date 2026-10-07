@@ -7,6 +7,7 @@ import sys
 
 import httpx2
 
+from degas.civitai.civarchive import CivArchive, CivArchiveError
 from degas.civitai.client import Civitai, CivitaiError
 from degas.civitai.huggingface import HuggingFace, HuggingFaceError
 from degas.civitai.importer import CivitaiImportError, Importer
@@ -21,13 +22,16 @@ MB = 1000**2
 
 
 def add_parser(sub: "argparse._SubParsersAction[argparse.ArgumentParser]") -> None:
-    civitai = sub.add_parser("civitai", help="import LoRAs from Civitai or Hugging Face")
+    civitai = sub.add_parser(
+        "civitai", help="import LoRAs from Civitai, CivArchive or Hugging Face"
+    )
     civitai.set_defaults(run=run)
     cmd = civitai.add_subparsers(dest="civitai_command", required=True)
     imp = cmd.add_parser("import", help="copy a LoRA into loras/<family>/ with a sidecar")
     imp.add_argument(
         "url",
-        help="a Civitai model or version link, an AIR, a version id, or a Hugging Face link",
+        help="a Civitai or CivArchive model or version link, an AIR, a version id, or a"
+        " Hugging Face link",
     )
     imp.add_argument(
         "--family", choices=sorted(FAMILIES), help="default: from its base model (or name)"
@@ -49,6 +53,7 @@ def importer(config: Config) -> Importer:
         config.drive.root,
         set(FAMILIES),
         HuggingFace(config.huggingface.token_file, config.huggingface.api_base),
+        CivArchive(config.civarchive.api_base),
     )
 
 
@@ -112,6 +117,7 @@ async def _import(config: Config, args: argparse.Namespace) -> None:
     finally:
         await imp.civitai.aclose()
         await imp.hf.aclose()
+        await imp.civarchive.aclose()
     for p in paths:
         print(f"Imported {p}")
     rescan(config)
@@ -162,5 +168,12 @@ def run(config: Config, args: argparse.Namespace) -> None:
                 asyncio.run(_import(config, args))
             case "backfill":
                 asyncio.run(_backfill(config, args))
-    except (CivitaiError, HuggingFaceError, PlanError, CivitaiImportError, RcloneError) as e:
+    except (
+        CivitaiError,
+        CivArchiveError,
+        HuggingFaceError,
+        PlanError,
+        CivitaiImportError,
+        RcloneError,
+    ) as e:
         sys.exit(str(e))

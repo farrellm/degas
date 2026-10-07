@@ -1,6 +1,7 @@
 """What importing a LoRA means: the family, the Drive files and the sidecar.
 
-A Civitai model version (`plan_import`) or a file in a Hugging Face repo (`plan_hf_import`).
+A Civitai model version (`plan_import`; a CivArchive one is converted to Civitai's shape first)
+or a file in a Hugging Face repo (`plan_hf_import`).
 
 Pure functions over the API's JSON, so they're tested against saved responses.
 """
@@ -69,6 +70,7 @@ class PlannedFile:
     path: str  # under the Drive root: loras/<family>/<name>.safetensors
     half: str | None = None  # "high" or "low" for a Wan A14B expert
     from_sibling: bool = False  # the other half, from another version of the model
+    mirrors: list[str] = field(default_factory=list)  # to try after `url` (CivArchive)
 
     @property
     def stem(self) -> str:
@@ -92,7 +94,7 @@ class ImportPlan:
     preview_url: str | None
     warnings: list[str] = field(default_factory=list)
     paired_version: str | None = None  # the version the other half came from
-    origin: str = "civitai"  # or "huggingface"
+    origin: str = "civitai"  # or "civarchive", "huggingface"
 
     @property
     def folder(self) -> str:
@@ -112,7 +114,8 @@ class ImportPlan:
             versions = self.version_name
             if self.paired_version is not None:
                 versions += f" + {self.paired_version}"
-            data["notes"] = f"{self.base_model} LoRA from Civitai ({versions})"
+            site = "CivArchive" if self.origin == "civarchive" else "Civitai"
+            data["notes"] = f"{self.base_model} LoRA from {site} ({versions})"
         data["source"] = self.source
         return yaml.safe_dump(data, sort_keys=False, allow_unicode=True)
 
@@ -138,7 +141,7 @@ def _half(text: str) -> str | None:
     return found.pop() if len(found) == 1 else None
 
 
-def _pair_key(version_name: str) -> str:
+def pair_key(version_name: str) -> str:
     """A version's name without its half: "highnoiseV2.0" and "LownoiseV2.0" → "v20"."""
     return re.sub(r"[^a-z0-9]|high|low|noise", "", version_name.lower())
 
@@ -198,14 +201,14 @@ def _sibling_half(
     """(version, file): the `want` half from another version of the model, when exactly one
     version has only that half, the same base model, and the same name but for high/low
     ("highnoiseV2.0" and "LownoiseV2.0")."""
-    key = _pair_key(str(version.get("name") or ""))
+    key = pair_key(str(version.get("name") or ""))
     found = []
     for other in siblings:
         if other.get("id") == version.get("id") or other.get("baseModel") != version.get(
             "baseModel"
         ):
             continue
-        if _pair_key(str(other.get("name") or "")) != key:
+        if pair_key(str(other.get("name") or "")) != key:
             continue
         try:
             halves = _halves(_candidates(other), str(other.get("name") or ""))
@@ -226,14 +229,19 @@ def _planned(
     sha = str((f.get("hashes") or {}).get("SHA256") or "").lower()
     if not SHA256.fullmatch(sha):
         raise PlanError(f"Civitai lists no SHA-256 for {f['name']}")
+    url = f.get("downloadUrl") or version.get("downloadUrl")
+    if not url:
+        raise PlanError(f"No copy of {f['name']} is left to download")
+    mirrors = [str(m) for m in f.get("mirrors") or [] if m != url]
     return PlannedFile(
         civitai_name=str(f["name"]),
-        url=str(f.get("downloadUrl") or version.get("downloadUrl")),
+        url=str(url),
         size=round(float(f.get("sizeKB") or 0) * 1024),
         sha256=sha,
         path=path,
         half=half,
         from_sibling=from_sibling,
+        mirrors=mirrors,
     )
 
 
@@ -486,8 +494,8 @@ def plan_hf_import(
 
     if variants and PAIRED_VARIANTS & set(variants):
         # The linked file's other half: the file named the same but for high/low.
-        key = _pair_key(stem(linked))
-        pool = [f for f in in_folder if _pair_key(stem(f)) == key] if ref.path else in_folder
+        key = pair_key(stem(linked))
+        pool = [f for f in in_folder if pair_key(stem(f)) == key] if ref.path else in_folder
         halves = _halves([{**f, "name": f"{stem(f)}.safetensors"} for f in pool], "")
         if ref.path is not None and _half(stem(linked)) not in halves:
             raise PlanError(f"Can't tell whether {ref.path} is the high- or low-noise half")

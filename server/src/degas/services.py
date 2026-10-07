@@ -11,6 +11,7 @@ from datetime import timedelta
 import httpx2
 
 from degas.blobs import BlobStore
+from degas.civitai.civarchive import CivArchive
 from degas.civitai.client import Civitai
 from degas.civitai.huggingface import HuggingFace
 from degas.civitai.importer import Importer, Imports
@@ -108,6 +109,7 @@ def build_services(
     push_sender: Sender | None = None,
     civitai_http: httpx2.AsyncClient | None = None,
     hf_http: httpx2.AsyncClient | None = None,
+    civarchive_http: httpx2.AsyncClient | None = None,
     remote: Remote | None = None,
 ) -> Services:
     config.data_dir.mkdir(parents=True, exist_ok=True)
@@ -173,6 +175,7 @@ def build_services(
         config.drive.root,
         set(FAMILIES),
         HuggingFace(config.huggingface.token_file, config.huggingface.api_base, hf_http),
+        CivArchive(config.civarchive.api_base, civarchive_http),
     )
     assets = AssetCatalog(db, blobs, bus, indexer, remote, importer.base)
     imports = Imports(importer, lambda: db.list_assets(kind="lora"), bus.publish, assets.rescan)
