@@ -69,7 +69,7 @@ uv run degas civitai import https://civitai.com/models/<id>             # copy i
 uv run degas civitai backfill            # sidecars for LoRAs already in Drive, found by hash
 ```
 
-The base model on Civitai picks the folder (`loras/sdxl/`, `loras/flux1/`, `loras/wan22/` …); `--family` overrides it, and `--name` and `--weight` set the file name and the sidecar's weight. The file streams from Civitai to Drive through your rclone remote (`lora.rclone_remote`, as for `degas lora publish`) and is checked against Civitai's SHA-256. It gets a sidecar with the trigger words and the base model, and a preview from the first example image. Wan 2.2 A14B LoRAs often put the high- and low-noise halves in separate versions: import both links and they pair up. Many downloads need an API key (civitai.com → Account settings → API keys) in `~/.config/civitai/token` (`civitai.token_file`).
+The base model on Civitai picks the folder (`loras/sdxl/`, `loras/flux1/`, `loras/wan22/` …); `--family` overrides it, and `--name` and `--weight` set the file name and the sidecar's weight. The file streams from Civitai to Drive through your rclone remote (`lora.rclone_remote`, as for `degas lora publish`) and is checked against Civitai's SHA-256. It gets a sidecar with the trigger words and the base model, and a preview from the first example image. Wan 2.2 A14B LoRAs often put the high- and low-noise halves in separate versions: either link imports both (from the version named the same apart from high/low), and halves imported one at a time still pair up. Many downloads need an API key (civitai.com → Account settings → API keys) in `~/.config/civitai/token` (`civitai.token_file`).
 
 ## Development
 

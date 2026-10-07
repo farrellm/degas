@@ -43,6 +43,24 @@ def find_duplicates(plan: ImportPlan, index: Sequence[Mapping[str, Any]]) -> lis
     return problems
 
 
+def drop_halves_in_drive(
+    plan: ImportPlan, index: Sequence[Mapping[str, Any]], *, rename: bool = True
+) -> None:
+    """Leave out a Wan half taken from another version when it's already in Drive (imported
+    by itself earlier), naming the half still to copy so the two pair up, if `rename`."""
+    by_sha = {a["sha256"]: a["path"] for a in index if a.get("sha256")}
+    for f in [f for f in plan.files if f.from_sibling and f.sha256 in by_sha]:
+        existing = by_sha[f.sha256]
+        plan.files.remove(f)
+        plan.paired_version = None
+        plan.warnings.append(f"The {f.half}-noise half is already in Drive as {existing}")
+        folder, _, file = existing.rpartition("/")
+        stem = file.removesuffix(f"_{f.half}_noise.safetensors")
+        if rename and folder == plan.folder and stem != file:
+            for kept in plan.files:
+                kept.path = f"{folder}/{stem}_{kept.half}_noise.safetensors"
+
+
 class Importer:
     def __init__(
         self,
@@ -69,7 +87,14 @@ class Importer:
     ) -> ImportPlan:
         """Resolve a link to a plan; duplicates are errors unless `force`."""
         version = await self.civitai.version(ref)
-        plan = plan_import(version, families=self.families, family=family, name=name, weight=weight)
+        options: dict[str, Any] = {"family": family, "name": name, "weight": weight}
+        plan = plan_import(version, families=self.families, **options)
+        if len(plan.files) == 1 and plan.files[0].half is not None:
+            # Civitai often has a Wan pair's halves as two versions: find the other one.
+            model = await self.civitai.model(int(version["modelId"]))
+            siblings = model.get("modelVersions") or []
+            plan = plan_import(version, families=self.families, siblings=siblings, **options)
+            drop_halves_in_drive(plan, index, rename=name is None)
         duplicates = find_duplicates(plan, index)
         if duplicates and not force:
             raise PlanError("; ".join(duplicates))

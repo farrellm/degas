@@ -94,7 +94,8 @@ class Civitai:
         """The model version a link points to; a model link means its newest version."""
         model_id, version_id = parse_ref(ref)
         if version_id is None:
-            model = await self._get(f"models/{model_id}")
+            assert model_id is not None  # parse_ref gives one or the other
+            model = await self.model(model_id)
             versions = model.get("modelVersions") or []
             if not versions:
                 raise CivitaiError(f"Model {model_id} has no published versions")
@@ -102,6 +103,11 @@ class Civitai:
         data: dict[str, Any] = await self._get(f"model-versions/{version_id}")
         if model_id is not None and data.get("modelId") != model_id:
             raise CivitaiError(f"Version {version_id} isn't a version of model {model_id}")
+        return data
+
+    async def model(self, model_id: int) -> dict[str, Any]:
+        """A model with all its versions (`modelVersions`, newest first)."""
+        data: dict[str, Any] = await self._get(f"models/{model_id}")
         return data
 
     async def by_hash(self, sha256: str) -> dict[str, Any] | None:

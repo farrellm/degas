@@ -184,6 +184,66 @@ def test_plan_wan_half_from_the_version_name() -> None:
         plan({**v, "name": "v1.0"})
 
 
+def tilt(vid: int, name: str, file: str, sha: str = SHA) -> dict[str, Any]:
+    """Shaped like a version of model 900000, whose Wan halves are separate versions."""
+    f = {
+        **wan_file(f"{file}.safetensors", vid, primary=True),
+        "hashes": {"SHA256": sha},
+        "downloadUrl": f"https://civitai.com/api/download/models/{vid}?fileId={vid}",
+    }
+    return version(
+        id=vid,
+        modelId=900000,
+        name=name,
+        baseModel="Wan Video 2.2 I2V-A14B",
+        model={"name": "Camera Tilt-down Slow-慢速", "type": "LORA"},
+        files=[f],
+    )
+
+
+TILT = [
+    tilt(900080, "LownoiseV2.0", "V2_Camera Tilt-down Slow-慢速_low_e28", "b" * 64),
+    tilt(900023, "highnoiseV2.0", "V2_high_Camera Tilt-down Slow-慢速_e48", "a" * 64),
+    tilt(800026, "LownoiseV1.0", "Lownoise_Camera Tilt-down Slow_慢速", "d" * 64),
+    tilt(800020, "highnoiseV1.0", "Highnoise_Camera Tilt-down Slow_慢速", "c" * 64),
+]
+
+
+def test_plan_wan_half_from_a_noise_version_name() -> None:
+    p = plan({**TILT[0], "files": [wan_file("tilt.safetensors", 1)]})
+    assert [f.half for f in p.files] == ["low"]
+    p = plan({**TILT[1], "files": [wan_file("tilt.safetensors", 1)]})
+    assert [f.half for f in p.files] == ["high"]
+
+
+@pytest.mark.parametrize("linked", [TILT[1], TILT[0]])
+def test_plan_wan_pair_from_two_versions(linked: dict[str, Any]) -> None:
+    p = plan(linked, siblings=TILT)
+    folder = "loras/wan22/camera_tilt_down_slow"
+    assert [(f.path, f.sha256, f.half, f.from_sibling) for f in p.files] == [
+        (f"{folder}_high_noise.safetensors", "a" * 64, "high", linked is TILT[0]),
+        (f"{folder}_low_noise.safetensors", "b" * 64, "low", linked is TILT[1]),
+    ]
+    assert [f.url for f in p.files] == [
+        "https://civitai.com/api/download/models/900023?fileId=900023",
+        "https://civitai.com/api/download/models/900080?fileId=900080",
+    ]
+    assert not p.warnings
+    other = TILT[0] if linked is TILT[1] else TILT[1]
+    notes = parse_sidecar(p.sidecar())["notes"]
+    assert notes.endswith(f"({linked['name']} + {other['name']})")
+    assert p.source.endswith(f"modelVersionId={linked['id']}")
+
+
+def test_plan_wan_pair_needs_one_matching_version() -> None:
+    twice = [*TILT, {**TILT[0], "id": 1}]
+    other_base = [TILT[1], {**TILT[0], "baseModel": "Wan Video 2.2 T2V-A14B"}]
+    for siblings in (twice, other_base, TILT[1:]):
+        p = plan(TILT[1], siblings=siblings)
+        assert [f.half for f in p.files] == ["high"]
+        assert "import the low-noise one" in p.warnings[0]
+
+
 def test_plan_wan_5b_is_a_single_file() -> None:
     v = version(baseModel="Wan Video 2.2 TI2V-5B", files=[wan_file("fire_5b.safetensors", 1)])
     p = plan(v)
@@ -289,8 +349,8 @@ class FakeCivitai:
             v = self.versions.get(int(path.rsplit("/", 1)[1]))
             return httpx2.Response(200, json=v) if v else httpx2.Response(404)
         if path.startswith("/api/v1/models/"):
-            ids = sorted(self.versions, reverse=True)
-            return httpx2.Response(200, json={"modelVersions": [{"id": i} for i in ids]})
+            newest = sorted(self.versions.values(), key=lambda v: v["id"], reverse=True)
+            return httpx2.Response(200, json={"modelVersions": newest})
         if path.startswith("/api/download/models/"):
             if self.download_status != 200:
                 return httpx2.Response(self.download_status)
@@ -344,6 +404,38 @@ async def test_import_wan_pair_names_the_preview_after_the_high_half() -> None:
         for name in ("high_noise.safetensors", "low_noise.safetensors", "high_noise.yaml",
                      "low_noise.yaml", "high_noise.jpg")
     )  # fmt: skip
+
+
+async def test_import_wan_pair_from_two_versions() -> None:
+    remote = FakeRemote()
+    served = [  # every download is WEIGHTS
+        {**v, "files": [{**v["files"][0], "hashes": {"SHA256": SHA}}]} for v in TILT
+    ]
+    imp = make_importer(FakeCivitai(served), remote)
+    p = await imp.plan("https://civitai.com/models/900000?modelVersionId=900023", [])
+    await imp.run(p)
+    folder = "gdrive:degas/loras/wan22/camera_tilt_down_slow"
+    assert sorted(remote.files) == [
+        f"{folder}_{name}"
+        for name in ("high_noise.jpg", "high_noise.safetensors", "high_noise.yaml",
+                     "low_noise.safetensors", "low_noise.yaml")
+    ]  # fmt: skip
+
+
+async def test_import_wan_half_pairs_with_the_one_in_drive() -> None:
+    imp = make_importer(FakeCivitai(TILT), FakeRemote())
+    index = [{"path": "loras/wan22/tilt_high_noise.safetensors", "sha256": "a" * 64}]
+    p = await imp.plan("900080", index)
+    assert [f.path for f in p.files] == ["loras/wan22/tilt_low_noise.safetensors"]
+    assert p.warnings == [
+        "The high-noise half is already in Drive as loras/wan22/tilt_high_noise.safetensors"
+    ]
+    assert "+" not in p.sidecar()
+    # A name given keeps its name, and linking the half that's in Drive is still refused.
+    p = await imp.plan("900080", index, name="mine")
+    assert [f.path for f in p.files] == ["loras/wan22/mine_low_noise.safetensors"]
+    with pytest.raises(PlanError, match="already in Drive"):
+        await imp.plan("900023", index)
 
 
 async def test_import_refuses_duplicates_unless_forced() -> None:

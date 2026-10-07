@@ -5,6 +5,7 @@ Pure functions over the API's JSON, so they're tested against saved responses.
 
 import re
 import unicodedata
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
@@ -47,8 +48,9 @@ PAIRED_VARIANTS = {"t2v-a14b", "i2v-a14b"}
 LORA_TYPES = {"LORA", "LoCon", "DoRA"}
 DEFAULT_WEIGHT = 0.8
 NAME_MAX = 60
-# A Wan A14B file's expert: "…_high_noise", "…-LOW-v2", "high noise" (a version's name).
-HALF = re.compile(r"(?:^|[^a-z])(high|low)(?:[^a-z]|$)")
+# A Wan A14B file's expert: "…_high_noise", "…-LOW-v2", "high noise" or "LownoiseV2.0" (a
+# version's name).
+HALF = re.compile(r"(?<![a-z])(high|low)(?=noise|[^a-z]|$)")
 
 
 class PlanError(DegasError, ValueError):
@@ -63,6 +65,7 @@ class PlannedFile:
     sha256: str  # lowercase hex
     path: str  # under the Drive root: loras/<family>/<name>.safetensors
     half: str | None = None  # "high" or "low" for a Wan A14B expert
+    from_sibling: bool = False  # the other half, from another version of the model
 
     @property
     def stem(self) -> str:
@@ -85,6 +88,7 @@ class ImportPlan:
     files: list[PlannedFile]
     preview_url: str | None
     warnings: list[str] = field(default_factory=list)
+    paired_version: str | None = None  # the version the other half came from
 
     @property
     def folder(self) -> str:
@@ -97,7 +101,10 @@ class ImportPlan:
         data["default_weight"] = self.weight
         if self.variants:
             data["variants"] = self.variants
-        data["notes"] = f"{self.base_model} LoRA from Civitai ({self.version_name})"
+        versions = self.version_name
+        if self.paired_version is not None:
+            versions += f" + {self.paired_version}"
+        data["notes"] = f"{self.base_model} LoRA from Civitai ({versions})"
         data["source"] = self.source
         return yaml.safe_dump(data, sort_keys=False, allow_unicode=True)
 
@@ -121,6 +128,11 @@ def valid_name(name: str) -> str:
 def _half(text: str) -> str | None:
     found = {m[1] for m in HALF.finditer(text.lower().replace("_", " "))}
     return found.pop() if len(found) == 1 else None
+
+
+def _pair_key(version_name: str) -> str:
+    """A version's name without its half: "highnoiseV2.0" and "LownoiseV2.0" → "v20"."""
+    return re.sub(r"[^a-z0-9]|high|low|noise", "", version_name.lower())
 
 
 def _family(
@@ -156,10 +168,8 @@ def _candidates(version: dict[str, Any]) -> list[dict[str, Any]]:
     return sorted(found, key=lambda f: not f.get("primary"))
 
 
-def _halves(
-    candidates: list[dict[str, Any]], version_name: str, stem: str, warnings: list[str]
-) -> list[tuple[dict[str, Any], str, str | None]]:
-    """A Wan A14B version's expert files, named as a pair: `<stem>_high_noise`, …"""
+def _halves(candidates: list[dict[str, Any]], version_name: str) -> dict[str, dict[str, Any]]:
+    """A Wan A14B version's expert files by half ("high", "low")."""
     halves: dict[str, dict[str, Any]] = {}
     for f in candidates:
         half = _half(str(f["name"]).rsplit(".", 1)[0])
@@ -171,18 +181,39 @@ def _halves(
         raise PlanError(
             f"Can't tell whether {candidates[0]['name']} is the high- or low-noise half"
         )
-    if len(halves) == 1:
-        have = next(iter(halves))
-        other = "low" if have == "high" else "high"
-        warnings.append(
-            f"This version has only the {have}-noise half;"
-            f" import the {other}-noise one to complete the pair"
-        )
-    return [(f, f"{stem}_{h}_noise", h) for h, f in sorted(halves.items())]
+    return halves
+
+
+def _sibling_half(
+    siblings: Sequence[dict[str, Any]], version: dict[str, Any], want: str
+) -> tuple[dict[str, Any], dict[str, Any]] | None:
+    """(version, file): the `want` half from another version of the model, when exactly one
+    version has only that half, the same base model, and the same name but for high/low
+    ("highnoiseV2.0" and "LownoiseV2.0")."""
+    key = _pair_key(str(version.get("name") or ""))
+    found = []
+    for other in siblings:
+        if other.get("id") == version.get("id") or other.get("baseModel") != version.get(
+            "baseModel"
+        ):
+            continue
+        if _pair_key(str(other.get("name") or "")) != key:
+            continue
+        try:
+            halves = _halves(_candidates(other), str(other.get("name") or ""))
+        except PlanError:
+            continue
+        if set(halves) == {want}:
+            found.append((other, halves[want]))
+    return found[0] if len(found) == 1 else None
 
 
 def _planned(
-    f: dict[str, Any], version: dict[str, Any], path: str, half: str | None
+    f: dict[str, Any],
+    version: dict[str, Any],
+    path: str,
+    half: str | None,
+    from_sibling: bool = False,
 ) -> PlannedFile:
     sha = str((f.get("hashes") or {}).get("SHA256") or "").lower()
     if not SHA256.fullmatch(sha):
@@ -194,6 +225,7 @@ def _planned(
         sha256=sha,
         path=path,
         half=half,
+        from_sibling=from_sibling,
     )
 
 
@@ -204,11 +236,14 @@ def plan_import(
     family: str | None = None,
     name: str | None = None,
     weight: float | None = None,
+    siblings: Sequence[dict[str, Any]] = (),
 ) -> ImportPlan:
     """Plan importing a model version (`GET /api/v1/model-versions/<id>`).
 
     `family` overrides the one mapped from the base model; `name` is the file name without
-    `.safetensors` (for a Wan A14B pair, without `_high_noise` / `_low_noise`).
+    `.safetensors` (for a Wan A14B pair, without `_high_noise` / `_low_noise`). `siblings` are
+    the model's versions (`GET /api/v1/models/<id>`): a Wan A14B version with one half takes
+    the other from the one that matches it.
     """
     model = version.get("model") or {}
     model_name = str(model.get("name") or f"Model {version.get('modelId')}")
@@ -220,17 +255,30 @@ def plan_import(
     candidates = _candidates(version)
 
     fallback = f"civitai_{version['id']}"
+    paired_version = None
     if variants and PAIRED_VARIANTS & set(variants):
         stem = valid_name(name) if name else slug(model_name) or fallback
-        chosen = _halves(candidates, version_name, stem, warnings)
+        halves = {h: (f, version) for h, f in _halves(candidates, version_name).items()}
+        if len(halves) == 1:
+            have = next(iter(halves))
+            other = "low" if have == "high" else "high"
+            if found := _sibling_half(siblings, version, other):
+                sibling, f = found
+                halves[other] = (f, sibling)
+                paired_version = str(sibling.get("name") or "")
+            else:
+                warnings.append(
+                    f"This version has only the {have}-noise half;"
+                    f" import the {other}-noise one to complete the pair"
+                )
+        files = [
+            _planned(f, v, f"loras/{family}/{stem}_{h}_noise.safetensors", h, v is not version)
+            for h, (f, v) in sorted(halves.items())
+        ]
     else:
         named = slug(model_name) and slug(f"{model_name} {version_name}")
         stem = valid_name(name) if name else named or fallback
-        chosen = [(candidates[0], stem, None)]
-    files = [
-        _planned(f, version, f"loras/{family}/{file_stem}.safetensors", half)
-        for f, file_stem, half in chosen
-    ]
+        files = [_planned(candidates[0], version, f"loras/{family}/{stem}.safetensors", None)]
 
     words = [w.strip() for w in version.get("trainedWords") or [] if str(w).strip()]
     images = version.get("images") or []
@@ -249,4 +297,5 @@ def plan_import(
         files=files,
         preview_url=still_url(str(images[0]["url"])) if images else None,
         warnings=warnings,
+        paired_version=paired_version,
     )
