@@ -45,7 +45,8 @@ SIZE = SizeConstraints(
     min_pixels=256 * 256,
     max_pixels=1536 * 1024,
     # The smaller sizes (about 6,000 video tokens at 121 frames) are for i2v on a 40 GB A100,
-    # where 768x768 runs out of memory.
+    # where 768x768 runs out of memory. The 512x512-sized ones (multiples of 64, so they also
+    # upscale) are for quick drafts.
     presets=(
         (960, 544),
         (544, 960),
@@ -55,6 +56,9 @@ SIZE = SizeConstraints(
         (512, 768),
         (768, 768),
         (640, 640),
+        (704, 384),
+        (384, 704),
+        (512, 512),
     ),
 )
 UPSCALE_MULTIPLE = 64
