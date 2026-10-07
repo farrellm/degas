@@ -18,7 +18,7 @@ export interface LoraPickerProps {
   onClose: () => void
 }
 
-/** Add a LoRA that fits the model's variant, import one from Civitai, or delete one from Drive. */
+/** Add a LoRA that fits the model's variant, import one from Civitai or Hugging Face, or delete one from Drive. */
 export function LoraPicker({
   family,
   variant,

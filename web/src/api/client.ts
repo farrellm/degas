@@ -72,8 +72,11 @@ export const api = {
       `/assets?${paths.map((p) => `path=${encodeURIComponent(p)}`).join('&')}`,
     ),
   drive: () => request<DriveStatus>('GET', '/drive'),
-  civitaiPlan: (url: string) => request<CivitaiPlan>('POST', '/civitai/plan', { url }),
-  civitaiImport: (url: string) => request<CivitaiImport>('POST', '/civitai/import', { url }),
+  /** `hint`: the family for a Hugging Face LoRA whose page doesn't name its base model. */
+  civitaiPlan: (url: string, hint?: string) =>
+    request<CivitaiPlan>('POST', '/civitai/plan', { url, hint }),
+  civitaiImport: (url: string, hint?: string) =>
+    request<CivitaiImport>('POST', '/civitai/import', { url, hint }),
   civitaiImportState: () => request<CivitaiImport | null>('GET', '/civitai/import'),
   session: () => request<SessionSnapshot>('GET', '/session'),
   startSession: (gpu: string, highMem: boolean) =>

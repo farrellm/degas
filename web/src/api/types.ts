@@ -341,10 +341,13 @@ export interface Result {
   spec: Spec | null
 }
 
-/** What importing a Civitai link would do. */
+/** What importing a Civitai or Hugging Face link would do. */
 export interface CivitaiPlan {
+  origin: 'civitai' | 'huggingface'
   model_name: string
+  /** A Civitai version's name, or a Hugging Face repo. */
   version_name: string
+  /** Empty when a Hugging Face LoRA doesn't name it. */
   base_model: string
   family: string
   label: string
@@ -354,7 +357,7 @@ export interface CivitaiPlan {
   warnings: string[]
 }
 
-/** The latest Civitai import; `import` events follow it. */
+/** The latest LoRA import; `import` events follow it. */
 export interface CivitaiImport {
   id: string
   label: string

@@ -59,9 +59,9 @@ uv run degas lora publish jane --epoch 8   # upload to loras/sdxl/ with a sideca
 
 Runs live in `data/lora-runs/<name>-<time>/`: `checkpoints/` (one per epoch; the last is `<name>.safetensors`), `samples/` (each epoch's sample prompts, same seeds; `e000000` is before training) and `train.log`. Compare the epochs' samples and publish the latest one that still follows the unusual prompts (the astronaut, the painting) and doesn't leak into the prompt without the trigger. That's often not the last epoch. `publish` uploads with your own rclone remote (`lora.rclone_remote`, `gdrive:`), because Degas's Drive token is read-only, then rescans. Use the LoRA at a weight of about 0.6–0.9.
 
-## Importing LoRAs from Civitai
+## Importing LoRAs from Civitai and Hugging Face
 
-Paste a Civitai link into **Import from Civitai** at the foot of the LoRA picker, or:
+Paste a Civitai or Hugging Face link into **Import a LoRA** at the foot of the LoRA picker, or:
 
 ```sh
 uv run degas civitai import https://civitai.com/models/<id> --dry-run   # show the plan
@@ -70,6 +70,12 @@ uv run degas civitai backfill            # sidecars for LoRAs already in Drive, 
 ```
 
 The base model on Civitai picks the folder (`loras/sdxl/`, `loras/flux1/`, `loras/wan22/` …); `--family` overrides it, and `--name` and `--weight` set the file name and the sidecar's weight. The file streams from Civitai to Drive through your rclone remote (`lora.rclone_remote`, as for `degas lora publish`) and is checked against Civitai's SHA-256. It gets a sidecar with the trigger words and the base model, and a preview from the first example image. Wan 2.2 A14B LoRAs often put the high- and low-noise halves in separate versions: either link imports both (from the version named the same apart from high/low), and halves imported one at a time still pair up. Many downloads need an API key (civitai.com → Account settings → API keys) in `~/.config/civitai/token` (`civitai.token_file`).
+
+A Hugging Face link can name a file (`…/blob/main/<file>.safetensors`) or a repo (or `tree/` folder) that holds one LoRA, or one Wan high/low pair; a link to one half of a pair imports both. Hugging Face has no base-model field to rely on, so the family comes from the file's name, the model card's `base_model`, or the repo's name (`LTX-2.3`, `Wan2.2 … t2v`, `FLUX.1`, `SDXL` …), in that order; failing those, the app uses the family Create is on and says so, and the CLI asks for `--family`. Trigger words come from the card's `instance_prompt` or a `Triggers:` line in the README, and the preview from the repo's first image, else the first frame of its smallest example video. The file is checked against its LFS SHA-256, downloaded at the commit the plan saw. Gated repos need a token (and the license accepted on the repo's page) in `~/.cache/huggingface/token` (`huggingface.token_file`; `hf auth login` writes it).
+
+```sh
+uv run degas civitai import 'https://huggingface.co/<user>/<repo>/blob/main/<file>.safetensors' --dry-run
+```
 
 ## Development
 

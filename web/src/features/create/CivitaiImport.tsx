@@ -17,8 +17,8 @@ export interface CivitaiImportProps {
 }
 
 /**
- * Import from Civitai, at the foot of the LoRA picker: paste a link, check what it is,
- * then copy it into Drive. The copy runs on the server, so closing the sheet doesn't stop it.
+ * Import a LoRA from Civitai or Hugging Face, at the foot of the LoRA picker: paste a link,
+ * check what it is, then copy it into Drive. The copy runs on the server, so closing the sheet doesn't stop it.
  */
 export function CivitaiImport({ family, onImported }: CivitaiImportProps) {
   const qc = useQueryClient()
@@ -31,9 +31,9 @@ export function CivitaiImport({ family, onImported }: CivitaiImportProps) {
   const handled = useRef<string | null>(null)
   const families = useQuery(queries.families())
   const job = useQuery(queries.civitaiImport()).data
-  const check = useMutation({ mutationFn: api.civitaiPlan })
+  const check = useMutation({ mutationFn: (link: string) => api.civitaiPlan(link, family) })
   const start = useMutation({
-    mutationFn: api.civitaiImport,
+    mutationFn: (link: string) => api.civitaiImport(link, family),
     onSuccess: (j) => {
       qc.setQueryData(['civitai-import'], j)
       setStarted(j.id)
@@ -58,7 +58,7 @@ export function CivitaiImport({ family, onImported }: CivitaiImportProps) {
   if (running) {
     const pct = job.total ? Math.floor((100 * job.done) / job.total) : 0
     return (
-      <section className="civitai" aria-label="Import from Civitai">
+      <section className="civitai" aria-label="Import a LoRA">
         <p className="asset-name">{job.label}</p>
         <progress max={job.total || 1} value={job.state === 'finishing' ? job.total : job.done} />
         <p className="asset-meta" aria-live="polite">
@@ -73,7 +73,7 @@ export function CivitaiImport({ family, onImported }: CivitaiImportProps) {
   const plan = check.data
   const finished = job?.id === started ? job : null
   return (
-    <section className="civitai" aria-label="Import from Civitai">
+    <section className="civitai" aria-label="Import a LoRA">
       {finished?.state === 'done' && (
         <p className="civitai-done" role="status">
           Imported {finished.label}
@@ -94,7 +94,7 @@ export function CivitaiImport({ family, onImported }: CivitaiImportProps) {
             setOpen(true)
           }}
         >
-          Import from Civitai
+          Import a LoRA
         </button>
       ) : plan ? (
         <PlanSummary
@@ -115,8 +115,8 @@ export function CivitaiImport({ family, onImported }: CivitaiImportProps) {
             <input
               type="url"
               inputMode="url"
-              aria-label="Civitai link"
-              placeholder="https://civitai.com/models/…"
+              aria-label="Civitai or Hugging Face link"
+              placeholder="civitai.com/models/… or huggingface.co/…"
               autoCapitalize="none"
               autoCorrect="off"
               value={url}

@@ -25,7 +25,7 @@ export interface AssetPickerProps {
   /** A first fact for each row's meta line (e.g. the model's variant). */
   describe?: (asset: Asset) => string | null
   empty: ReactNode
-  /** Above the rescan footer (the LoRA picker's Import from Civitai). */
+  /** Above the rescan footer (the LoRA picker's Import a LoRA). */
   footer?: ReactNode
   /** Offer a delete mode: `note` follows the question, `run` deletes the row's files. */
   deleting?: {

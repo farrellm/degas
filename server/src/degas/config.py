@@ -56,6 +56,12 @@ class CivitaiConfig(Section):
     api_base: str = "https://civitai.com"
 
 
+class HuggingFaceConfig(Section):
+    # A Hugging Face token (huggingface.co → Settings → Access Tokens), for gated repos.
+    token_file: Path = Path("~/.cache/huggingface/token")
+    api_base: str = "https://huggingface.co"
+
+
 class Config(Section):
     data_dir: Path = Path("data")
     host: str = "127.0.0.1"
@@ -67,6 +73,7 @@ class Config(Section):
     push: PushConfig = PushConfig()
     lora: LoraConfig = LoraConfig()
     civitai: CivitaiConfig = CivitaiConfig()
+    huggingface: HuggingFaceConfig = HuggingFaceConfig()
 
     @property
     def ssh_key(self) -> Path:
@@ -121,6 +128,9 @@ def load_config(path: Path | None = None) -> Config:
             "push": config.push.model_copy(update={"key_file": resolve(config.push.key_file)}),
             "civitai": config.civitai.model_copy(
                 update={"token_file": base / config.civitai.token_file.expanduser()}
+            ),
+            "huggingface": config.huggingface.model_copy(
+                update={"token_file": base / config.huggingface.token_file.expanduser()}
             ),
         }
     )

@@ -160,7 +160,7 @@ describe('Create', () => {
     sheet = screen.getByRole('dialog', { name: 'Add LoRA' })
     await user.click(within(sheet).getByRole('button', { name: 'Delete LoRAs' }))
     sheet = screen.getByRole('dialog', { name: 'Delete LoRAs' })
-    expect(within(sheet).queryByRole('button', { name: 'Import from Civitai' })).toBeNull()
+    expect(within(sheet).queryByRole('button', { name: 'Import a LoRA' })).toBeNull()
     await user.click(within(sheet).getByRole('button', { name: /Film Grain v3/ }))
     const confirm = within(sheet).getByRole('group', { name: 'Confirm delete' })
     expect(confirm).toHaveTextContent('Delete Film Grain v3? Its files go to Drive’s trash.')
@@ -209,6 +209,7 @@ describe('Create', () => {
       'GET /api/assets': () => assets,
       'GET /api/civitai/import': () => null,
       'POST /api/civitai/plan': () => ({
+        origin: 'civitai',
         model_name: 'Test Style XL',
         version_name: 'v1.0',
         base_model: 'SDXL 1.0',
@@ -230,15 +231,15 @@ describe('Create', () => {
     renderApp()
     await user.click(await screen.findByRole('button', { name: 'Add LoRA' }))
     const sheet = screen.getByRole('dialog', { name: 'Add LoRA' })
-    await user.click(within(sheet).getByRole('button', { name: 'Import from Civitai' }))
+    await user.click(within(sheet).getByRole('button', { name: 'Import a LoRA' }))
     await user.type(
-      within(sheet).getByLabelText('Civitai link'),
+      within(sheet).getByLabelText('Civitai or Hugging Face link'),
       'https://civitai.com/models/100001',
     )
     await user.click(within(sheet).getByRole('button', { name: 'Check link' }))
     expect(await within(sheet).findByText('v1.0, SDXL 1.0, 228 MB')).toBeInTheDocument()
     await user.click(within(sheet).getByRole('button', { name: 'Import' }))
-    expect(posted).toEqual([{ url: 'https://civitai.com/models/100001' }])
+    expect(posted).toEqual([{ url: 'https://civitai.com/models/100001', hint: 'sdxl' }])
     expect(await within(sheet).findByText('Copying to Drive, 0% of 228 MB')).toBeInTheDocument()
 
     const send = (data: unknown) => {

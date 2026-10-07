@@ -1,4 +1,4 @@
-/* Import from Civitai, at the foot of the LoRA picker */
+/* Import a LoRA (Civitai, Hugging Face), at the foot of the LoRA picker */
 .civitai {
   display: flex;
   flex-direction: column;

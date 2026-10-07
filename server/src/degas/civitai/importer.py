@@ -1,7 +1,8 @@
-"""Copy a Civitai LoRA into Drive, checked against Civitai's hash, with a sidecar and preview.
+"""Copy a LoRA from Civitai or Hugging Face into Drive, checked against the site's hash, with
+a sidecar and preview.
 
-The file streams from Civitai straight into `rclone rcat`, so nothing large touches the disk.
-Its SHA-256 is compared with Civitai's and its md5 with Drive's, and a mismatch deletes it.
+The file streams from the site straight into `rclone rcat`, so nothing large touches the disk.
+Its SHA-256 is compared with the site's and its md5 with Drive's, and a mismatch deletes it.
 """
 
 import asyncio
@@ -9,13 +10,25 @@ import contextlib
 import hashlib
 import logging
 import secrets
+import tempfile
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
-from typing import Any
+from contextlib import AbstractAsyncContextManager
+from pathlib import Path
+from typing import Any, Protocol
 
 from degas.civitai.client import Civitai, CivitaiError
-from degas.civitai.plan import ImportPlan, PlanError, PlannedFile, plan_import
+from degas.civitai.huggingface import HuggingFace, HuggingFaceError, is_hf_link, parse_hf_ref
+from degas.civitai.plan import (
+    VIDEO,
+    ImportPlan,
+    PlanError,
+    PlannedFile,
+    plan_hf_import,
+    plan_import,
+)
 from degas.errors import DegasError
+from degas.media import MediaError, extract_frame
 from degas.rclone import RcloneError, Remote, preview_jpeg
 
 log = logging.getLogger(__name__)
@@ -28,6 +41,21 @@ Progress = Callable[[str, int, int], None]
 
 class CivitaiImportError(DegasError):
     """The import can't go ahead, or failed partway."""
+
+
+class Source(Protocol):
+    """Where a plan's files come from: Civitai or Hugging Face."""
+
+    def download(
+        self, url: str
+    ) -> AbstractAsyncContextManager[tuple[int | None, AsyncIterator[bytes]]]: ...
+
+    async def fetch(self, url: str) -> bytes: ...
+
+    async def aclose(self) -> None: ...
+
+
+SOURCE_ERRORS = (CivitaiError, HuggingFaceError)
 
 
 def find_duplicates(plan: ImportPlan, index: Sequence[Mapping[str, Any]]) -> list[str]:
@@ -69,8 +97,10 @@ class Importer:
         rclone_remote: str,
         drive_root: str,
         families: set[str],
+        hf: HuggingFace | None = None,
     ) -> None:
         self.civitai = civitai
+        self.hf = hf or HuggingFace()
         self.remote = remote
         self.base = f"{rclone_remote}{drive_root.strip('/')}"
         self.families = families
@@ -84,10 +114,50 @@ class Importer:
         name: str | None = None,
         weight: float | None = None,
         force: bool = False,
+        hint: str | None = None,
     ) -> ImportPlan:
-        """Resolve a link to a plan; duplicates are errors unless `force`."""
-        version = await self.civitai.version(ref)
+        """Resolve a link to a plan; duplicates are errors unless `force`. `hint` is the
+        family for a Hugging Face LoRA that nothing says the base model of."""
         options: dict[str, Any] = {"family": family, "name": name, "weight": weight}
+        if is_hf_link(ref):
+            plan = await self._plan_hf(ref, hint=hint, **options)
+        else:
+            plan = await self._plan_civitai(ref, index, name=name, options=options)
+        duplicates = find_duplicates(plan, index)
+        if duplicates and not force:
+            raise PlanError("; ".join(duplicates))
+        plan.warnings.extend(f"Going ahead anyway: {d}" for d in duplicates)
+        return plan
+
+    async def _plan_hf(self, link: str, **options: Any) -> ImportPlan:
+        ref = parse_hf_ref(link)
+        info = await self.hf.model(ref)
+        readme = None
+        commit = str(info.get("sha") or ref.revision)
+        if any(f.get("rfilename") == "README.md" for f in info.get("siblings") or []):
+            try:
+                url = self.hf.file_url(ref.repo, commit, "README.md")
+                readme = (await self.hf.fetch(url, limit=1 << 20)).decode(errors="replace")
+            except HuggingFaceError as e:
+                log.warning("no README for %s: %s", ref.repo, e)
+        return plan_hf_import(
+            info,
+            ref,
+            families=self.families,
+            readme=readme,
+            base_url=self.hf.api_base,
+            **options,
+        )
+
+    async def _plan_civitai(
+        self,
+        ref: str,
+        index: Sequence[Mapping[str, Any]],
+        *,
+        name: str | None,
+        options: dict[str, Any],
+    ) -> ImportPlan:
+        version = await self.civitai.version(ref)
         plan = plan_import(version, families=self.families, **options)
         if len(plan.files) == 1 and plan.files[0].half is not None:
             # Civitai often has a Wan pair's halves as two versions: find the other one.
@@ -95,11 +165,10 @@ class Importer:
             siblings = model.get("modelVersions") or []
             plan = plan_import(version, families=self.families, siblings=siblings, **options)
             drop_halves_in_drive(plan, index, rename=name is None)
-        duplicates = find_duplicates(plan, index)
-        if duplicates and not force:
-            raise PlanError("; ".join(duplicates))
-        plan.warnings.extend(f"Going ahead anyway: {d}" for d in duplicates)
         return plan
+
+    def _source(self, plan: ImportPlan) -> Source:
+        return self.hf if plan.origin == "huggingface" else self.civitai
 
     async def run(self, plan: ImportPlan, progress: Progress | None = None) -> list[str]:
         """Upload the plan's files, sidecars and preview; return the LoRAs' Drive paths."""
@@ -117,7 +186,7 @@ class Importer:
             def downloaded(n: int, before: int = done) -> None:
                 report("download", before + n, total)
 
-            await self._upload(f, downloaded)
+            await self._upload(self._source(plan), f, downloaded)
             done += f.size
         report("sidecar", total, total)
         sidecar = plan.sidecar().encode()
@@ -150,22 +219,28 @@ class Importer:
     async def _preview(self, plan: ImportPlan, target: str) -> None:
         assert plan.preview_url
         try:
-            jpeg = preview_jpeg(await self.civitai.fetch(plan.preview_url))
-        except (CivitaiError, OSError) as e:  # PIL's UnidentifiedImageError is an OSError
+            data = await self._source(plan).fetch(plan.preview_url)
+            if VIDEO.search(plan.preview_url):
+                data = await _first_frame(data)
+            jpeg = preview_jpeg(data)
+        # PIL's UnidentifiedImageError is an OSError
+        except (*SOURCE_ERRORS, MediaError, OSError) as e:
             log.warning("no preview for %s: %s", plan.source, e)
             return
         await self.remote.run("rcat", target, stdin=jpeg)
 
-    async def _upload(self, f: PlannedFile, progress: Callable[[int], None]) -> None:
+    async def _upload(
+        self, source: Source, f: PlannedFile, progress: Callable[[int], None]
+    ) -> None:
         target = f"{self.base}/{f.path}"
         sha = hashlib.sha256()
         md5 = hashlib.md5(usedforsecurity=False)
         count = 0
 
-        async with self.civitai.download(f.url) as (size, chunks):
+        async with source.download(f.url) as (size, chunks):
             if size is not None and f.size and abs(size - f.size) > 1024:
                 raise CivitaiImportError(
-                    f"Civitai sent {size} bytes for {f.civitai_name}, expected about {f.size}"
+                    f"The download is {size} bytes for {f.civitai_name}, expected about {f.size}"
                 )
 
             async def hashed() -> AsyncIterator[bytes]:
@@ -186,7 +261,7 @@ class Importer:
             if sha.hexdigest() != f.sha256:
                 raise CivitaiImportError(
                     f"{f.civitai_name}: SHA-256 {sha.hexdigest()} doesn't match"
-                    f" Civitai's {f.sha256}"
+                    f" the expected {f.sha256}"
                 )
             remote_md5 = (await self.remote.run("md5sum", target)).split(" ")[0].strip()
             if remote_md5 != md5.hexdigest():
@@ -202,12 +277,19 @@ class Importer:
             raise
 
 
+async def _first_frame(video: bytes) -> bytes:
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "example"
+        path.write_bytes(video)
+        return await extract_frame(path, "first")
+
+
 class ImportBusyError(DegasError):
     pass
 
 
 class Imports:
-    """The app's Civitai imports: one at a time, each state change published as an
+    """The app's LoRA imports: one at a time, each state change published as an
     `import` event. The finished or failed one stays until the next starts."""
 
     def __init__(
@@ -261,11 +343,11 @@ class Imports:
 
         try:
             await self.importer.run(plan, progress)
-        except (CivitaiError, CivitaiImportError, RcloneError) as e:
+        except (*SOURCE_ERRORS, CivitaiImportError, RcloneError) as e:
             self._update(job, state="failed", error=str(e))
             return
         except Exception as e:
-            log.exception("Civitai import of %s failed", plan.source)
+            log.exception("Import of %s failed", plan.source)
             self._update(job, state="failed", error=f"Import failed: {e}")
             return
         self._update(job, state="finishing")
@@ -282,3 +364,4 @@ class Imports:
             with contextlib.suppress(asyncio.CancelledError):
                 await self._task
         await self.importer.civitai.aclose()
+        await self.importer.hf.aclose()

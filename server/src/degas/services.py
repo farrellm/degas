@@ -12,6 +12,7 @@ import httpx2
 
 from degas.blobs import BlobStore
 from degas.civitai.client import Civitai
+from degas.civitai.huggingface import HuggingFace
 from degas.civitai.importer import Importer, Imports
 from degas.colab.cli import Colab, ColabCli
 from degas.colab.session import SessionManager
@@ -106,6 +107,7 @@ def build_services(
     indexer: DriveIndexer | None = None,
     push_sender: Sender | None = None,
     civitai_http: httpx2.AsyncClient | None = None,
+    hf_http: httpx2.AsyncClient | None = None,
     remote: Remote | None = None,
 ) -> Services:
     config.data_dir.mkdir(parents=True, exist_ok=True)
@@ -170,6 +172,7 @@ def build_services(
         config.lora.rclone_remote,
         config.drive.root,
         set(FAMILIES),
+        HuggingFace(config.huggingface.token_file, config.huggingface.api_base, hf_http),
     )
     assets = AssetCatalog(db, blobs, bus, indexer, remote, importer.base)
     imports = Imports(importer, lambda: db.list_assets(kind="lora"), bus.publish, assets.rescan)

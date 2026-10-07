@@ -8,6 +8,7 @@ import sys
 import httpx2
 
 from degas.civitai.client import Civitai, CivitaiError
+from degas.civitai.huggingface import HuggingFace, HuggingFaceError
 from degas.civitai.importer import CivitaiImportError, Importer
 from degas.civitai.plan import ImportPlan, PlanError
 from degas.config import Config
@@ -20,12 +21,17 @@ MB = 1000**2
 
 
 def add_parser(sub: "argparse._SubParsersAction[argparse.ArgumentParser]") -> None:
-    civitai = sub.add_parser("civitai", help="import LoRAs from Civitai into Drive")
+    civitai = sub.add_parser("civitai", help="import LoRAs from Civitai or Hugging Face")
     civitai.set_defaults(run=run)
     cmd = civitai.add_subparsers(dest="civitai_command", required=True)
     imp = cmd.add_parser("import", help="copy a LoRA into loras/<family>/ with a sidecar")
-    imp.add_argument("url", help="a Civitai model or version link, an AIR, or a version id")
-    imp.add_argument("--family", choices=sorted(FAMILIES), help="default: from its base model")
+    imp.add_argument(
+        "url",
+        help="a Civitai model or version link, an AIR, a version id, or a Hugging Face link",
+    )
+    imp.add_argument(
+        "--family", choices=sorted(FAMILIES), help="default: from its base model (or name)"
+    )
     imp.add_argument("--name", help="file name without .safetensors (default: from its name)")
     imp.add_argument("--weight", type=float, help="the sidecar's default weight (0.8)")
     imp.add_argument("--dry-run", action="store_true", help="show the plan and stop")
@@ -42,6 +48,7 @@ def importer(config: Config) -> Importer:
         config.lora.rclone_remote,
         config.drive.root,
         set(FAMILIES),
+        HuggingFace(config.huggingface.token_file, config.huggingface.api_base),
     )
 
 
@@ -62,7 +69,8 @@ def size(n: int) -> str:
 
 
 def show(plan: ImportPlan) -> None:
-    print(f"{plan.model_name} · {plan.version_name} · {plan.base_model} → {plan.family}")
+    base = plan.base_model or "unknown base"
+    print(f"{plan.model_name} · {plan.version_name} · {base} → {plan.family}")
     for f in plan.files:
         print(f"  {f.civitai_name} ({size(f.size)}) → {f.path}")
     print(f"  Trigger words: {', '.join(plan.trigger_words) or 'none'}")
@@ -103,6 +111,7 @@ async def _import(config: Config, args: argparse.Namespace) -> None:
         paths = await imp.run(plan, progress)
     finally:
         await imp.civitai.aclose()
+        await imp.hf.aclose()
     for p in paths:
         print(f"Imported {p}")
     rescan(config)
@@ -153,5 +162,5 @@ def run(config: Config, args: argparse.Namespace) -> None:
                 asyncio.run(_import(config, args))
             case "backfill":
                 asyncio.run(_backfill(config, args))
-    except (CivitaiError, PlanError, CivitaiImportError, RcloneError) as e:
+    except (CivitaiError, HuggingFaceError, PlanError, CivitaiImportError, RcloneError) as e:
         sys.exit(str(e))

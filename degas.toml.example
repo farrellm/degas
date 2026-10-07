@@ -25,11 +25,15 @@ client_file = "drive_client.json"
 
 [lora]
 session_name = "degas-lora"  # `degas lora` trains in its own Colab session
-rclone_remote = "gdrive:"    # local rclone remote that can write to the same Drive (publish, Civitai)
+rclone_remote = "gdrive:"    # local rclone remote that can write to the same Drive (publish, LoRA imports)
 
 [civitai]
 # token_file = "~/.config/civitai/token"   # API key (civitai.com → Account → API keys); many downloads need one
 # api_base = "https://civitai.com"
+
+[huggingface]
+# token_file = "~/.cache/huggingface/token"   # access token, for gated repos (`hf auth login` writes it)
+# api_base = "https://huggingface.co"
 
 [push]
 # Contact for the push services (Apple, Google, Mozilla); use a mailto: you read.

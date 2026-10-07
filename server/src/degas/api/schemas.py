@@ -46,6 +46,8 @@ class CivitaiImport(BaseModel):
     name: Annotated[str, Field(max_length=120)] | None = None
     weight: Annotated[float, Field(ge=0, le=2)] | None = None
     force: bool = False
+    # The family Create is on: a Hugging Face LoRA's, when nothing names its base model.
+    hint: str | None = None
 
     def options(self) -> dict[str, Any]:
         return self.model_dump(exclude={"url"})

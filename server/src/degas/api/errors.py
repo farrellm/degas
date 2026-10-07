@@ -5,6 +5,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from degas.civitai.client import CivitaiError
+from degas.civitai.huggingface import HuggingFaceError
 from degas.civitai.importer import ImportBusyError
 from degas.civitai.plan import PlanError
 from degas.colab.session import SessionError
@@ -22,6 +23,7 @@ STATUS: dict[type[DegasError], int] = {
     SessionError: 409,
     ImportBusyError: 409,
     CivitaiError: 422,
+    HuggingFaceError: 422,
     PlanError: 422,
     DriveError: 502,
     RcloneError: 502,

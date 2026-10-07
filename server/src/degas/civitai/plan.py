@@ -1,4 +1,6 @@
-"""What importing a Civitai model version means: the family, the Drive files and the sidecar.
+"""What importing a LoRA means: the family, the Drive files and the sidecar.
+
+A Civitai model version (`plan_import`) or a file in a Hugging Face repo (`plan_hf_import`).
 
 Pure functions over the API's JSON, so they're tested against saved responses.
 """
@@ -13,6 +15,7 @@ import yaml
 
 from degas.blobs import SHA256
 from degas.civitai.client import still_url
+from degas.civitai.huggingface import MAX_PREVIEW_BYTES, HfRef, quote_path
 from degas.errors import DegasError
 
 # Civitai's `baseModel` → (family, the Wan or LTX variants its LoRAs are for). Pony, Illustrious
@@ -74,8 +77,8 @@ class PlannedFile:
 
 @dataclass
 class ImportPlan:
-    model_id: int
-    version_id: int
+    model_id: int | None
+    version_id: int | None
     model_name: str
     version_name: str
     base_model: str
@@ -89,6 +92,7 @@ class ImportPlan:
     preview_url: str | None
     warnings: list[str] = field(default_factory=list)
     paired_version: str | None = None  # the version the other half came from
+    origin: str = "civitai"  # or "huggingface"
 
     @property
     def folder(self) -> str:
@@ -101,10 +105,14 @@ class ImportPlan:
         data["default_weight"] = self.weight
         if self.variants:
             data["variants"] = self.variants
-        versions = self.version_name
-        if self.paired_version is not None:
-            versions += f" + {self.paired_version}"
-        data["notes"] = f"{self.base_model} LoRA from Civitai ({versions})"
+        if self.origin == "huggingface":
+            base = f"{self.base_model} " if self.base_model else ""
+            data["notes"] = f"{base}LoRA from Hugging Face ({self.version_name})"
+        else:
+            versions = self.version_name
+            if self.paired_version is not None:
+                versions += f" + {self.paired_version}"
+            data["notes"] = f"{self.base_model} LoRA from Civitai ({versions})"
         data["source"] = self.source
         return yaml.safe_dump(data, sort_keys=False, allow_unicode=True)
 
@@ -298,4 +306,232 @@ def plan_import(
         preview_url=still_url(str(images[0]["url"])) if images else None,
         warnings=warnings,
         paired_version=paired_version,
+    )
+
+
+# -- Hugging Face ---------------------------------------------------------------------------
+
+# Hugging Face has no base-model field Degas can rely on: `base_model` in the model card is
+# optional, and many LoRAs only say it in their names. These patterns are tried on the file's
+# name, then on the card's `base_model`, then on the repo's name: first match wins. (Order matters:
+# "ti2v" contains "i2v", and "FLUX.2 klein" contains "flux".)
+NAMED_BASES: list[tuple[re.Pattern[str], str, str, list[str] | None]] = [
+    (re.compile(p), label, fam, variants)
+    for p, label, fam, variants in [
+        (r"ltx.?2[._ -]?5", "LTX-2.5", "ltx2", ["ltx25"]),
+        (r"ltx.?2[._ -]?3", "LTX-2.3", "ltx2", ["ltx23", "ltx23-distilled"]),
+        (r"wan.?2[._ -]?2.*(ti2v|5b)", "Wan 2.2 TI2V-5B", "wan22", ["ti2v-5b"]),
+        (r"wan.?2[._ -]?2.*i2v", "Wan 2.2 I2V-A14B", "wan22", ["i2v-a14b"]),
+        (r"wan.?2[._ -]?2.*t2v", "Wan 2.2 T2V-A14B", "wan22", ["t2v-a14b"]),
+        (
+            r"wan.?2[._ -]?1.*(i2v|flf2v)",
+            "Wan 2.1 I2V 14B",
+            "wan22",
+            ["wan21-i2v-14b", "wan21-flf2v-14b"],
+        ),
+        (r"klein.?9b|9b.?klein", "FLUX.2 klein 9B", "klein", None),
+        (r"flux.?1|flux(?![._ -]?2)", "FLUX.1", "flux1", None),
+        (r"qwen.?image.?2", "Qwen-Image 2", "qwen21", None),
+        (r"sdxl|stable.diffusion.xl|pony|illustrious|noobai", "SDXL", "sdxl", None),
+    ]
+]
+IMAGE = re.compile(r"\.(png|jpe?g|webp)$", re.IGNORECASE)
+VIDEO = re.compile(r"\.(mp4|webm|mov)$", re.IGNORECASE)
+TRIGGERS = re.compile(
+    r"^[\s>*_#-]*(?:trigger(?:s| words?| phrase)?|instance prompt)[*_\s]*:[*_\s]*(.+)$",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+
+def _named_base(texts: Sequence[str]) -> tuple[str, str, list[str] | None] | None:
+    """(base model's name, family, variants) that `texts` name, the first text first."""
+    for text in texts:
+        for pattern, label, fam, variants in NAMED_BASES:
+            if pattern.search(text.lower()):
+                return label, fam, variants
+    return None
+
+
+def _card_bases(card: dict[str, Any]) -> list[str]:
+    base = card.get("base_model")
+    if isinstance(base, str):
+        return [base]
+    return [str(b) for b in base] if isinstance(base, list) else []
+
+
+def readme_triggers(readme: str) -> list[str]:
+    """Trigger words from a README line such as "Triggers: 2d animation, Tin"."""
+    m = TRIGGERS.search(readme)
+    if not m:
+        return []
+    words = (w.strip(" `*_\"'.") for w in m[1].split(","))
+    return [w for w in words if w]
+
+
+def _hf_family(
+    texts: Sequence[str],
+    label: str,
+    family: str | None,
+    hint: str | None,
+    families: set[str],
+) -> tuple[str, str, list[str] | None, list[str]]:
+    """(family, base model's name, variants, warnings) for a Hugging Face LoRA."""
+    named = _named_base(texts)
+    if family is not None:
+        if family not in families:
+            raise PlanError(f"Unknown family {family!r}")
+        if named is None:
+            return family, "", None, []
+        base, mapped, variants = named
+        if mapped == family:
+            return family, base, variants, []
+        return family, base, None, [f"It looks like it's for {base}; importing it for {family}"]
+    if named is not None:
+        base, mapped, variants = named
+        return mapped, base, variants, []
+    if hint is not None and hint in families:
+        warning = f"Its page doesn't say which model it's for; importing it for {hint}"
+        return hint, "", None, [warning]
+    raise PlanError(f"Can't tell which model {label} is for: choose its family")
+
+
+def _hf_linked(
+    siblings: list[dict[str, Any]], ref: HfRef
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """(the LoRA file a link means, the .safetensors files in its folder)."""
+    tensors = [f for f in siblings if str(f.get("rfilename", "")).endswith(".safetensors")]
+    if ref.path is not None:
+        if not ref.path.endswith(".safetensors"):
+            raise PlanError(f"{ref.path} isn't a .safetensors file")
+        folder = ref.path.rpartition("/")[0]
+    else:
+        folder = ref.folder.strip("/")
+    in_folder = [f for f in tensors if str(f["rfilename"]).rpartition("/")[0] == folder]
+    linked = next((f for f in in_folder if ref.path in (None, f["rfilename"])), None)
+    if linked is None:
+        if ref.path is not None:
+            raise PlanError(f"{ref.repo} has no file {ref.path}")
+        raise PlanError(f"No .safetensors file in {ref.repo}/{folder}".rstrip("/"))
+    return linked, in_folder
+
+
+def _hf_triggers(card: dict[str, Any], readme: str | None) -> list[str]:
+    prompt = card.get("instance_prompt")
+    if isinstance(prompt, str) and prompt.strip():
+        return [prompt.strip()]
+    return readme_triggers(readme) if readme else []
+
+
+def _hf_example(siblings: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """The repo's first image for a preview, else its smallest video that isn't too big."""
+    names = [(f, str(f.get("rfilename", ""))) for f in siblings]
+    images = [f for f, n in names if IMAGE.search(n)]
+    videos = sorted(
+        (f for f, n in names if VIDEO.search(n) and int(f.get("size") or 0) <= MAX_PREVIEW_BYTES),
+        key=lambda f: int(f.get("size") or 0),
+    )
+    found = images or videos
+    return found[0] if found else None
+
+
+def _hf_file(f: dict[str, Any], url: str, path: str, half: str | None) -> PlannedFile:
+    name = str(f["rfilename"])
+    sha = str((f.get("lfs") or {}).get("sha256") or "").lower()
+    if not SHA256.fullmatch(sha):
+        raise PlanError(f"Hugging Face lists no SHA-256 for {name}")
+    return PlannedFile(
+        civitai_name=name.rsplit("/", 1)[-1],
+        url=url,
+        size=int((f.get("lfs") or {}).get("size") or f.get("size") or 0),
+        sha256=sha,
+        path=path,
+        half=half,
+    )
+
+
+def plan_hf_import(
+    info: dict[str, Any],
+    ref: HfRef,
+    *,
+    families: set[str],
+    family: str | None = None,
+    name: str | None = None,
+    weight: float | None = None,
+    hint: str | None = None,
+    readme: str | None = None,
+    base_url: str = "https://huggingface.co",
+) -> ImportPlan:
+    """Plan importing a LoRA from a Hugging Face repo (`GET /api/models/<repo>?blobs=true`).
+
+    `ref.path` is the file (else the repo, or `ref.folder`, must hold one LoRA, or one Wan
+    A14B pair). `hint` is the family to use when nothing names the base model; `readme` is
+    the repo's README, for trigger words.
+    """
+    commit = str(info.get("sha") or ref.revision)
+    siblings: list[dict[str, Any]] = info.get("siblings") or []
+    linked, in_folder = _hf_linked(siblings, ref)
+
+    def stem(f: dict[str, Any]) -> str:
+        return str(f["rfilename"]).rsplit("/", 1)[-1].removesuffix(".safetensors")
+
+    label = stem(linked) if ref.path is not None or len(in_folder) == 1 else ref.repo.split("/")[1]
+    card = info.get("cardData") or {}
+    # The file's name first: a repo of several LoRAs lists all their bases in its card.
+    texts = [str(linked["rfilename"]), *_card_bases(card), ref.repo]
+    family, base, variants, warnings = _hf_family(texts, label, family, hint, families)
+    fallback = f"hf_{slug(ref.repo)}"
+
+    def url(f: dict[str, Any]) -> str:
+        return f"{base_url}/{ref.repo}/resolve/{commit}/{quote_path(str(f['rfilename']))}"
+
+    if variants and PAIRED_VARIANTS & set(variants):
+        # The linked file's other half: the file named the same but for high/low.
+        key = _pair_key(stem(linked))
+        pool = [f for f in in_folder if _pair_key(stem(f)) == key] if ref.path else in_folder
+        halves = _halves([{**f, "name": f"{stem(f)}.safetensors"} for f in pool], "")
+        if ref.path is not None and _half(stem(linked)) not in halves:
+            raise PlanError(f"Can't tell whether {ref.path} is the high- or low-noise half")
+        if len(pool) > len(halves):
+            names = ", ".join(stem(f) for f in pool)
+            raise PlanError(f"More than one LoRA in {ref.repo}: link to one of {names}")
+        label = re.sub(r"[_ -]*(high|low)[_ -]*(noise)?", "", label, flags=re.IGNORECASE) or label
+        stem_ = valid_name(name) if name else slug(label) or fallback
+        if len(halves) == 1:
+            have = next(iter(halves))
+            other = "low" if have == "high" else "high"
+            warnings.append(
+                f"This repo has only the {have}-noise half;"
+                f" import the {other}-noise one to complete the pair"
+            )
+        files = [
+            _hf_file(f, url(f), f"loras/{family}/{stem_}_{h}_noise.safetensors", h)
+            for h, f in sorted(halves.items())
+        ]
+    else:
+        if ref.path is None and len(in_folder) > 1:
+            names = ", ".join(stem(f) for f in in_folder)
+            raise PlanError(f"More than one LoRA in {ref.repo}: link to one of {names}")
+        stem_ = valid_name(name) if name else slug(label) or fallback
+        files = [_hf_file(linked, url(linked), f"loras/{family}/{stem_}.safetensors", None)]
+
+    example = _hf_example(siblings)
+    page = f"{base_url}/{ref.repo}"
+    if ref.path is not None:
+        page += f"/blob/{ref.revision}/{quote_path(ref.path)}"
+    return ImportPlan(
+        model_id=None,
+        version_id=None,
+        model_name=label,
+        version_name=ref.repo,
+        base_model=base,
+        family=family,
+        source=page,
+        label=label,
+        trigger_words=_hf_triggers(card, readme),
+        weight=DEFAULT_WEIGHT if weight is None else weight,
+        variants=variants,
+        files=files,
+        preview_url=url(example) if example else None,
+        warnings=warnings,
+        origin="huggingface",
     )
