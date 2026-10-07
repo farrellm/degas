@@ -27,7 +27,7 @@ from safetensors.torch import load_file
 
 from degas_worker.families.base import Output, RunContext
 from degas_worker.families.lora import fold_alphas
-from degas_worker.families.offload import place
+from degas_worker.families.offload import place, reoffload
 from degas_worker.families.runtime import (
     StepCallback,
     fetch_loras,
@@ -59,6 +59,7 @@ class Ltx2Runner:
         self.adapters: dict[str, str] = {}  # LoRA asset path → loaded adapter name
         self.derived: dict[str, Any] = {}  # mode → its pipeline, sharing `pipe`'s components
         self.upsample: Any = None
+        self.offloaded = False
 
     def run(self, spec: Spec, seeds: list[int], ctx: RunContext) -> Iterator[Output]:
         mode = spec["mode"]
@@ -84,88 +85,68 @@ class Ltx2Runner:
         width, height = int(params["width"]), int(params["height"])
         num_frames = int(params["num_frames"])
         fps = float(params["fps"])
-        kwargs: dict[str, Any] = {
-            "prompt": params["prompt"],
-            "negative_prompt": params.get("negative_prompt") or None,
-            "num_frames": num_frames,
-            "frame_rate": fps,
-        }
-        if distilled:
-            kwargs.update(UNGUIDED, sigmas=DISTILLED_SIGMA_VALUES)
-            steps = len(DISTILLED_SIGMA_VALUES)
-        else:
-            steps = int(params["steps"])
-            stg = float(params["stg"])
-            kwargs.update(
-                num_inference_steps=steps,
-                guidance_scale=float(params["cfg"]),
-                audio_guidance_scale=float(params["audio_cfg"]),
-                stg_scale=stg,
-                audio_stg_scale=stg,
-            )
+        kwargs, steps = _arguments(params, distilled)
         refine = len(STAGE_2_DISTILLED_SIGMA_VALUES) if upscale else 0
         total = steps + refine
 
-        for item, seed in enumerate(seeds):
-            ctx.check_cancelled()
-            ctx.progress(item, "denoise", 0, total)
-            generator = seeded(seed)
-            report = step_callback(ctx, item, total)
-            if upscale:
-                latents, audio_latents = pipe(
-                    **kwargs,
-                    **_conditions(mode, frames, width // 2, height // 2),
-                    width=width // 2,
-                    height=height // 2,
-                    generator=generator,
-                    callback_on_step_end=report,
-                    output_type="latent",
-                    return_dict=False,
-                )
+        try:
+            for item, seed in enumerate(seeds):
                 ctx.check_cancelled()
-                latents = self.upsample(
-                    latents=latents,
-                    width=width // 2,
-                    height=height // 2,
-                    num_frames=num_frames,
-                    output_type="latent",
-                    return_dict=False,
-                )[0]
-                refined = {**kwargs, "sigmas": STAGE_2_DISTILLED_SIGMA_VALUES}
-                video, audio = pipe(
-                    **refined,
-                    **_conditions(mode, frames, width, height),
-                    width=width,
-                    height=height,
-                    latents=latents,
-                    audio_latents=audio_latents,
-                    noise_scale=STAGE_2_DISTILLED_SIGMA_VALUES[0],
-                    generator=generator,
-                    callback_on_step_end=_offset(report, steps),
-                    output_type="np",
-                    return_dict=False,
+                ctx.progress(item, "denoise", 0, total)
+                generator = seeded(seed)
+                report = step_callback(ctx, item, total)
+                if upscale:
+                    latents, audio_latents = pipe(
+                        **kwargs,
+                        **_conditions(mode, frames, width // 2, height // 2),
+                        width=width // 2,
+                        height=height // 2,
+                        generator=generator,
+                        callback_on_step_end=report,
+                        output_type="latent",
+                        return_dict=False,
+                    )
+                    ctx.check_cancelled()
+                    latents = self._upsample(latents, width // 2, height // 2, num_frames)
+                    refined = {**kwargs, "sigmas": STAGE_2_DISTILLED_SIGMA_VALUES}
+                    video, audio = pipe(
+                        **refined,
+                        **_conditions(mode, frames, width, height),
+                        width=width,
+                        height=height,
+                        latents=latents,
+                        audio_latents=audio_latents,
+                        noise_scale=STAGE_2_DISTILLED_SIGMA_VALUES[0],
+                        generator=generator,
+                        callback_on_step_end=_offset(report, steps),
+                        output_type="np",
+                        return_dict=False,
+                    )
+                else:
+                    video, audio = pipe(
+                        **kwargs,
+                        **_conditions(mode, frames, width, height),
+                        width=width,
+                        height=height,
+                        generator=generator,
+                        callback_on_step_end=report,
+                        output_type="np",
+                        return_dict=False,
+                    )
+                ctx.progress(item, "encode", total, total)
+                pixels = (np.clip(np.asarray(video[0]), 0, 1) * 255).round().astype(np.uint8)
+                data = encode_mp4(
+                    (frame.tobytes() for frame in pixels),
+                    pixels.shape[2],
+                    pixels.shape[1],
+                    fps,
+                    audio=self._audio(audio[0]),
                 )
-            else:
-                video, audio = pipe(
-                    **kwargs,
-                    **_conditions(mode, frames, width, height),
-                    width=width,
-                    height=height,
-                    generator=generator,
-                    callback_on_step_end=report,
-                    output_type="np",
-                    return_dict=False,
-                )
-            ctx.progress(item, "encode", total, total)
-            pixels = (np.clip(np.asarray(video[0]), 0, 1) * 255).round().astype(np.uint8)
-            data = encode_mp4(
-                (frame.tobytes() for frame in pixels),
-                pixels.shape[2],
-                pixels.shape[1],
-                fps,
-                audio=self._audio(audio[0]),
-            )
-            yield Output(item=item, seed=seed, data=data, media_type="video/mp4", ext="mp4")
+                yield Output(item=item, seed=seed, data=data, media_type="video/mp4", ext="mp4")
+        except Exception:
+            # An out of memory would leave the model that was running on the GPU.
+            reoffload(self.pipe)
+            raise
 
     def _load(self, path: Path) -> None:
         if self.pipe is not None and self.model_path == path:
@@ -175,7 +156,9 @@ class Ltx2Runner:
             str(path), torch_dtype=torch.bfloat16, local_files_only=True
         )
         # A 22B transformer and a 12B Gemma: offloaded on an A100, resident on an 80 GB card.
-        place(pipe)
+        self.offloaded = place(pipe)
+        if self.offloaded:
+            _offload_after_encode(pipe.vae)
         # Video decodes otherwise peak well above the denoiser. The audio VAE is small and
         # can't tile (diffusers raises NotImplementedError).
         pipe.vae.enable_tiling()
@@ -209,10 +192,31 @@ class Ltx2Runner:
             )
         upsampler = LTX2LatentUpsamplerModel.from_pretrained(
             str(folder), torch_dtype=torch.bfloat16, local_files_only=True
-        ).to("cuda")
+        )
+        if not self.offloaded:
+            upsampler.to("cuda")
         # The VAE is shared and placed with the pipeline; only its latent statistics are read.
         self.upsample = LTX2LatentUpsamplePipeline(vae=self.pipe.vae, latent_upsampler=upsampler)
         self.upsample.set_progress_bar_config(disable=True)
+
+    def _upsample(self, latents: Any, width: int, height: int, num_frames: int) -> Any:
+        """The half-size pass's latents at twice the size. Offloaded, the upsampler is on the GPU
+        only for this."""
+        upsampler = self.upsample.latent_upsampler
+        if self.offloaded:
+            upsampler.to("cuda")
+        try:
+            return self.upsample(
+                latents=latents,
+                width=width,
+                height=height,
+                num_frames=num_frames,
+                output_type="latent",
+                return_dict=False,
+            )[0]
+        finally:
+            if self.offloaded:
+                upsampler.to("cpu")
 
     def _audio(self, wave: Any) -> Audio:
         """The vocoder's waveform, `(channels, samples)`, as interleaved float32."""
@@ -231,7 +235,50 @@ class Ltx2Runner:
         self.adapters = {}
         self.derived = {}
         self.upsample = None
+        self.offloaded = False
         free_gpu_memory()
+
+
+def _arguments(params: dict[str, Any], distilled: bool) -> tuple[dict[str, Any], int]:
+    """The pipeline arguments both passes share, and the number of denoising steps."""
+    kwargs: dict[str, Any] = {
+        "prompt": params["prompt"],
+        "negative_prompt": params.get("negative_prompt") or None,
+        "num_frames": int(params["num_frames"]),
+        "frame_rate": float(params["fps"]),
+    }
+    if distilled:
+        kwargs.update(UNGUIDED, sigmas=DISTILLED_SIGMA_VALUES)
+        steps = len(DISTILLED_SIGMA_VALUES)
+    else:
+        steps = int(params["steps"])
+        stg = float(params["stg"])
+        kwargs.update(
+            num_inference_steps=steps,
+            guidance_scale=float(params["cfg"]),
+            audio_guidance_scale=float(params["audio_cfg"]),
+            stg_scale=stg,
+            audio_stg_scale=stg,
+        )
+    return kwargs, steps
+
+
+def _offload_after_encode(vae: Any) -> None:
+    """Move an offloaded VAE back to the CPU after each encode.
+
+    i2v and flf2v encode their images after the text encoder, but diffusers' offload chain puts
+    the VAE after the transformer, so nothing would move it off: on a 40 GB A100 it would take
+    the transformer's room for activations through the whole denoise.
+    """
+    encode = vae.encode
+
+    def offloading(*args: Any, **kwargs: Any) -> Any:
+        try:
+            return encode(*args, **kwargs)
+        finally:
+            vae.to("cpu")
+
+    vae.encode = offloading
 
 
 def _conditions(mode: str, frames: list[Image.Image], width: int, height: int) -> dict[str, Any]:

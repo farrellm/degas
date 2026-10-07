@@ -38,3 +38,14 @@ def place(pipe: Any) -> bool:
         return True
     pipe.to("cuda")
     return False
+
+
+def reoffload(pipe: Any) -> None:
+    """Put an offloaded pipeline's models back on the CPU after a failed call.
+
+    diffusers offloads the last model only when a call finishes, so after an error (an out of
+    memory) the model that was running stays on the GPU. The next job's first model then can't
+    fit beside it, and a model that fails to move is left half on each device.
+    """
+    if is_offloaded(pipe):
+        pipe.enable_model_cpu_offload()
