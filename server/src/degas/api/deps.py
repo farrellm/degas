@@ -12,8 +12,10 @@ from typing import Annotated, Any
 from fastapi import Depends, HTTPException, Request
 
 from degas.db import JobRow, LibraryItem, ResultRow
+from degas.db.rows import Cleared
 from degas.families import FAMILIES
 from degas.families.base import FamilyDescriptor
+from degas.library import release
 from degas.services import Services
 
 
@@ -58,3 +60,11 @@ def family_or_400(spec: Mapping[str, Any]) -> FamilyDescriptor:
     if family is None:
         raise HTTPException(400, "Unknown family")
     return family
+
+
+def swept(svc: Services, deleted: Cleared) -> dict[str, Any]:
+    """Free the deleted results' blobs and tell the app what went."""
+    release(svc.db, svc.blobs, deleted["blobs"])
+    counts = {"results": deleted["results"], "jobs": deleted["jobs"]}
+    svc.bus.publish({"type": "swept", **counts})
+    return counts

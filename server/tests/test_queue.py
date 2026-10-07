@@ -228,3 +228,38 @@ class NoHealth(FastIntervals):
 
 class SlowHealth(FastIntervals):
     health = 0.3
+
+
+def test_retry_a_failed_job(client: TestClient, harness: Any) -> None:
+    harness.runner.fail = "CUDA out of memory"
+    client.post("/api/session", json={"gpu": "L4"})
+    a = submit(client, "a", n=2)
+    failed = wait_for(lambda: (j := job(client, a))["status"] == "error" and j)
+
+    harness.runner.fail = None
+    retried = client.post(f"/api/jobs/{a}/retry")
+    assert retried.status_code == 201
+    b = retried.json()
+    assert b["spec"] == failed["spec"]
+    assert b["seeds"] == failed["seeds"]
+    # It replaces the failed job, which had nothing to show.
+    assert a not in [j["id"] for j in client.get("/api/jobs").json()]
+    wait_for(lambda: job(client, b["id"])["status"] == "done")
+
+    assert client.post(f"/api/jobs/{b['id']}/retry").status_code == 409  # didn't fail
+    assert client.post(f"/api/jobs/{a}/retry").status_code == 404
+
+
+def test_retry_keeps_what_finished(client: TestClient, harness: Any) -> None:
+    harness.runner.fail = "CUDA out of memory"
+    client.post("/api/session", json={"gpu": "L4"})
+    a = submit(client, "a", n=3)
+    failed = wait_for(lambda: (j := job(client, a))["status"] == "error" and j)
+    db = client.app.state.services.db  # type: ignore[attr-defined]
+    db.insert_result(a, 1, "0" * 64, "image/png", failed["seeds"][1], 8, 8)
+
+    b = client.post(f"/api/jobs/{a}/retry").json()
+    assert b["seeds"] == [failed["seeds"][0], failed["seeds"][2]]
+    kept = job(client, a)
+    assert kept["status"] == "error"
+    assert kept["error"] is None

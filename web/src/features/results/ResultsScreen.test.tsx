@@ -291,6 +291,29 @@ describe('Results', () => {
     expect(screen.getAllByRole('region')).toHaveLength(1)
   })
 
+  it('retries a failed job in its place', async () => {
+    let retried = false
+    mockApi({
+      'GET /api/jobs': () => [
+        retried
+          ? { ...JOB_DONE, id: 'j2', status: 'queued', queue_position: 2 }
+          : { ...JOB_DONE, status: 'error', error: 'CUDA out of memory' },
+      ],
+      'POST /api/jobs/j1/retry': () => {
+        retried = true
+        return { ...JOB_DONE, id: 'j2', status: 'queued' }
+      },
+    })
+    const user = userEvent.setup()
+    renderApp()
+    await user.click(screen.getByRole('button', { name: /Results/ }))
+    const group = await screen.findByRole('region', { name: 'a lighthouse' })
+    await user.click(within(group).getByRole('button', { name: 'Retry' }))
+    expect(await screen.findByRole('button', { name: 'Cancel' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument()
+    expect(retried).toBe(true)
+  })
+
   it('undoes cancelling a queued job', async () => {
     let status = 'queued'
     mockApi({

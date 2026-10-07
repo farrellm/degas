@@ -87,6 +87,10 @@ export function ResultsScreen({ onRemix, onCreate }: ResultsScreenProps) {
     },
     onSettled: refreshResultsAnd('jobs'),
   })
+  const retry = useMutation({
+    mutationFn: api.retryJob,
+    onSettled: refreshResultsAnd('jobs'),
+  })
   const remove = useMutation({
     mutationFn: (g: Group) => api.deleteJobResults(g.jobId, g.chain),
     onSuccess: (_, g) => {
@@ -112,7 +116,7 @@ export function ResultsScreen({ onRemix, onCreate }: ResultsScreenProps) {
   const openIndex = flat.findIndex((x) => x.key === open)
   const queue = groups.filter((g) => !g.chain && g.job?.status === 'queued').map((g) => g.id)
   const finished = groups.some((g) => !PENDING.has(g.job?.status ?? ''))
-  const error = move.error ?? cancel.error ?? restore.error ?? remove.error
+  const error = move.error ?? cancel.error ?? restore.error ?? retry.error ?? remove.error
 
   const undoToast = undo && (
     <p className="undo-toast" role="status">
@@ -161,6 +165,10 @@ export function ResultsScreen({ onRemix, onCreate }: ResultsScreenProps) {
             onOpen={setOpen}
             onCancel={(job) => {
               cancel.mutate(job)
+            }}
+            retrying={retry.isPending && retry.variables === g.jobId}
+            onRetry={() => {
+              retry.mutate(g.jobId)
             }}
             deleting={remove.isPending && remove.variables.id === g.id}
             onDelete={() => {

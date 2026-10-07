@@ -5,11 +5,9 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, HTTPException, Query
 
-from degas.api.deps import Svc, family_or_400, job_or_404, result_or_404
+from degas.api.deps import Svc, family_or_400, job_or_404, result_or_404, swept
 from degas.db import PENDING_JOB_STATUSES
-from degas.db.rows import Cleared
-from degas.library import input_blobs, release, saved_config
-from degas.services import Services
+from degas.library import input_blobs, saved_config
 from degas_worker.spec import Spec
 
 router = APIRouter(tags=["results"])
@@ -38,7 +36,7 @@ async def list_results(
 @router.delete("/results")
 async def clear_results(svc: Svc) -> dict[str, Any]:
     """Delete finished jobs and their results now; queued and running jobs stay."""
-    return _swept(svc, svc.db.clear_results())
+    return swept(svc, svc.db.clear_results())
 
 
 @router.delete("/jobs/{job_id}/results")
@@ -47,15 +45,7 @@ async def delete_job_results(svc: Svc, job_id: str, chain: bool = False) -> dict
     job = job_or_404(svc, job_id)
     if job["status"] in PENDING_JOB_STATUSES:
         raise HTTPException(409, "Cancel the job before deleting it")
-    return _swept(svc, svc.db.delete_job_results(job_id, chain))
-
-
-def _swept(svc: Services, deleted: Cleared) -> dict[str, Any]:
-    """Free the deleted results' blobs and tell the app what went."""
-    release(svc.db, svc.blobs, deleted["blobs"])
-    counts = {"results": deleted["results"], "jobs": deleted["jobs"]}
-    svc.bus.publish({"type": "swept", **counts})
-    return counts
+    return swept(svc, svc.db.delete_job_results(job_id, chain))
 
 
 @router.post("/results/{result_id}/save")

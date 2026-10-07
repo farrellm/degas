@@ -5,7 +5,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException
 
-from degas.api.deps import Svc, family_or_400, job_or_404
+from degas.api.deps import Svc, family_or_400, job_or_404, swept
 from degas.api.schemas import MoveJob, SubmitJob
 from degas.submission import batch_seeds, resolve_assets
 
@@ -52,3 +52,19 @@ async def restore_job(svc: Svc, job_id: str) -> Mapping[str, Any]:
     if not svc.dispatcher.restore(job_id):
         raise HTTPException(409, "Only a job cancelled before it started can be restored")
     return svc.dispatcher.describe(job_or_404(svc, job_id))
+
+
+@router.post("/jobs/{job_id}/retry", status_code=201)
+async def retry_job(svc: Svc, job_id: str) -> Mapping[str, Any]:
+    """Queue a failed job's unfinished images again, in its place: the failed job goes, or,
+    when some of its images finished, keeps them and drops its error."""
+    job = job_or_404(svc, job_id)
+    new = svc.dispatcher.retry(job_id)
+    if new is None:
+        raise HTTPException(409, "Only a failed job with unfinished images can be retried")
+    if len(new["seeds"]) < len(job["seeds"]):
+        svc.db.update_job(job_id, error=None)
+        svc.dispatcher.publish_job(job_id)
+    else:
+        swept(svc, svc.db.delete_job_results(job_id, chain=False))
+    return svc.dispatcher.describe(new)

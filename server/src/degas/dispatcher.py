@@ -134,6 +134,15 @@ class Dispatcher:
         self.wake()
         return True
 
+    def retry(self, job_id: str) -> JobRow | None:
+        """Queue a failed job's unfinished items again, as a new job with their seeds; None if
+        the job didn't fail or nothing is left to make."""
+        job = self.db.get_job(job_id)
+        if job is None or job["status"] != "error":
+            return None
+        seeds = [s for i, s in enumerate(job["seeds"]) if not self.db.has_result(job_id, i)]
+        return self.submit(job["spec"], seeds) if seeds else None
+
     def _orphans(self) -> None:
         """The session ended: a running job that nothing is following has failed."""
         for job in self.db.jobs_with_status("running"):

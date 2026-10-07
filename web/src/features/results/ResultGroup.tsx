@@ -22,6 +22,8 @@ export function ResultGroup({
   sectionRef,
   onOpen,
   onCancel,
+  retrying,
+  onRetry,
   deleting,
   onDelete,
 }: {
@@ -33,6 +35,9 @@ export function ResultGroup({
   /** Open the viewer at a feed item's `key`. */
   onOpen: (key: string) => void
   onCancel: (job: Job) => void
+  retrying: boolean
+  /** Queue the failed job's unfinished images again. */
+  onRetry: () => void
   deleting: boolean
   onDelete: () => void
 }) {
@@ -136,6 +141,16 @@ export function ResultGroup({
               <span className={soon ? 'soon' : undefined}>
                 {expiry ?? shortTime(group.at, now)}
               </span>
+              {!chain && job?.status === 'error' && !confirming && (
+                <button
+                  type="button"
+                  className="btn quiet small"
+                  disabled={retrying || deleting}
+                  onClick={onRetry}
+                >
+                  {retrying ? 'Retrying…' : 'Retry'}
+                </button>
+              )}
               {!confirming && (
                 <button
                   type="button"

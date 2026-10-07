@@ -92,6 +92,8 @@ export const api = {
   moveJob: (id: string, position: number) => request<Job>('PATCH', `/jobs/${id}`, { position }),
   /** Undo cancelling a queued job. */
   restoreJob: (id: string) => request<Job>('POST', `/jobs/${id}/restore`),
+  /** Queue a failed job's unfinished images again, in its place. */
+  retryJob: (id: string) => request<Job>('POST', `/jobs/${id}/retry`),
   pushKey: () => request<{ public_key: string }>('GET', '/push'),
   pushSubscribe: (sub: PushSubscriptionJSON) =>
     request<{ subscribed: boolean }>('POST', '/push/subscribe', sub),

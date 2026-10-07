@@ -67,6 +67,7 @@ One name per action, used in buttons, confirmations and empty states:
 |---|---|---|
 | Submit a job | Generate / Generate 3 images | Queued 3 images. |
 | Stop a job | Cancel | Cancelled |
+| Run a failed job again | Retry (in the group's corner) | Retrying… The images that didn't finish are queued again with their seeds, in place of the failed group; images it did finish stay, without the error. |
 | Load a result's spec into Create | Reuse settings (becomes **Remix** in Phase 3) | — |
 | Keep a result (Phase 3) | Keep | Kept |
 | Export to the phone | Save to Photos | — |
