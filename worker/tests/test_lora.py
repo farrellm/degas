@@ -3,6 +3,7 @@ from typing import Any
 from degas_worker.families.lora import (
     adapter_name,
     expert_loras,
+    fold_alphas,
     plan_loras,
     qwen21_lora_state,
     single_loras,
@@ -75,7 +76,7 @@ def test_expert_loras_send_each_half_to_its_expert() -> None:
 
 
 class _Tensor:
-    """Enough of a tensor for `qwen21_lora_state`: rows of numbers, or a scalar."""
+    """Enough of a tensor for the state-dict fixes: rows of numbers, or a scalar."""
 
     def __init__(self, rows: Any) -> None:
         self.rows = rows
@@ -96,6 +97,19 @@ class _Tensor:
 
 def _rows(state: dict[str, Any]) -> dict[str, Any]:
     return {key: value.rows for key, value in state.items()}
+
+
+def test_fold_alphas_scales_lora_a_and_drops_the_alpha() -> None:
+    block = "diffusion_model.transformer_blocks.0.attn1.to_k"
+    state = {
+        f"{block}.lora_A.weight": _Tensor([[1.0, 2.0], [3.0, 4.0]]),  # rank 2
+        f"{block}.lora_B.weight": _Tensor([[5.0, 6.0]]),
+        f"{block}.alpha": _Tensor(4.0),
+    }
+    assert _rows(fold_alphas(state)) == {
+        f"{block}.lora_A.weight": [[2.0, 4.0], [6.0, 8.0]],
+        f"{block}.lora_B.weight": [[5.0, 6.0]],
+    }
 
 
 def test_qwen21_lora_keys_get_one_prefix_and_alphas_are_folded_in() -> None:

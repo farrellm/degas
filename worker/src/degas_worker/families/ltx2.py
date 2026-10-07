@@ -23,8 +23,10 @@ from diffusers import (
 from diffusers.pipelines.ltx2 import LTX2LatentUpsamplerModel, LTX2VideoCondition
 from diffusers.pipelines.ltx2.utils import DISTILLED_SIGMA_VALUES, STAGE_2_DISTILLED_SIGMA_VALUES
 from PIL import Image
+from safetensors.torch import load_file
 
 from degas_worker.families.base import Output, RunContext
+from degas_worker.families.lora import fold_alphas
 from degas_worker.families.offload import place
 from degas_worker.families.runtime import (
     StepCallback,
@@ -70,7 +72,7 @@ class Ltx2Runner:
         ctx.check_cancelled()
         ctx.progress(0, "load", 0, 1)
         self._load(path)
-        sync_loras(self.pipe, self.adapters, loras)
+        sync_loras(self.pipe, self.adapters, loras, self._load_lora)
         params = spec["params"]
         distilled = spec["variant"] in DISTILLED
         upscale = distilled and bool(params.get("upscale"))
@@ -181,6 +183,9 @@ class Ltx2Runner:
         self.pipe = pipe
         self.model_path = path
         self.adapters = {}
+
+    def _load_lora(self, file: Path, name: str) -> None:
+        self.pipe.load_lora_weights(fold_alphas(load_file(file)), adapter_name=name)
 
     def _pipe_for(self, mode: str) -> Any:
         if mode == "t2v":

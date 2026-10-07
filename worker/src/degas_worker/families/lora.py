@@ -68,6 +68,21 @@ def strip_text_model(keys: dict[str, Any], prefix: str) -> dict[str, Any]:
     }
 
 
+def fold_alphas(state: dict[str, Any]) -> dict[str, Any]:
+    """Fold each `<module>.alpha` into its `<module>.lora_A.weight` (scaled by alpha / rank)
+    and drop it.
+
+    Kohya-style files carry an alpha per module. Some diffusers loaders (LTX-2's) only rename
+    keys, so the alphas fail their "every key contains `lora`" check and nothing loads.
+    """
+    out = dict(state)
+    for key in [k for k in out if k.endswith(".alpha")]:
+        down = key.removesuffix("alpha") + "lora_A.weight"
+        if down in out:
+            out[down] = out[down] * (float(out.pop(key)) / out[down].shape[0])
+    return out
+
+
 def qwen21_lora_state(state: dict[str, Any]) -> dict[str, Any]:
     """A Qwen-Image 2.1 LoRA's tensors under names diffusers' loader takes, all of them under
     `diffusion_model.`.
@@ -76,7 +91,7 @@ def qwen21_lora_state(state: dict[str, Any]) -> dict[str, Any]:
 
     - Keys under `transformer.` with `.alpha` tensors: the alphas send the file through the
       loader's conversion, which puts a second `transformer.` on and then matches no module.
-      It also drops the alphas of `lora_A`/`lora_B` keys, so they are folded into `lora_A` here.
+      It also drops the alphas of `lora_A`/`lora_B` keys, so they are folded in here.
     - The original checkpoint's fused `img_mlp.gate_up`, which the diffusers model has as
       `gate_layer` (its first half of the output rows) and `proj` (the second half): the loader
       skips those keys. Both get the LoRA's down matrix and their half of its up matrix.
@@ -85,10 +100,7 @@ def qwen21_lora_state(state: dict[str, Any]) -> dict[str, Any]:
     for name, value in state.items():
         prefix = next((p for p in ("transformer.", "diffusion_model.") if name.startswith(p)), "")
         out[name.removeprefix(prefix)] = value
-    for key in [k for k in out if k.endswith(".alpha")]:
-        down = key.removesuffix("alpha") + "lora_A.weight"
-        if down in out:
-            out[down] = out[down] * (float(out.pop(key)) / out[down].shape[0])
+    out = fold_alphas(out)
     for key in [k for k in out if ".gate_up." in k]:
         module, rest = key.split(".gate_up.", 1)
         value = out.pop(key)
