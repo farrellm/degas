@@ -8,7 +8,7 @@ requires-python = ">=3.13,<3.14"
 # The VM never installs this package (the bundle is a tarball of the source), so these only
 # describe what the code imports, for local installs and tests.
 dependencies = [
-    "fastapi>=0.141",
+    "fastapi>=0.142.2",
     "pillow>=12",
     "pydantic>=2.11",
     "uvicorn>=0.52",
