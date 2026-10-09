@@ -1,3 +1,5 @@
+import './Tile.css'
+
 import type { CSSProperties } from 'react'
 
 import { thumbUrl } from '@/api/urls'

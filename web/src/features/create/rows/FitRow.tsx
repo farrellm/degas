@@ -1,3 +1,5 @@
+import './FitRow.css'
+
 import type { Fit } from '@/api/types'
 import { FitSelect } from '@/components/FitSelect'
 

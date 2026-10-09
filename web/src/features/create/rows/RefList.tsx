@@ -1,3 +1,5 @@
+import './RefList.css'
+
 import { thumbUrl } from '@/api/urls'
 import { formatSize } from '@/lib/format'
 import type { Source } from '@/lib/image'

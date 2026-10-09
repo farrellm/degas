@@ -1,3 +1,5 @@
+import '@/features/editors/editors.css'
+
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { type CSSProperties, useRef } from 'react'
 

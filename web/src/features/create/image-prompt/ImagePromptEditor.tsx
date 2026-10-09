@@ -1,3 +1,5 @@
+import './image-prompt.css'
+
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 

@@ -1,0 +1,9 @@
+/* Fit: how a source of another shape is made the output's. */
+
+.fit-row {
+  border-bottom: 1px solid var(--rule);
+}
+
+.fit-row .setting {
+  border-bottom-style: none;
+}

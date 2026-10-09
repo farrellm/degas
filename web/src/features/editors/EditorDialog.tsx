@@ -1,3 +1,5 @@
+import './editors.css'
+
 import type { ReactNode } from 'react'
 
 import { useDialog } from '@/hooks/useDialog'

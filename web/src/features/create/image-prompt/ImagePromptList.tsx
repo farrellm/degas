@@ -1,3 +1,5 @@
+import './image-prompt.css'
+
 import type { Asset, ImagePromptOptions } from '@/api/types'
 import { thumbUrl } from '@/api/urls'
 import { assetLabel } from '@/lib/assets'

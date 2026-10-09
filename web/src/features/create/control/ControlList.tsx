@@ -1,3 +1,5 @@
+import './control.css'
+
 import type { Asset } from '@/api/types'
 import { assetLabel } from '@/lib/assets'
 

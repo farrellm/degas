@@ -1,3 +1,5 @@
+import './Viewer.css'
+
 import { useQuery } from '@tanstack/react-query'
 import { type ReactNode, useCallback, useEffect, useRef } from 'react'
 

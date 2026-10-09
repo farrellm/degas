@@ -1,3 +1,5 @@
+import './library.css'
+
 import { useDeferredValue, useState } from 'react'
 
 import { LibraryImages } from './LibraryImages'

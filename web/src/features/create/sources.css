@@ -1,28 +1,5 @@
 /* ---------- Phase 4: video, sources, crop ---------- */
 
-/* A clip's length sits in the lower corner of its tile, on a scrap of the well. */
-.tile-duration {
-  position: absolute;
-  right: 4px;
-  bottom: 4px;
-  padding: 1px 6px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--well) 82%, transparent);
-  color: var(--ink);
-  font-size: 0.75rem;
-  font-weight: 560;
-  line-height: 1.4;
-}
-
-.segmented.tabs-3 {
-  grid-template-columns: repeat(3, 1fr);
-}
-
-.segmented.tabs-4 {
-  grid-template-columns: repeat(4, 1fr);
-  margin-bottom: 12px;
-}
-
 /* What the job starts from: above the prompt. */
 .mode-chips {
   display: flex;

@@ -1,3 +1,5 @@
+import './StepRange.css'
+
 import { stepsLabel, stepSpan } from '@/lib/steps'
 
 export interface StepRangeProps {

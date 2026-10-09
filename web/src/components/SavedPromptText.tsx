@@ -1,3 +1,5 @@
+import './SavedPromptText.css'
+
 import type { SavedPrompt } from '@/api/types'
 
 /** A saved prompt's name, text and negative, as listed in the sheet and the Library. */

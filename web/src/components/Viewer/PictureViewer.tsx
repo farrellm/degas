@@ -1,3 +1,5 @@
+import './Viewer.css'
+
 import { useEffect } from 'react'
 
 import { blobUrl } from '@/api/urls'

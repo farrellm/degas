@@ -1,3 +1,5 @@
+import './PlaceEditor.css'
+
 import { type KeyboardEvent, type PointerEvent, useRef } from 'react'
 
 import { thumbUrl } from '@/api/urls'

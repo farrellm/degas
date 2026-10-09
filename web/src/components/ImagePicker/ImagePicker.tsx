@@ -1,3 +1,5 @@
+import './ImagePicker.css'
+
 import { useState } from 'react'
 
 import type { BlobInfo } from '@/api/types'

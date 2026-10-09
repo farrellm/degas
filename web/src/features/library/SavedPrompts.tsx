@@ -23,7 +23,7 @@ export function SavedPrompts({ q, onUse }: { q: string; onUse: () => void }) {
     )
   }
   return (
-    <ul className="prompt-list library-prompts">
+    <ul className="prompt-list">
       {prompts.data.map((p) => (
         <PromptRow
           key={p.id}

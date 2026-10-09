@@ -1,3 +1,5 @@
+import './SessionChip.css'
+
 import { useQuery } from '@tanstack/react-query'
 
 import { queries } from '@/api/queries'

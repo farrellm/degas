@@ -1,0 +1,65 @@
+/* Saved prompts, listed in the Library and in Create's saved prompts sheet. */
+
+/* Set in the serif, like every prompt. */
+.prompt-save {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-bottom: 12px;
+}
+
+.prompt-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--rule);
+}
+
+.prompt-row,
+.prompt-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--rule);
+  text-align: left;
+}
+
+.prompt-row:focus-visible {
+  outline-offset: -2px;
+}
+
+/* In the Library a prompt opens to its full text on a tap. */
+.prompt-toggle {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  text-align: left;
+}
+
+.prompt-toggle.expanded .prompt-text {
+  display: block;
+  white-space: pre-wrap;
+}
+
+.prompt-name {
+  font-weight: 560;
+}
+
+.prompt-text {
+  display: -webkit-box;
+  overflow: hidden;
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 1.0625rem;
+  line-height: 1.4;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+
+.prompt-negative {
+  color: var(--ink-muted);
+  font-size: var(--step--1);
+}

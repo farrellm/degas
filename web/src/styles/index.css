@@ -1,33 +1,14 @@
 /*
- * Degas styles: the global sheets here, and one sheet beside each part of the app. All are
- * loaded from this list, in this order, rather than imported by their components: later
- * sheets rely on winning ties with earlier ones, so add new sheets where they belong, not at
- * the top.
+ * Degas's global styles: tokens, the shared building blocks (buttons, settings rows), the
+ * shell, and app-wide states (discretion, motion, alerts). Each part of the app imports its
+ * own sheet, which refines these; no sheet relies on loading before or after another part's.
  */
 
 @import './tokens.css';
 @import './buttons.css';
 @import './shell.css';
 @import './rows.css';
-@import '@/app/discretion.css';
-@import '@/features/session/SessionChip.css';
-@import '@/features/create/create.css';
-@import '@/features/results/results.css';
-@import '@/features/results/queue.css';
-@import '@/features/session/NotificationAsk.css';
-@import '@/components/Tile.css';
-@import '@/components/Sheet.css';
-@import '@/components/AssetPicker/AssetPicker.css';
-@import '@/features/create/CivitaiImport.css';
-@import '@/components/Viewer/Viewer.css';
-@import '@/features/library/library.css';
-@import '@/features/create/sources.css';
-@import '@/components/ImagePicker/ImagePicker.css';
-@import '@/features/editors/editors.css';
-@import '@/features/editors/mask/MaskEditor.css';
-@import '@/features/create/control/control.css';
-@import '@/components/StepRange.css';
+@import './discretion.css';
+@import './settings.css';
 @import './motion.css';
 @import './status.css';
-@import '@/features/create/image-prompt/image-prompt.css';
-@import '@/features/create/rows/RefList.css';

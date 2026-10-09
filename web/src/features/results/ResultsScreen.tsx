@@ -1,3 +1,6 @@
+import './results.css'
+import './queue.css'
+
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { type CSSProperties, useState } from 'react'
 
