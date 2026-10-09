@@ -1,12 +1,10 @@
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 
-import { api } from '@/api/client'
 import { queries } from '@/api/queries'
 import type { Asset, BlobInfo, Family, Params, SavedPrompt, SeedMode } from '@/api/types'
 import { defaultPlace, validPlace } from '@/features/editors/place/place'
 import { useAssets } from '@/hooks/useAssets'
-import { useAutoDismiss } from '@/hooks/useAutoDismiss'
 import { variantFor } from '@/lib/assets'
 import { ratioDiffers, type Size } from '@/lib/geometry'
 import { belowGpu } from '@/lib/gpu'
@@ -18,20 +16,17 @@ import { type Carry, loadDraft, switchFamily } from './draft'
 import { promptReady } from './image-prompt/imagePrompt'
 import { insertWord } from './prompt'
 import { familyForMode, resolveSelection } from './selection'
-import { buildJob } from './spec'
+import type { FormState } from './spec'
 import { useLastFrame } from './useLastFrame'
 import { useLoras } from './useLoras'
 import { useSaveDraft } from './useSaveDraft'
 import { useSourceInput } from './useSourceInput'
 import { useUnitList } from './useUnitList'
 
-// How long "Queued 4 images." stays up.
-const QUEUED_MS = 5000
-
 /**
  * One family's Create form: what's been chosen and typed (kept as that family's draft), what
- * follows from it, and the job it submits. `onFamily` switches Create to another family,
- * whose own form then takes over.
+ * follows from it, and the job it asks for (`useSubmitJob` queues it). `onFamily` switches
+ * Create to another family, whose own form then takes over.
  */
 export function useCreateForm(familyId: string, onFamily: (id: string) => void) {
   const [draft] = useState(() => {
@@ -52,7 +47,6 @@ export function useCreateForm(familyId: string, onFamily: (id: string) => void) 
   const prompts = useUnitList(draft.prompts ?? [])
   const [batchCount, setBatchCount] = useState(draft.batchCount)
   const [seedMode, setSeedMode] = useState<SeedMode>(draft.seedMode)
-  const [queued, setQueued] = useState<number | null>(null)
 
   const families = useQuery(queries.families())
   const session = useQuery(queries.session())
@@ -94,8 +88,6 @@ export function useCreateForm(familyId: string, onFamily: (id: string) => void) 
     seedMode,
   )
 
-  useAutoDismiss(queued, QUEUED_MS, () => setQueued(null))
-
   const canvas = params ? { w: Number(params.width), h: Number(params.height) } : null
   const place =
     mode === 'outpaint' && source && canvas
@@ -104,44 +96,41 @@ export function useCreateForm(familyId: string, onFamily: (id: string) => void) 
         : defaultPlace({ w: source.width, h: source.height }, canvas)
       : null
 
-  const submit = useMutation({
-    mutationFn: () => {
-      if (!family || !variant || !mode || !params) throw new Error('The form is still loading.')
-      const job = buildJob({
-        family: family.id,
-        variant: variant.id,
-        mode,
-        model,
-        loras,
-        params,
-        inputs:
-          needsSource && source
-            ? {
-                source,
-                fit: input.fit,
-                extends: input.extendsClip,
-                mask,
-                place,
-                end: mode === 'flf2v' ? end : null,
-                refs: takesRefs ? refs : [],
-              }
-            : null,
-        control: withControl ? control.units : [],
-        prompts: withPrompts ? prompts.units : [],
-        promptOptions,
-        batchCount,
-        seedMode,
-      })
-      return api.submitJob(job.spec, batchCount, job.seedMode)
-    },
-    onSuccess: () => setQueued(batchCount),
-  })
-
   if (families.isPending || schema.isPending || !params)
     return { ready: false, error: null } as const
   if (families.error || schema.error) {
     return { ready: false, error: families.error ?? schema.error } as const
   }
+
+  /** The job the form asks for, as it stands. */
+  const job: FormState | null =
+    family && variant && mode
+      ? {
+          family: family.id,
+          variant: variant.id,
+          mode,
+          model,
+          loras,
+          params,
+          inputs:
+            needsSource && source
+              ? {
+                  source,
+                  fit: input.fit,
+                  extends: input.extendsClip,
+                  mask,
+                  place,
+                  end: mode === 'flf2v' ? end : null,
+                  refs: takesRefs ? refs : [],
+                }
+              : null,
+          control: withControl ? control.units : [],
+          prompts: withPrompts ? prompts.units : [],
+          promptOptions,
+          batchCount,
+          seedMode,
+        }
+      : null
 
   const target = { w: Number(params.width), h: Number(params.height) }
   const sessionGpu = isActive(session.data) ? session.data?.session?.gpu : undefined
@@ -193,9 +182,7 @@ export function useCreateForm(familyId: string, onFamily: (id: string) => void) 
     setBatchCount,
     seedMode,
     setSeedMode,
-    /** How many were just queued, while the confirmation shows. */
-    queued,
-    submit,
+    job,
 
     /** Every kind of media the server has a family for. */
     media: [...new Set(families.data.map((f) => f.media))],

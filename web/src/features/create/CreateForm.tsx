@@ -28,6 +28,7 @@ import { SourceRow } from './rows/SourceRow'
 import { SavedPromptsSheet } from './SavedPromptsSheet'
 import { SchemaForm } from './schema-form/SchemaForm'
 import { useCreateForm } from './useCreateForm'
+import { useSubmitJob } from './useSubmitJob'
 
 type Picker = 'model' | 'lora' | 'prompts' | 'image' | 'end' | 'ref' | null
 
@@ -39,6 +40,7 @@ export interface CreateFormProps extends CreateScreenProps {
 /** One family's form. Remounted (by key) when the family changes, so it starts from that draft. */
 export function CreateForm({ familyId, onFamily, onOpenSession, onShowResults }: CreateFormProps) {
   const form = useCreateForm(familyId, onFamily)
+  const { submit, queued } = useSubmitJob()
   const [picker, setPicker] = useState<Picker>(null)
   const [painting, setPainting] = useState(false)
   // The image being cropped: the source, the last frame (`end`), or a reference at its place
@@ -183,7 +185,7 @@ export function CreateForm({ familyId, onFamily, onOpenSession, onShowResults }:
       className="create"
       onSubmit={(e) => {
         e.preventDefault()
-        form.submit.mutate()
+        if (form.job) submit.mutate(form.job)
       }}
     >
       <MediaSwitch media={form.media} current={family?.media} onChoose={form.chooseMedia} />
@@ -354,10 +356,10 @@ export function CreateForm({ familyId, onFamily, onOpenSession, onShowResults }:
         video={video}
         batchCount={form.batchCount}
         onBatchCount={form.setBatchCount}
-        pending={form.submit.isPending}
+        pending={submit.isPending}
         blocked={form.blocked}
-        error={form.submit.error?.message ?? null}
-        queued={form.queued}
+        error={submit.error?.message ?? null}
+        queued={queued}
         noGpu={form.noGpu}
         onShowResults={onShowResults}
         onOpenSession={onOpenSession}
