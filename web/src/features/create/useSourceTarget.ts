@@ -2,8 +2,8 @@ import { useQuery } from '@tanstack/react-query'
 
 import { queries } from '@/api/queries'
 
-import { loadDraft } from './draft'
 import { SOURCE_MODES } from './modes'
+import { useDraft } from './useDraft'
 
 /**
  * Where "Use as source" sends an image: the family Create has open (image-to-image for
@@ -12,7 +12,7 @@ import { SOURCE_MODES } from './modes'
  */
 export function useSourceTarget(): { family: string; mode: string } | null {
   const families = useQuery(queries.families())
-  const draft = loadDraft()
+  const draft = useDraft()
   const list = families.data ?? []
   const ordered = [
     ...list.filter((f) => f.id === draft.family),

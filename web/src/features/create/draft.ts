@@ -1,11 +1,14 @@
+import * as v from 'valibot'
+
 import type { BlobInfo, Fit, LoraEntry, Params, SavedPrompt, SeedMode, Spec } from '@/api/types'
 import type { Place } from '@/features/editors/place/place'
 import { type MaskRef, type Source, unref } from '@/lib/image'
 import { isPair } from '@/lib/loras'
 import { readStored, writeStored } from '@/lib/storage'
 
-import { type ControlUnit, restoreUnit, unitFromSpec } from './control/control'
-import { type ImagePromptUnit, promptFromSpec, restorePrompt } from './image-prompt/imagePrompt'
+import { type ControlUnit, unitFromSpec } from './control/control'
+import { storedSchema } from './draftSchema'
+import { type ImagePromptUnit, promptFromSpec } from './image-prompt/imagePrompt'
 
 // The Create form's draft, kept across visits and reloads.
 const DRAFT_KEY = 'degas.create.draft'
@@ -43,25 +46,20 @@ export interface Draft {
   recent: string[]
 }
 
-type Stored = Partial<Draft> & Partial<FamilyDraft>
-
-export function loadDraft(): Draft {
-  let raw: Stored = {}
+/** Read a stored draft, filling in what it lacks. */
+function parseDraft(stored: string | null): Draft {
+  let json: unknown = {}
   try {
-    raw = JSON.parse(readStored(DRAFT_KEY) ?? '{}') as Stored
+    json = JSON.parse(stored ?? '{}')
   } catch {
     // unreadable: start over
   }
+  const raw = v.parse(storedSchema, json)
   const family = raw.family ?? 'sdxl'
   const families = raw.families ?? {}
   // Before Phase 4 the draft held one family's settings at the top level.
   if (!raw.families && (raw.model !== undefined || raw.params || raw.loras)) {
     families[family] = { model: raw.model, loras: raw.loras, params: raw.params }
-  }
-  // Fill in what a unit saved before a field was added lacks, so the editors can rely on it.
-  for (const fd of Object.values(families)) {
-    if (fd.control) fd.control = fd.control.map(restoreUnit)
-    if (fd.prompts) fd.prompts = fd.prompts.map(restorePrompt)
   }
   return {
     family,
@@ -72,10 +70,32 @@ export function loadDraft(): Draft {
   }
 }
 
+// Parsed again only when what's stored changes, so a render can read the draft for free and
+// `useDraft` gets the same object until it changes. Callers must not mutate it.
+let cache: { stored: string | null; draft: Draft } | undefined
+const listeners = new Set<() => void>()
+
+export function loadDraft(): Draft {
+  const stored = readStored(DRAFT_KEY)
+  if (cache?.stored !== stored) cache = { stored, draft: parseDraft(stored) }
+  return cache.draft
+}
+
+/** Call `listener` whenever the draft changes: from this page, or from another tab. */
+export function subscribeDraft(listener: () => void): () => void {
+  listeners.add(listener)
+  window.addEventListener('storage', listener)
+  return () => {
+    listeners.delete(listener)
+    window.removeEventListener('storage', listener)
+  }
+}
+
 function store(draft: Draft) {
   const recent = [draft.family, ...draft.recent.filter((f) => f !== draft.family)]
   // Where storage is unavailable (private mode) the draft just isn't kept.
   writeStored(DRAFT_KEY, JSON.stringify({ ...draft, recent }))
+  for (const listener of listeners) listener()
 }
 
 /** Save the form for `family`, which becomes the family Create opens with. */
