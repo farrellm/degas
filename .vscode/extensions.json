@@ -2,7 +2,7 @@
   "recommendations": [
     "charliermarsh.ruff",
     "ms-python.mypy-type-checker",
-    "dbaeumer.vscode-eslint",
+    "oxc.oxc-vscode",
     "esbenp.prettier-vscode",
     "editorconfig.editorconfig"
   ]

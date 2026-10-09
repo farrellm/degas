@@ -27,7 +27,7 @@ jobs:
       - name: pre-commit (generic file checks; tool hooks run in their own steps/jobs)
         run: uv run pre-commit run --all-files --show-diff-on-failure
         env:
-          SKIP: ruff-check,ruff-format,prettier,eslint
+          SKIP: ruff-check,ruff-format,prettier,oxlint
       - run: uv run ruff check --output-format=github .
       - run: uv run ruff format --check .
       - run: uv run mypy

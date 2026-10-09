@@ -40,9 +40,10 @@ repos:
         files: ^web/
         exclude: ^web/(dist|coverage)/|^web/pnpm-lock\.yaml$
         types: [text]
-      - id: eslint
-        name: eslint
-        entry: web/node_modules/.bin/eslint --fix --max-warnings=0
+      - id: oxlint
+        name: oxlint
+        # From web/, where oxlint finds its config and tsgolint; paths come relative to the repo.
+        entry: bash -c 'cd web && node_modules/.bin/oxlint --fix --deny-warnings "${@#web/}"' --
         language: system
         files: ^web/.*\.(ts|tsx|js)$
         exclude: ^web/(dist|coverage)/
