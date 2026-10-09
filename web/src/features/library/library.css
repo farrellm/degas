@@ -19,11 +19,6 @@
   font-size: 16px;
 }
 
-.mask-row.describe input:focus {
-  outline: 2px solid var(--accent);
-  outline-offset: 0;
-}
-
 .library-search:focus {
   outline: 2px solid var(--accent);
   outline-offset: 0;
@@ -144,14 +139,6 @@
 .prompt-negative {
   color: var(--ink-muted);
   font-size: var(--step--1);
-}
-
-.row-buttons {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  margin-top: 8px;
 }
 
 .confirm-text {

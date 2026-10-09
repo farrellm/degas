@@ -8,6 +8,7 @@
 @import './tokens.css';
 @import './buttons.css';
 @import './shell.css';
+@import './rows.css';
 @import '@/app/discretion.css';
 @import '@/features/session/SessionChip.css';
 @import '@/features/create/create.css';

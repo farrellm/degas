@@ -43,11 +43,6 @@
   font-size: 16px;
 }
 
-.mask-row.describe input:focus {
-  outline: 2px solid var(--accent);
-  outline-offset: 0;
-}
-
 .link-row input:focus {
   outline: 2px solid var(--accent);
   outline-offset: 0;

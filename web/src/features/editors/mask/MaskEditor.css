@@ -98,7 +98,7 @@
   flex: 1;
 }
 
-.mask-note {
+.row-note.mask-note {
   margin: 0;
 }
 
@@ -115,7 +115,7 @@
 }
 
 .fit-row .setting {
-  border-bottom: none;
+  border-bottom-style: none;
 }
 
 /*
@@ -174,7 +174,7 @@
 }
 
 .place .setting {
-  border-bottom: none;
+  border-bottom-style: none;
 }
 
 /* A sentence, not a counter: proportional figures keep the commas tight. */
@@ -186,6 +186,6 @@
   opacity: 0.45;
 }
 
-.place-align button {
+.aspect-chips.place-align button {
   flex: 1;
 }

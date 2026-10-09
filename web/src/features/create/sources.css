@@ -61,7 +61,7 @@
 }
 
 .source-row .setting {
-  border-bottom: none;
+  border-bottom-style: none;
 }
 
 .source-thumb {
@@ -80,12 +80,6 @@
 .source-actions {
   margin: -6px 0 12px;
   justify-content: end;
-}
-
-.row-note {
-  margin: -8px 0 10px;
-  color: var(--ink-muted);
-  font-size: var(--step--1);
 }
 
 .model-row .row-note + .row-warning,

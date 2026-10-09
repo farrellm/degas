@@ -126,6 +126,11 @@
   color: var(--ink-muted);
 }
 
+/* The image couldn't be opened: an error, in the alert's colour. */
+.editor-loading[role='alert'] {
+  color: var(--danger);
+}
+
 /* On a phone the tools can outgrow what the stage leaves; they scroll, the stage doesn't shrink. */
 .editor-controls {
   display: flex;

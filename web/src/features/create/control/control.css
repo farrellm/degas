@@ -6,7 +6,7 @@
 }
 
 .control-group > .setting {
-  border-bottom: none;
+  border-bottom-style: none;
 }
 
 .control-unit {
@@ -185,7 +185,8 @@
   color: var(--ink);
 }
 
-.control-traces + .row-note,
+/* The image prompt editor's Take chips look like these, but its note keeps its own margin. */
+.control-editor .control-traces + .row-note,
 .control-traces + .row-warning {
   margin-top: 0;
 }

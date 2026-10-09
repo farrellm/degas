@@ -1,0 +1,20 @@
+/*
+ * Pieces of a settings row that every part of the app uses. Global, so they load before the
+ * parts' own sheets, which refine them.
+ */
+
+/* Buttons acting on a row: a source's Crop and Remove, a saved prompt's Delete. */
+.row-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+/* A line of explanation under a row. */
+.row-note {
+  margin: -8px 0 10px;
+  color: var(--ink-muted);
+  font-size: var(--step--1);
+}

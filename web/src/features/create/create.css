@@ -518,6 +518,11 @@ input[type='range']::-moz-range-thumb {
   font-size: var(--step--1);
 }
 
+/* One raised as an alert (a trace or an area that failed) is an error, in the alert's colour. */
+.row-warning[role='alert'] {
+  color: var(--danger);
+}
+
 .model-row.missing .setting-value {
   color: var(--warn);
 }
