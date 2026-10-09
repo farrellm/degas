@@ -127,6 +127,7 @@ def build_services(
             config.ssh_key,
             config.colab.worker_port,
             log_file=config.data_dir / "ssh.log",
+            name=config.colab.session_name,
         )
 
     def default_worker(tunnel: Tunnel) -> WorkerClient:
