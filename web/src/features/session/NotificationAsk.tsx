@@ -3,7 +3,7 @@ import { useState } from 'react'
 
 import type { Job } from '@/api/types'
 
-import { enablePush, isInstalled, markAsked, pushSupported, wasAsked } from './push'
+import { enablePush, isInstalled, markAsked, pushQuery, pushSupported, wasAsked } from './push'
 
 /**
  * Asked once, after the first job finishes while Degas is installed to the home screen.
@@ -15,7 +15,7 @@ export function NotificationAsk({ jobs }: { jobs: Job[] | undefined }) {
   const allow = useMutation({
     mutationFn: enablePush,
     onSuccess: (state) => {
-      qc.setQueryData(['push'], state)
+      qc.setQueryData(pushQuery().queryKey, state)
       setDismissed(true)
     },
   })

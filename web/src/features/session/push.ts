@@ -1,6 +1,8 @@
 // Web Push on the phone (design §8.3). iOS only delivers notifications to Degas once
 // it's installed to the home screen, and only asks for permission from a tap.
 
+import { queryOptions } from '@tanstack/react-query'
+
 import { api } from '@/api/client'
 import { writeStored } from '@/lib/storage'
 
@@ -40,6 +42,9 @@ export async function pushState(): Promise<PushState> {
 }
 
 /** Ask for permission (call from a tap) and subscribe this device. */
+/** This device's push state, cached like a server read (it isn't one, so not in `queries`). */
+export const pushQuery = () => queryOptions({ queryKey: ['push'], queryFn: pushState })
+
 export async function enablePush(): Promise<PushState> {
   markAsked()
   const permission = await Notification.requestPermission()

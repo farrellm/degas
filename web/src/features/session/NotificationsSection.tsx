@@ -1,15 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
-import { disablePush, enablePush, isInstalled, type PushState, pushState } from './push'
+import { disablePush, enablePush, isInstalled, pushQuery, type PushState } from './push'
 
 /** Web Push for this device: finished jobs and the idle warning. */
 export function NotificationsSection() {
   const qc = useQueryClient()
-  const state = useQuery({ queryKey: ['push'], queryFn: pushState })
+  const state = useQuery(pushQuery())
   const toggle = useMutation({
     mutationFn: (on: boolean): Promise<PushState> => (on ? enablePush() : disablePush()),
     onSuccess: (next) => {
-      qc.setQueryData(['push'], next)
+      qc.setQueryData(pushQuery().queryKey, next)
     },
   })
   const s = state.data

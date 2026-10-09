@@ -97,10 +97,7 @@ export function Viewer<T extends ViewerItem>({
   }, [index, items.length, onIndex, close])
 
   const spec = r?.spec
-  const schema = useQuery({
-    ...queries.schema(spec?.family, spec?.variant, spec?.mode),
-    enabled: !!spec,
-  })
+  const schema = useQuery(queries.schema(spec?.family, spec?.variant, spec?.mode))
 
   if (!r) return null
   const params = spec?.params ?? {}
