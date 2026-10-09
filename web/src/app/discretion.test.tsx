@@ -67,9 +67,7 @@ describe('Discretion', () => {
     await user.click(screen.getByRole('button', { name: /Results/ }))
     const tile = await screen.findByRole('button', { name: 'Show image 1' })
     fireEvent.pointerDown(tile, { button: 0, clientX: 10, clientY: 10 })
-    await waitFor(() => {
-      expect(tile).toHaveClass('peek')
-    })
+    await waitFor(() => expect(tile).toHaveClass('peek'))
     expect(tile).not.toHaveClass('covered')
     fireEvent.pointerUp(tile)
     fireEvent.click(tile)

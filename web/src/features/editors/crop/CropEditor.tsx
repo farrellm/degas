@@ -71,9 +71,7 @@ export function CropEditor({
   const apply = useMutation({
     mutationFn: ({ ops }: { ops: Parameters<typeof api.transform>[1]; out: Size }) =>
       api.transform(original ?? sha, ops),
-    onSuccess: (image, { out }) => {
-      onApply(image, out)
-    },
+    onSuccess: (image, { out }) => onApply(image, out),
   })
 
   if (history.error) {
@@ -95,7 +93,7 @@ export function CropEditor({
       ? {
           width: natural.w * view.s,
           height: natural.h * view.s,
-          transform: `translate(-50%, -50%) scaleX(${edit.flip ? '-1' : '1'}) rotate(${String(edit.rot)}deg)`,
+          transform: `translate(-50%, -50%) scaleX(${edit.flip ? '-1' : '1'}) rotate(${edit.rot}deg)`,
         }
       : undefined
 
@@ -130,9 +128,9 @@ export function CropEditor({
         onPointerUp={editing.onPointerUp}
         onPointerCancel={editing.onPointerUp}
         onKeyDown={editing.onKeyDown}
-        onWheel={(e) => {
+        onWheel={(e) =>
           editing.zoom(Math.exp(-e.deltaY / 400), e.nativeEvent.offsetX, e.nativeEvent.offsetY)
-        }}
+        }
       >
         {original && (
           <div className="crop-image" style={placed}>

@@ -107,14 +107,11 @@ export function MaskEditor({
     work,
     toWork,
     zoom: v.s,
-    onCombine: (op, layer) => {
-      setHistory((h) => push(h, { kind: 'selection', op, layer }))
-    },
+    onCombine: (op, layer) => setHistory((h) => push(h, { kind: 'selection', op, layer })),
   })
 
-  const moveView = (change: (view: View) => View) => {
+  const moveView = (change: (view: View) => View) =>
     setView((prev) => clampView(change(prev ? clampView(prev, stage, work) : fitted), stage, work))
-  }
 
   const pointers = useMaskPointers({
     stageRef,
@@ -125,12 +122,8 @@ export function MaskEditor({
     view: v,
     moveView,
     paint,
-    onAbandon: () => {
-      render(history.done)
-    },
-    onStroke: (stroke) => {
-      setHistory((h) => push(h, stroke))
-    },
+    onAbandon: () => render(history.done),
+    onStroke: (stroke) => setHistory((h) => push(h, stroke)),
     onTap: (at, long) => {
       if (selectNote !== null || sam.pending) return
       if (at.x >= 0 && at.y >= 0 && at.x <= work.w && at.y <= work.h) {
@@ -149,24 +142,12 @@ export function MaskEditor({
     if (mod) return
     const move = keyMove(e.key, 40, 1.25, { x: stage.w / 2, y: stage.h / 2 })
     const keys: Record<string, (() => void) | undefined> = {
-      b: () => {
-        setTool('brush')
-      },
-      e: () => {
-        setTool('erase')
-      },
-      '[': () => {
-        setBrush((b) => Math.max(2, Math.round(b / 1.25)))
-      },
-      ']': () => {
-        setBrush((b) => Math.min(maxBrush, Math.round(b * 1.25)))
-      },
+      b: () => setTool('brush'),
+      e: () => setTool('erase'),
+      '[': () => setBrush((b) => Math.max(2, Math.round(b / 1.25))),
+      ']': () => setBrush((b) => Math.min(maxBrush, Math.round(b * 1.25))),
     }
-    const action = move
-      ? () => {
-          moveView(move)
-        }
-      : keys[e.key]
+    const action = move ? () => moveView(move) : keys[e.key]
     if (action) {
       e.preventDefault()
       action()
@@ -202,9 +183,7 @@ export function MaskEditor({
           type="button"
           className="btn small"
           disabled={!ready || save.isPending}
-          onClick={() => {
-            save.mutate()
-          }}
+          onClick={() => save.mutate()}
         >
           {save.isPending ? 'Saving…' : 'Done'}
         </button>
@@ -282,7 +261,7 @@ export function MaskEditor({
             min={2}
             max={maxBrush}
             value={brush}
-            output={`${String(Math.round(brush / toWork))} px`}
+            output={`${Math.round(brush / toWork)} px`}
             onChange={setBrush}
           />
         )}
@@ -292,18 +271,10 @@ export function MaskEditor({
           canRedo={history.undone.length > 0}
           ready={ready}
           showBlur={blur > 0 ? showBlur : undefined}
-          onUndo={() => {
-            setHistory(undo)
-          }}
-          onRedo={() => {
-            setHistory(redo)
-          }}
-          onInvert={() => {
-            setHistory((h) => push(h, { kind: 'invert' }))
-          }}
-          onClear={() => {
-            setHistory((h) => push(h, { kind: 'clear' }))
-          }}
+          onUndo={() => setHistory(undo)}
+          onRedo={() => setHistory(redo)}
+          onInvert={() => setHistory((h) => push(h, { kind: 'invert' }))}
+          onClear={() => setHistory((h) => push(h, { kind: 'clear' }))}
           onShowBlur={setShowBlur}
         />
         <RangeRow
@@ -313,7 +284,7 @@ export function MaskEditor({
           max={1}
           step={0.05}
           value={imageOpacity}
-          output={`${String(Math.round(imageOpacity * 100))}%`}
+          output={`${Math.round(imageOpacity * 100)}%`}
           onChange={setImageOpacity}
         />
         {save.error && <p role="alert">{save.error.message}</p>}

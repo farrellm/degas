@@ -62,7 +62,7 @@ export function DragHandle({ queued }: { queued: Queued }) {
     <button
       type="button"
       className="drag-handle"
-      aria-label={`Queue position ${String(queued.index + 1)} of ${String(queued.length)}`}
+      aria-label={`Queue position ${queued.index + 1} of ${queued.length}`}
       aria-describedby="drag-hint"
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}

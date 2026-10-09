@@ -13,9 +13,7 @@ beforeEach(() => {
   vi.stubGlobal('EventSource', FakeEventSource)
 })
 
-afterEach(() => {
-  cleanup()
-})
+afterEach(() => cleanup())
 
 // Registered last, so it runs first: before the tree is unmounted, as when it was each suite's own.
 afterEach(() => {

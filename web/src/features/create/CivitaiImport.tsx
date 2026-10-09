@@ -64,7 +64,7 @@ export function CivitaiImport({ family, onImported }: CivitaiImportProps) {
         <p className="asset-meta" aria-live="polite">
           {job.state === 'finishing'
             ? 'Adding its preview and rescanning Drive…'
-            : `Copying to Drive, ${String(pct)}% of ${formatBytes(job.total)}`}
+            : `Copying to Drive, ${pct}% of ${formatBytes(job.total)}`}
         </p>
       </section>
     )
@@ -87,13 +87,7 @@ export function CivitaiImport({ family, onImported }: CivitaiImportProps) {
       )}
       {finished?.state === 'failed' && <p role="alert">{finished.error}</p>}
       {!open ? (
-        <button
-          type="button"
-          className="btn quiet small"
-          onClick={() => {
-            setOpen(true)
-          }}
-        >
+        <button type="button" className="btn quiet small" onClick={() => setOpen(true)}>
           Import a LoRA
         </button>
       ) : plan ? (
@@ -101,12 +95,8 @@ export function CivitaiImport({ family, onImported }: CivitaiImportProps) {
           plan={plan}
           elsewhere={plan.family === family ? null : familyLabel(plan.family)}
           pending={start.isPending}
-          onImport={() => {
-            start.mutate(url.trim())
-          }}
-          onCancel={() => {
-            check.reset()
-          }}
+          onImport={() => start.mutate(url.trim())}
+          onCancel={() => check.reset()}
         />
       ) : (
         // Not a <form>: the sheet renders inside Create's.
@@ -120,9 +110,7 @@ export function CivitaiImport({ family, onImported }: CivitaiImportProps) {
               autoCapitalize="none"
               autoCorrect="off"
               value={url}
-              onChange={(e) => {
-                setUrl(e.target.value)
-              }}
+              onChange={(e) => setUrl(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key !== 'Enter') return
                 e.preventDefault()
@@ -137,12 +125,8 @@ export function CivitaiImport({ family, onImported }: CivitaiImportProps) {
                   setPasteFailed(false)
                   navigator.clipboard
                     .readText()
-                    .then((text) => {
-                      setUrl(text.trim())
-                    })
-                    .catch(() => {
-                      setPasteFailed(true)
-                    })
+                    .then((text) => setUrl(text.trim()))
+                    .catch(() => setPasteFailed(true))
                 }}
               >
                 Paste
@@ -153,9 +137,7 @@ export function CivitaiImport({ family, onImported }: CivitaiImportProps) {
             type="button"
             className="btn"
             disabled={!url.trim() || check.isPending}
-            onClick={() => {
-              check.mutate(url.trim())
-            }}
+            onClick={() => check.mutate(url.trim())}
           >
             {check.isPending ? 'Checking…' : 'Check link'}
           </button>

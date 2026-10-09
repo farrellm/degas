@@ -37,7 +37,7 @@ export function useQueueDrag(onMove: (id: string, position: number) => void) {
     if (index < 0) return undefined
 
     const moveTo = (moved: string, position: number) => {
-      setAnnounce(`Moved to ${String(position + 1)} of ${String(queue.length)} in the queue.`)
+      setAnnounce(`Moved to ${position + 1} of ${queue.length} in the queue.`)
       onMove(moved, position)
     }
     // Where the drop mark goes: before the group now at `to`, or after the last one.
@@ -51,9 +51,7 @@ export function useQueueDrag(onMove: (id: string, position: number) => void) {
       length: queue.length,
       lifted: drag?.id === id ? drag.dy : null,
       mark: markBefore === id ? 'before' : markAfter === id ? 'after' : null,
-      onTop: () => {
-        moveTo(id, 0)
-      },
+      onTop: () => moveTo(id, 0),
       onStep: (delta) => {
         const to = index + delta
         if (to < 0 || to >= queue.length) return
@@ -69,9 +67,8 @@ export function useQueueDrag(onMove: (id: string, position: number) => void) {
           })
         setDrag({ id, from: index, to: index, startY: y, dy: 0, mids })
       },
-      onDrag: (y) => {
-        setDrag((d) => d && { ...d, dy: y - d.startY, to: d.mids.filter((m) => m < y).length })
-      },
+      onDrag: (y) =>
+        setDrag((d) => d && { ...d, dy: y - d.startY, to: d.mids.filter((m) => m < y).length }),
       onDrop: () => {
         if (drag && drag.to !== drag.from) moveTo(drag.id, drag.to)
         setDrag(null)

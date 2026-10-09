@@ -82,9 +82,7 @@ function SessionBody({ snap }: { snap: SessionSnapshot }) {
               aria-pressed={g === gpu}
               aria-describedby={min && belowGpu(g, min) ? 'gpu-floor' : undefined}
               className={min && belowGpu(g, min) ? 'short' : undefined}
-              onClick={() => {
-                setGpu(g)
-              }}
+              onClick={() => setGpu(g)}
             >
               <span className="name">{g}</span>
               {GPU_VRAM[g] && <span className="vram">{GPU_VRAM[g]}</span>}
@@ -103,21 +101,13 @@ function SessionBody({ snap }: { snap: SessionSnapshot }) {
             High memory
             <small>More system RAM. Needed for large video models.</small>
           </span>
-          <input
-            type="checkbox"
-            checked={highMem}
-            onChange={(e) => {
-              setHighMem(e.target.checked)
-            }}
-          />
+          <input type="checkbox" checked={highMem} onChange={(e) => setHighMem(e.target.checked)} />
         </label>
         <button
           type="button"
           className="btn"
           disabled={start.isPending}
-          onClick={() => {
-            start.mutate()
-          }}
+          onClick={() => start.mutate()}
         >
           {start.isPending ? 'Starting…' : `Start ${gpu} session`}
         </button>
@@ -140,7 +130,7 @@ function SessionBody({ snap }: { snap: SessionSnapshot }) {
         {vramUsed !== null && w?.vram_total != null && (
           <div>
             <div className="meter" aria-hidden>
-              <span style={{ width: `${String((100 * vramUsed) / w.vram_total)}%` }} />
+              <span style={{ width: `${(100 * vramUsed) / w.vram_total}%` }} />
             </div>
             <p className="bar-note">
               {(vramUsed / GiB).toFixed(1)} of {(w.vram_total / GiB).toFixed(1)} GiB VRAM in use
@@ -157,20 +147,12 @@ function SessionBody({ snap }: { snap: SessionSnapshot }) {
             type="button"
             className="btn danger"
             disabled={stop.isPending}
-            onClick={() => {
-              stop.mutate()
-            }}
+            onClick={() => stop.mutate()}
           >
             {stop.isPending ? 'Stopping…' : 'Stop session'}
           </button>
           {idle && (
-            <button
-              type="button"
-              className="btn quiet"
-              onClick={() => {
-                touch.mutate()
-              }}
-            >
+            <button type="button" className="btn quiet" onClick={() => touch.mutate()}>
               Keep running
             </button>
           )}
@@ -190,9 +172,7 @@ function SessionBody({ snap }: { snap: SessionSnapshot }) {
               type="button"
               className="btn quiet"
               disabled={reset.isPending}
-              onClick={() => {
-                reset.mutate()
-              }}
+              onClick={() => reset.mutate()}
             >
               {reset.isPending ? 'Restarting…' : 'Restart worker'}
             </button>

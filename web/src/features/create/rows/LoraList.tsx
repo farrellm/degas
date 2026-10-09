@@ -15,9 +15,8 @@ export interface LoraListProps {
  * prompt. A Wan A14B pair has one weight per expert.
  */
 export function LoraList({ loras, index, onChange, onAdd, onTrigger }: LoraListProps) {
-  const update = (i: number, lora: LoraEntry | null) => {
+  const update = (i: number, lora: LoraEntry | null) =>
     onChange(lora ? loras.with(i, lora) : loras.toSpliced(i, 1))
-  }
 
   return (
     <div className="lora-group" role="group" aria-labelledby="loras-label">
@@ -32,7 +31,7 @@ export function LoraList({ loras, index, onChange, onAdd, onTrigger }: LoraListP
       {loras.map((lora, i) => {
         const found = loraAssets(lora, index)
         const label = loraLabel(lora, index)
-        const id = `lora-${String(i)}`
+        const id = `lora-${i}`
         const words = [...new Set(found.flatMap((a) => a?.sidecar?.trigger_words ?? []))]
         const missing = !!index && found.some((a) => !a)
         const weight = (ref: LoraRef, name: string, change: (w: number) => void, half = '') => (
@@ -45,9 +44,7 @@ export function LoraList({ loras, index, onChange, onAdd, onTrigger }: LoraListP
               max={2}
               step={0.05}
               value={ref.weight}
-              onChange={(e) => {
-                change(Number(e.target.value))
-              }}
+              onChange={(e) => change(Number(e.target.value))}
             />
             <output htmlFor={`${id}${half}`}>{ref.weight.toFixed(2)}</output>
           </>
@@ -59,12 +56,7 @@ export function LoraList({ loras, index, onChange, onAdd, onTrigger }: LoraListP
             </label>
             {isPair(lora) ? (
               <>
-                <RemoveButton
-                  label={label}
-                  onClick={() => {
-                    update(i, null)
-                  }}
-                />
+                <RemoveButton label={label} onClick={() => update(i, null)} />
                 {(['high', 'low'] as const).map((half) => {
                   const ref = lora[half]
                   if (!ref) return null
@@ -74,9 +66,7 @@ export function LoraList({ loras, index, onChange, onAdd, onTrigger }: LoraListP
                       {weight(
                         ref,
                         `${label} ${half}-noise weight`,
-                        (w) => {
-                          update(i, { ...lora, [half]: { ...ref, weight: w } })
-                        },
+                        (w) => update(i, { ...lora, [half]: { ...ref, weight: w } }),
                         `-${half}`,
                       )}
                     </div>
@@ -85,15 +75,8 @@ export function LoraList({ loras, index, onChange, onAdd, onTrigger }: LoraListP
               </>
             ) : (
               <>
-                {weight(lora, `${label} weight`, (w) => {
-                  update(i, { ...lora, weight: w })
-                })}
-                <RemoveButton
-                  label={label}
-                  onClick={() => {
-                    update(i, null)
-                  }}
-                />
+                {weight(lora, `${label} weight`, (w) => update(i, { ...lora, weight: w }))}
+                <RemoveButton label={label} onClick={() => update(i, null)} />
               </>
             )}
             {missing && (
@@ -107,9 +90,7 @@ export function LoraList({ loras, index, onChange, onAdd, onTrigger }: LoraListP
                     type="button"
                     className="chip"
                     aria-label={`Add “${w}” to the prompt`}
-                    onClick={() => {
-                      onTrigger(w)
-                    }}
+                    onClick={() => onTrigger(w)}
                   >
                     <span>{w}</span>
                   </button>

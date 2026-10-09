@@ -33,9 +33,7 @@ export function PictureViewer({ pictures, index, onIndex, onClose }: PictureView
       if (e.key === 'ArrowLeft' && index > 0) onIndex(index - 1)
     }
     document.addEventListener('keydown', onKey, true)
-    return () => {
-      document.removeEventListener('keydown', onKey, true)
-    }
+    return () => document.removeEventListener('keydown', onKey, true)
   }, [index, last, onIndex, onClose])
 
   if (!picture) return null
@@ -63,9 +61,7 @@ export function PictureViewer({ pictures, index, onIndex, onClose }: PictureView
                 className="btn quiet small"
                 aria-label="Previous picture"
                 disabled={index === 0}
-                onClick={() => {
-                  onIndex(index - 1)
-                }}
+                onClick={() => onIndex(index - 1)}
               >
                 ‹
               </button>
@@ -74,9 +70,7 @@ export function PictureViewer({ pictures, index, onIndex, onClose }: PictureView
                 className="btn quiet small"
                 aria-label="Next picture"
                 disabled={index === last}
-                onClick={() => {
-                  onIndex(index + 1)
-                }}
+                onClick={() => onIndex(index + 1)}
               >
                 ›
               </button>

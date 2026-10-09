@@ -27,7 +27,7 @@ export function DriveSection({ authorizedHint }: { authorizedHint?: SessionSnaps
       ) : (
         <p>
           Models indexed {d.indexed_at ? ago(d.indexed_at, now) : 'never'}.
-          {rescan.data && ` Found ${String(rescan.data.count)} files.`}
+          {rescan.data && ` Found ${rescan.data.count} files.`}
         </p>
       )}
       {problem && <p className="problem">{problem}</p>}
@@ -36,9 +36,7 @@ export function DriveSection({ authorizedHint }: { authorizedHint?: SessionSnaps
           type="button"
           className="btn quiet"
           disabled={rescan.isPending || !d?.authorized}
-          onClick={() => {
-            rescan.mutate()
-          }}
+          onClick={() => rescan.mutate()}
         >
           {rescan.isPending ? 'Rescanning…' : 'Rescan Drive'}
         </button>

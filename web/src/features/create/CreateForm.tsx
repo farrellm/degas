@@ -63,9 +63,7 @@ export function CreateForm({ familyId, onFamily, onOpenSession, onShowResults }:
   const video = family?.media === 'video'
   const modelLabel = model ? assetLabel(model, selection.models) : null
 
-  const closePicker = () => {
-    setPicker(null)
-  }
+  const closePicker = () => setPicker(null)
 
   const leadingRows = (
     <>
@@ -75,9 +73,7 @@ export function CreateForm({ familyId, onFamily, onOpenSession, onShowResults }:
           source={source}
           gone={input.gone}
           continuesClip={!!input.extendsClip}
-          onPick={() => {
-            setPicker('image')
-          }}
+          onPick={() => setPicker('image')}
           onCrop={() => {
             if (source) setCropping({ sha: source.sha })
           }}
@@ -98,9 +94,7 @@ export function CreateForm({ familyId, onFamily, onOpenSession, onShowResults }:
           source={lastFrame.image}
           gone={lastFrame.gone}
           continuesClip={false}
-          onPick={() => {
-            setPicker('end')
-          }}
+          onPick={() => setPicker('end')}
           onCrop={() => {
             if (lastFrame.image) setCropping({ sha: lastFrame.image.sha, end: true })
           }}
@@ -115,12 +109,8 @@ export function CreateForm({ familyId, onFamily, onOpenSession, onShowResults }:
           editText="Edit mask"
           emptyText="Paint the area to redraw"
           before={input.maskNote && <p className="row-note">{input.maskNote}</p>}
-          onOpen={() => {
-            setPainting(true)
-          }}
-          onClear={() => {
-            input.setMask(null)
-          }}
+          onOpen={() => setPainting(true)}
+          onClear={() => input.setMask(null)}
         />
       )}
       {mode === 'outpaint' && source && !input.gone && form.place && (
@@ -131,9 +121,7 @@ export function CreateForm({ familyId, onFamily, onOpenSession, onShowResults }:
           refs={refs}
           max={selection.maxRefs}
           onChange={form.setRefs}
-          onAdd={() => {
-            setPicker('ref')
-          }}
+          onAdd={() => setPicker('ref')}
           onCrop={(i) => {
             const ref = refs[i]
             if (ref) setCropping({ sha: ref.sha, ref: i })
@@ -150,17 +138,13 @@ export function CreateForm({ familyId, onFamily, onOpenSession, onShowResults }:
             : null
         }
         underpowered={form.underpowered}
-        onPick={() => {
-          setPicker('model')
-        }}
+        onPick={() => setPicker('model')}
       />
       <LoraList
         loras={form.loras}
         index={selection.loras}
         onChange={form.setLoras}
-        onAdd={() => {
-          setPicker('lora')
-        }}
+        onAdd={() => setPicker('lora')}
         onTrigger={(word) => {
           // Before the prompt has been touched there's no cursor to honour: append.
           const el = promptRef.current
@@ -173,9 +157,7 @@ export function CreateForm({ familyId, onFamily, onOpenSession, onShowResults }:
           index={selection.controlnets}
           steps={steps}
           onOpen={control.open}
-          onAdd={() => {
-            control.add(newUnit())
-          }}
+          onAdd={() => control.add(newUnit())}
         />
       )}
       {selection.withPrompts && (
@@ -185,12 +167,12 @@ export function CreateForm({ familyId, onFamily, onOpenSession, onShowResults }:
           steps={steps}
           options={selection.promptOptions}
           onOpen={prompts.open}
-          onAdd={() => {
+          onAdd={() =>
             prompts.add({
               ...newPrompt(selection.promptOptions),
               model: modelFor(selection.adapters ?? [], 'all')?.path ?? '',
             })
-          }}
+          }
         />
       )}
     </>
@@ -220,13 +202,7 @@ export function CreateForm({ familyId, onFamily, onOpenSession, onShowResults }:
           promptFocused.current = true
         }}
         promptAside={
-          <button
-            type="button"
-            className="prompt-aside"
-            onClick={() => {
-              setPicker('prompts')
-            }}
-          >
+          <button type="button" className="prompt-aside" onClick={() => setPicker('prompts')}>
             Prompts
           </button>
         }
@@ -318,9 +294,7 @@ export function CreateForm({ familyId, onFamily, onOpenSession, onShowResults }:
             input.setMask(painted)
             setPainting(false)
           }}
-          onCancel={() => {
-            setPainting(false)
-          }}
+          onCancel={() => setPainting(false)}
         />
       )}
       {control.current && variant && (
@@ -372,9 +346,7 @@ export function CreateForm({ familyId, onFamily, onOpenSession, onShowResults }:
             else form.setRefs([...refs.slice(0, at), toSource(image), ...refs.slice(at + 1)])
             setCropping(null)
           }}
-          onCancel={() => {
-            setCropping(null)
-          }}
+          onCancel={() => setCropping(null)}
         />
       )}
 

@@ -34,13 +34,7 @@ export function Field({ name, prop, value, set, seeds }: FieldProps) {
     return (
       <div className="setting">
         <FieldLabel id={id} label={label} prop={prop} value={value} reset={reset} />
-        <select
-          id={id}
-          value={String(value ?? '')}
-          onChange={(e) => {
-            set(name, e.target.value)
-          }}
-        >
+        <select id={id} value={String(value ?? '')} onChange={(e) => set(name, e.target.value)}>
           {prop.enum.map((v, i) => (
             <option key={v} value={v}>
               {labels[i] ?? v}
@@ -63,26 +57,14 @@ export function Field({ name, prop, value, set, seeds }: FieldProps) {
           id={id}
           type="checkbox"
           checked={value === true}
-          onChange={(e) => {
-            set(name, e.target.checked)
-          }}
+          onChange={(e) => set(name, e.target.checked)}
         />
       </label>
     )
   }
 
   if (widget === 'seed' && seeds?.batch) {
-    return (
-      <BatchSeeds
-        id={id}
-        label={label}
-        value={value}
-        set={(v) => {
-          set(name, v)
-        }}
-        {...seeds}
-      />
-    )
+    return <BatchSeeds id={id} label={label} value={value} set={(v) => set(name, v)} {...seeds} />
   }
 
   if (widget === 'seed') {
@@ -99,18 +81,10 @@ export function Field({ name, prop, value, set, seeds }: FieldProps) {
             inputMode="numeric"
             placeholder="Random"
             value={random ? '' : String(value)}
-            onChange={(e) => {
-              set(name, e.target.value === '' ? -1 : Number(e.target.value))
-            }}
+            onChange={(e) => set(name, e.target.value === '' ? -1 : Number(e.target.value))}
           />
           {!random && (
-            <button
-              type="button"
-              className="btn quiet small"
-              onClick={() => {
-                set(name, -1)
-              }}
-            >
+            <button type="button" className="btn quiet small" onClick={() => set(name, -1)}>
               Randomize
             </button>
           )}
@@ -136,9 +110,7 @@ export function Field({ name, prop, value, set, seeds }: FieldProps) {
               max={prop.maximum}
               step={prop['x-step'] ?? prop.multipleOf ?? (prop.type === 'integer' ? 1 : 0.1)}
               value={Number(value)}
-              onChange={(e) => {
-                set(name, Number(e.target.value))
-              }}
+              onChange={(e) => set(name, Number(e.target.value))}
             />
           </span>
           <output htmlFor={id}>{String(value)}</output>
@@ -158,9 +130,7 @@ export function Field({ name, prop, value, set, seeds }: FieldProps) {
         max={prop.maximum}
         step={prop.multipleOf}
         value={String(value ?? '')}
-        onChange={(e) => {
-          set(name, numeric ? Number(e.target.value) : e.target.value)
-        }}
+        onChange={(e) => set(name, numeric ? Number(e.target.value) : e.target.value)}
       />
     </div>
   )

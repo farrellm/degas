@@ -33,13 +33,7 @@ export function LibraryActions({
         <button type="button" className="btn danger" disabled={deleting} onClick={onDelete}>
           Delete
         </button>
-        <button
-          type="button"
-          className="btn quiet"
-          onClick={() => {
-            setConfirming(false)
-          }}
-        >
+        <button type="button" className="btn quiet" onClick={() => setConfirming(false)}>
           Cancel
         </button>
       </div>
@@ -62,13 +56,7 @@ export function LibraryActions({
           Use as source
         </button>
       )}
-      <button
-        type="button"
-        className="btn quiet"
-        onClick={() => {
-          setConfirming(true)
-        }}
-      >
+      <button type="button" className="btn quiet" onClick={() => setConfirming(true)}>
         Delete
       </button>
       {error && (

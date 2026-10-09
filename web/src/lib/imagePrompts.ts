@@ -74,7 +74,7 @@ export const DETAILS: Detail[] = [
 export const detailInfo = (downsample: number): Detail =>
   DETAILS.find((d) => d.downsample === downsample) ?? {
     downsample,
-    label: `Shrunk ${String(downsample)}×`,
+    label: `Shrunk ${downsample}×`,
     note: '',
   }
 
@@ -106,11 +106,10 @@ export function summaryText(unit: {
   pictures?: number
 }): string {
   const parts = [unit.what, `weight ${unit.weight.toFixed(2)}`]
-  if (unit.pictures !== undefined && unit.pictures > 1)
-    parts.push(`${String(unit.pictures)} pictures`)
+  if (unit.pictures !== undefined && unit.pictures > 1) parts.push(`${unit.pictures} pictures`)
   const span = stepSpan(unit.start, unit.end, unit.steps)
   if (span && (span.first !== 1 || span.last !== unit.steps))
-    parts.push(`steps ${String(span.first)}–${String(span.last)}`)
+    parts.push(`steps ${span.first}–${span.last}`)
   else if (!span) parts.push('no steps')
   if (unit.area) parts.push('in an area')
   return parts.join(', ')

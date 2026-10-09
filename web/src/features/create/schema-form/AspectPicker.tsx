@@ -26,22 +26,16 @@ export function AspectPicker({
           const fallback = w === dw && h === dh
           return (
             <button
-              key={`${String(w)}x${String(h)}`}
+              key={`${w}x${h}`}
               type="button"
               className={['aspect', w > h && 'wide', fallback && 'default']
                 .filter(Boolean)
                 .join(' ')}
-              aria-label={`${String(w)}×${String(h)}${fallback ? ', default' : ''}`}
+              aria-label={`${w}×${h}${fallback ? ', default' : ''}`}
               aria-pressed={on}
-              onClick={() => {
-                onChange(w, h)
-              }}
+              onClick={() => onChange(w, h)}
             >
-              <span
-                className="aspect-box"
-                style={{ aspectRatio: `${String(w)} / ${String(h)}` }}
-                aria-hidden
-              />
+              <span className="aspect-box" style={{ aspectRatio: `${w} / ${h}` }} aria-hidden />
             </button>
           )
         })}

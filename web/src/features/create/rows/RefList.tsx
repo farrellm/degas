@@ -44,9 +44,7 @@ export function RefList({ refs, max, onChange, onAdd, onCrop }: RefListProps) {
               type="button"
               className="btn quiet small"
               aria-label={`Crop image ${n}`}
-              onClick={() => {
-                onCrop(i)
-              }}
+              onClick={() => onCrop(i)}
             >
               Crop
             </button>
@@ -55,13 +53,13 @@ export function RefList({ refs, max, onChange, onAdd, onCrop }: RefListProps) {
               className="btn quiet small"
               aria-label={`Move image ${n} earlier`}
               disabled={i === 0}
-              onClick={() => {
+              onClick={() =>
                 onChange([
                   ...refs.slice(0, i - 1),
                   ref,
                   ...refs.slice(i - 1).filter((r) => r !== ref),
                 ])
-              }}
+              }
             >
               Earlier
             </button>
@@ -69,9 +67,7 @@ export function RefList({ refs, max, onChange, onAdd, onCrop }: RefListProps) {
               type="button"
               className="lora-remove"
               aria-label={`Remove image ${n}`}
-              onClick={() => {
-                onChange(refs.filter((_, j) => j !== i))
-              }}
+              onClick={() => onChange(refs.filter((_, j) => j !== i))}
             >
               <svg viewBox="0 0 12 12" aria-hidden>
                 <path d="M2 2l8 8M10 2l-8 8" />

@@ -31,9 +31,7 @@ export function SavePrompt({ item }: { item: ViewerItem }) {
         type="button"
         className="btn quiet"
         disabled={!prompt.trim() || isSaved || save.isPending}
-        onClick={() => {
-          save.mutate()
-        }}
+        onClick={() => save.mutate()}
       >
         {isSaved && prompt.trim() ? 'Prompt saved' : 'Save prompt'}
       </button>

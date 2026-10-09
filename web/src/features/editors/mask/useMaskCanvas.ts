@@ -112,9 +112,7 @@ export function useMaskCanvas({
     const ctx = context(m)
     if (!m || !ctx) throw new Error('This browser can’t paint masks.')
     if (!hasAlpha(ctx.getImageData(0, 0, work.w, work.h).data)) return null
-    const png = await new Promise<Blob | null>((resolve) => {
-      m.toBlob(resolve, 'image/png')
-    })
+    const png = await new Promise<Blob | null>((resolve) => m.toBlob(resolve, 'image/png'))
     if (!png) throw new Error('Couldn’t read the painted mask.')
     return png
   }

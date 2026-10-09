@@ -39,7 +39,7 @@ export function ControlPicture({
           <div
             className={busy ? 'control-picture sketch indeterminate' : 'control-picture'}
             style={{
-              aspectRatio: `${String(unit.image.width || 1)} / ${String(unit.image.height || 1)}`,
+              aspectRatio: `${unit.image.width || 1} / ${unit.image.height || 1}`,
             }}
           >
             {overPhoto && canOverlay && photoUnder && (
@@ -57,9 +57,7 @@ export function ControlPicture({
                 type="button"
                 className="btn quiet small"
                 aria-pressed={overPhoto}
-                onClick={() => {
-                  onOverPhoto(!overPhoto)
-                }}
+                onClick={() => onOverPhoto(!overPhoto)}
               >
                 Over the picture
               </button>
@@ -89,9 +87,7 @@ export function ControlPicture({
                 type="button"
                 className="btn small"
                 disabled={busy}
-                onClick={() => {
-                  onUseSource(source)
-                }}
+                onClick={() => onUseSource(source)}
               >
                 Use the source
               </button>
@@ -113,9 +109,7 @@ export function ControlPicture({
             type="button"
             className="link"
             disabled={busy}
-            onClick={() => {
-              onUseSource(source)
-            }}
+            onClick={() => onUseSource(source)}
           >
             Use the source
           </button>{' '}

@@ -54,9 +54,7 @@ export function TracePicker({
             type="button"
             aria-pressed={chosen === t.id}
             disabled={!photo || busy || !gpuReady}
-            onClick={() => {
-              onTrace(t.id)
-            }}
+            onClick={() => onTrace(t.id)}
           >
             {t.label}
           </button>
@@ -87,7 +85,7 @@ export function TracePicker({
           min={0}
           max={1}
           value={detail}
-          format={(v) => `${String(Math.round(v * 100))}%`}
+          format={(v) => `${Math.round(v * 100)}%`}
           onChange={onDetail}
         />
       )}

@@ -46,9 +46,7 @@ export function useControlTrace({
       const out = await api.trace(v.id, v.from.sha, v.params)
       return { ...v, image: toSource(out.image) }
     },
-    onMutate: () => {
-      setNote(null)
-    },
+    onMutate: () => setNote(null),
     onSuccess: (r) => {
       if (unit.area && !sameSize(unit.image, r.image))
         setNote('The new trace is another size, so the area was cleared.')
@@ -99,9 +97,7 @@ export function useControlTrace({
         return { image: photo, trace: null, area, message: `Using the picture as it is. ${why}` }
       }
     },
-    onMutate: () => {
-      setNote(null)
-    },
+    onMutate: () => setNote(null),
     onSuccess: (r) => {
       onChange((u) => ({ ...u, image: r.image, trace: r.trace, area: r.area }))
       setNote(r.message)
@@ -113,30 +109,23 @@ export function useControlTrace({
 
   // Edges: trace again once the Detail slider rests.
   const cannyTrace = unit.trace?.id === 'canny' ? unit.trace : null
-  const retrace = useEffectEvent((from: Source) => {
-    trace.mutate({ id: 'canny', params: edgeParams(detail), from })
-  })
+  const retrace = useEffectEvent((from: Source) =>
+    trace.mutate({ id: 'canny', params: edgeParams(detail), from }),
+  )
   useEffect(() => {
     if (!cannyTrace || edgeDetail(cannyTrace.params) === detail) return
-    const id = setTimeout(() => {
-      retrace(cannyTrace.from)
-    }, RETRACE_MS)
-    return () => {
-      clearTimeout(id)
-    }
+    const id = setTimeout(() => retrace(cannyTrace.from), RETRACE_MS)
+    return () => clearTimeout(id)
   }, [detail, cannyTrace])
 
-  const takePicture = (photo: Source, cropped: boolean) => {
+  const takePicture = (photo: Source, cropped: boolean) =>
     repicture.mutate({ photo, before: unit, cropped })
-  }
 
   return {
     busy,
     error,
     note,
-    clearNote: () => {
-      setNote(null)
-    },
+    clearNote: () => setNote(null),
     detail,
     setDetail,
     trace: trace.mutate,

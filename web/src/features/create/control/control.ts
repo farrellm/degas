@@ -98,7 +98,7 @@ export function unitSummary(unit: ControlUnit, steps: number): string {
   const parts = [what, `weight ${unit.scale.toFixed(2)}`]
   const span = stepSpan(unit.start, unit.end, steps)
   if (span && (span.first !== 1 || span.last !== steps))
-    parts.push(`steps ${String(span.first)}–${String(span.last)}`)
+    parts.push(`steps ${span.first}–${span.last}`)
   else if (!span) parts.push('no steps')
   if (unit.area) parts.push('in an area')
   return parts.join(', ')

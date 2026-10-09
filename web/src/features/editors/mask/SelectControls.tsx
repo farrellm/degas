@@ -27,9 +27,7 @@ export function SelectControls({ note, sam: p }: SelectControlsProps) {
           placeholder="Describe it, or tap the image"
           value={p.text}
           enterKeyHint="search"
-          onChange={(e) => {
-            p.setText(e.target.value)
-          }}
+          onChange={(e) => p.setText(e.target.value)}
           onKeyDown={(e) => {
             if (e.key !== 'Enter') return
             e.preventDefault()
@@ -47,22 +45,10 @@ export function SelectControls({ note, sam: p }: SelectControlsProps) {
       </div>
       <div className="mask-row">
         <div className="seed-modes" role="group" aria-label="Taps">
-          <button
-            type="button"
-            aria-pressed={!p.exclude}
-            onClick={() => {
-              p.setExclude(false)
-            }}
-          >
+          <button type="button" aria-pressed={!p.exclude} onClick={() => p.setExclude(false)}>
             Include
           </button>
-          <button
-            type="button"
-            aria-pressed={p.exclude}
-            onClick={() => {
-              p.setExclude(true)
-            }}
-          >
+          <button type="button" aria-pressed={p.exclude} onClick={() => p.setExclude(true)}>
             Exclude
           </button>
         </div>
@@ -90,7 +76,7 @@ export function SelectControls({ note, sam: p }: SelectControlsProps) {
         min={0}
         max={MAX_GROW}
         value={p.growBy}
-        output={`${String(p.growBy)} px`}
+        output={`${p.growBy} px`}
         onChange={p.setGrowBy}
       />
       {count > 0 && (
@@ -100,9 +86,7 @@ export function SelectControls({ note, sam: p }: SelectControlsProps) {
               type="button"
               className="btn quiet small"
               disabled={p.shown <= 0}
-              onClick={() => {
-                p.setShown(p.shown - 1)
-              }}
+              onClick={() => p.setShown(p.shown - 1)}
             >
               Smaller
             </button>
@@ -110,39 +94,19 @@ export function SelectControls({ note, sam: p }: SelectControlsProps) {
               type="button"
               className="btn quiet small"
               disabled={p.shown >= count - 1}
-              onClick={() => {
-                p.setShown(p.shown + 1)
-              }}
+              onClick={() => p.setShown(p.shown + 1)}
             >
               Bigger
             </button>
           </div>
           <div className="mask-row combine">
-            <button
-              type="button"
-              className="btn small"
-              onClick={() => {
-                p.combine('add')
-              }}
-            >
+            <button type="button" className="btn small" onClick={() => p.combine('add')}>
               Add
             </button>
-            <button
-              type="button"
-              className="btn quiet small"
-              onClick={() => {
-                p.combine('subtract')
-              }}
-            >
+            <button type="button" className="btn quiet small" onClick={() => p.combine('subtract')}>
               Subtract
             </button>
-            <button
-              type="button"
-              className="btn quiet small"
-              onClick={() => {
-                p.combine('replace')
-              }}
-            >
+            <button type="button" className="btn quiet small" onClick={() => p.combine('replace')}>
               Replace
             </button>
           </div>

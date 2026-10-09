@@ -48,7 +48,7 @@ export function ResultGroup({
   const w = Number(params.width ?? results[0]?.width ?? 1)
   const h = Number(params.height ?? results[0]?.height ?? 1)
   const style = {
-    '--ratio': `${String(w)} / ${String(h)}`,
+    '--ratio': `${w} / ${h}`,
     '--cols': w > h ? 2 : 3,
   } as CSSProperties
   const pending = !chain && job && PENDING.has(job.status)
@@ -66,7 +66,7 @@ export function ResultGroup({
     .join(', ')
   // The model uncovers with the prompt: one tap on either shows the group's words.
   const meta = chain ? (
-    `Extended, ${String(clips)} clips${length ? `, ${formatDuration(length)}` : ''}`
+    `Extended, ${clips} clips${length ? `, ${formatDuration(length)}` : ''}`
   ) : spec ? (
     <>
       <CoveredText id={`prompt:${group.id}`} label="Show model">
@@ -78,7 +78,7 @@ export function ResultGroup({
     shape
   )
   const tile = (r: Result, i: number) => {
-    const what = `${isVideo(r.media_type) ? 'clip' : 'image'} ${String(i + 1)}`
+    const what = `${isVideo(r.media_type) ? 'clip' : 'image'} ${i + 1}`
     return (
       <Tile
         key={r.id}
@@ -89,9 +89,7 @@ export function ResultGroup({
         kept={!!r.library_id}
         label={`Open ${what}, seed ${String(r.seed)}${r.library_id ? ', kept' : ''}`}
         coveredLabel={`Show ${what}`}
-        onOpen={() => {
-          onOpen(resultKey(r))
-        }}
+        onOpen={() => onOpen(resultKey(r))}
       />
     )
   }
@@ -110,7 +108,7 @@ export function ResultGroup({
       ref={sectionRef}
       aria-label={prompt || 'Untitled'}
       className={classes.filter(Boolean).join(' ')}
-      style={lifted !== null ? { transform: `translateY(${String(lifted)}px)` } : undefined}
+      style={lifted !== null ? { transform: `translateY(${lifted}px)` } : undefined}
     >
       <header className={queued ? 'group-caption queued' : 'group-caption'}>
         {queued && <DragHandle queued={queued} />}
@@ -121,13 +119,7 @@ export function ResultGroup({
         <div className="aside">
           {pending ? (
             <>
-              <button
-                type="button"
-                className="btn quiet small"
-                onClick={() => {
-                  onCancel(job)
-                }}
-              >
+              <button type="button" className="btn quiet small" onClick={() => onCancel(job)}>
                 Cancel
               </button>
               {queued && queued.index > 0 && (
@@ -156,9 +148,7 @@ export function ResultGroup({
                   type="button"
                   className="btn quiet small"
                   disabled={deleting}
-                  onClick={() => {
-                    setConfirming(true)
-                  }}
+                  onClick={() => setConfirming(true)}
                 >
                   {deleting ? 'Deleting…' : 'Delete'}
                 </button>
@@ -180,13 +170,7 @@ export function ResultGroup({
           >
             Delete
           </button>
-          <button
-            type="button"
-            className="btn quiet"
-            onClick={() => {
-              setConfirming(false)
-            }}
-          >
+          <button type="button" className="btn quiet" onClick={() => setConfirming(false)}>
             Cancel
           </button>
         </div>
@@ -206,13 +190,11 @@ export function ResultGroup({
           if (!pending) return null
           return (
             <SketchTile
-              key={`s${String(i)}`}
+              key={`s${i}`}
               job={job}
               item={i}
               done={done}
-              onOpen={() => {
-                onOpen(slotKey(job.id, i))
-              }}
+              onOpen={() => onOpen(slotKey(job.id, i))}
             />
           )
         })}

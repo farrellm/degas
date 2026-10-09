@@ -2,7 +2,7 @@
 export function countdown(deadline: string | null, now: number): string | null {
   if (!deadline) return null
   const s = Math.max(0, Math.round((new Date(deadline).getTime() - now) / 1000))
-  return `${String(Math.floor(s / 60))}:${String(s % 60).padStart(2, '0')}`
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
 }
 
 /** Hours (fractional) until `iso`. */
@@ -15,9 +15,7 @@ export function timeLeft(expiresAt: string | null, now: number): string | null {
   if (!expiresAt) return null
   const hours = hoursLeft(expiresAt, now)
   if (hours <= 0) return 'Deleting soon'
-  return hours >= 1
-    ? `${String(Math.floor(hours))} h left`
-    : `${String(Math.ceil(hours * 60))} min left`
+  return hours >= 1 ? `${Math.floor(hours)} h left` : `${Math.ceil(hours * 60)} min left`
 }
 
 /** Clock time for today, otherwise a short date. */
@@ -33,8 +31,8 @@ export function shortTime(iso: string, now: number): string {
 export function ago(iso: string, now: number): string {
   const min = Math.round((now - new Date(iso).getTime()) / 60_000)
   if (min < 1) return 'just now'
-  if (min < 60) return `${String(min)} min ago`
+  if (min < 60) return `${min} min ago`
   const h = Math.round(min / 60)
-  if (h < 48) return `${String(h)} h ago`
-  return `${String(Math.round(h / 24))} days ago`
+  if (h < 48) return `${h} h ago`
+  return `${Math.round(h / 24)} days ago`
 }

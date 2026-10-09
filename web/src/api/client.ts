@@ -44,7 +44,7 @@ async function request<T>(method: string, route: string, body?: unknown): Promis
     body: body === undefined ? undefined : raw ? body : JSON.stringify(body),
   })
   if (!res.ok) {
-    let message = `HTTP ${String(res.status)}`
+    let message = `HTTP ${res.status}`
     try {
       const data = (await res.json()) as { detail?: unknown }
       if (typeof data.detail === 'string') message = data.detail

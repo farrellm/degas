@@ -46,9 +46,7 @@ function PromptRow({ p, onUse }: { p: SavedPrompt; onUse: () => void }) {
   const onSettled = () => qc.invalidateQueries({ queryKey: queryKeys.prompts })
   const rename = useMutation({
     mutationFn: () => api.editPrompt(p.id, { name: name.trim() }),
-    onSuccess: () => {
-      setMode('view')
-    },
+    onSuccess: () => setMode('view'),
     onSettled,
   })
   const remove = useMutation({ mutationFn: () => api.deletePrompt(p.id), onSettled })
@@ -68,9 +66,7 @@ function PromptRow({ p, onUse }: { p: SavedPrompt; onUse: () => void }) {
             aria-label="Prompt name"
             value={name}
             autoFocus
-            onChange={(e) => {
-              setName(e.target.value)
-            }}
+            onChange={(e) => setName(e.target.value)}
           />
           <button type="submit" className="btn small" disabled={!name.trim() || rename.isPending}>
             Rename
@@ -91,9 +87,7 @@ function PromptRow({ p, onUse }: { p: SavedPrompt; onUse: () => void }) {
           type="button"
           className={expanded ? 'prompt-toggle expanded' : 'prompt-toggle'}
           aria-expanded={expanded}
-          onClick={() => {
-            setExpanded(!expanded)
-          }}
+          onClick={() => setExpanded(!expanded)}
         >
           <SavedPromptText p={p} />
         </button>
@@ -105,19 +99,11 @@ function PromptRow({ p, onUse }: { p: SavedPrompt; onUse: () => void }) {
             type="button"
             className="btn danger small"
             disabled={remove.isPending}
-            onClick={() => {
-              remove.mutate()
-            }}
+            onClick={() => remove.mutate()}
           >
             Delete
           </button>
-          <button
-            type="button"
-            className="btn quiet small"
-            onClick={() => {
-              setMode('view')
-            }}
-          >
+          <button type="button" className="btn quiet small" onClick={() => setMode('view')}>
             Cancel
           </button>
         </div>
@@ -130,9 +116,7 @@ function PromptRow({ p, onUse }: { p: SavedPrompt; onUse: () => void }) {
             type="button"
             className="btn quiet small"
             aria-label={`Rename ${p.name}`}
-            onClick={() => {
-              setMode('rename')
-            }}
+            onClick={() => setMode('rename')}
           >
             Rename
           </button>
@@ -140,9 +124,7 @@ function PromptRow({ p, onUse }: { p: SavedPrompt; onUse: () => void }) {
             type="button"
             className="btn quiet small"
             aria-label={`Delete ${p.name}`}
-            onClick={() => {
-              setMode('delete')
-            }}
+            onClick={() => setMode('delete')}
           >
             Delete
           </button>

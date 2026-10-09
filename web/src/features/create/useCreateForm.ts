@@ -111,9 +111,7 @@ export function useCreateForm(familyId: string, onFamily: (id: string) => void) 
     seedMode,
   ])
 
-  useAutoDismiss(queued, QUEUED_MS, () => {
-    setQueued(null)
-  })
+  useAutoDismiss(queued, QUEUED_MS, () => setQueued(null))
 
   const canvas = params ? { w: Number(params.width), h: Number(params.height) } : null
   const place =
@@ -153,9 +151,7 @@ export function useCreateForm(familyId: string, onFamily: (id: string) => void) 
       })
       return api.submitJob(job.spec, batchCount, job.seedMode)
     },
-    onSuccess: () => {
-      setQueued(batchCount)
-    },
+    onSuccess: () => setQueued(batchCount),
   })
 
   if (families.isPending || schema.isPending || !params)
@@ -215,9 +211,7 @@ export function useCreateForm(familyId: string, onFamily: (id: string) => void) 
         setEnd(null)
         setEndGone(false)
       },
-      markGone: () => {
-        setEndGone(true)
-      },
+      markGone: () => setEndGone(true),
     },
     loras,
     setLoras,
@@ -272,14 +266,12 @@ export function useCreateForm(familyId: string, onFamily: (id: string) => void) 
     },
 
     /** Adding a LoRA that's already in the form does nothing. */
-    addLora: (entry: LoraEntry) => {
-      setLoras((ls) => (ls.some((l) => sameLora(l, entry)) ? ls : [...ls, entry]))
-    },
+    addLora: (entry: LoraEntry) =>
+      setLoras((ls) => (ls.some((l) => sameLora(l, entry)) ? ls : [...ls, entry])),
 
     /** Drop the LoRAs whose files were deleted from Drive. */
-    dropLoras: (paths: string[]) => {
-      setLoras((ls) => ls.filter((l) => !loraPaths(l).some((p) => paths.includes(p))))
-    },
+    dropLoras: (paths: string[]) =>
+      setLoras((ls) => ls.filter((l) => !loraPaths(l).some((p) => paths.includes(p)))),
 
     /** Image ⇄ Video: the first family making the other media takes the prompt along. */
     chooseMedia: (media: Family['media']) => {

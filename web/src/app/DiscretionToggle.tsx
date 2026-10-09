@@ -10,9 +10,7 @@ export function DiscretionToggle() {
       className="discretion-toggle"
       aria-label="Cover images"
       aria-pressed={on}
-      onClick={() => {
-        setDiscretion(!on)
-      }}
+      onClick={() => setDiscretion(!on)}
     >
       <svg viewBox="0 0 20 20" aria-hidden>
         {on ? (

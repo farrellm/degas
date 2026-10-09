@@ -14,8 +14,8 @@ const COPY_BYTES_PER_S = 70 * MB
 export function copyEstimate(size: number): string {
   const s = size / COPY_BYTES_PER_S
   if (s < 10) return 'a few seconds to copy'
-  if (s < 120) return `about ${String(Math.round(s / 10) * 10)} s to copy`
-  return `about ${String(Math.round(s / 60))} min to copy`
+  if (s < 120) return `about ${Math.round(s / 10) * 10} s to copy`
+  return `about ${Math.round(s / 60)} min to copy`
 }
 
 /** The variant a model belongs to: the one whose Drive folder holds it. */

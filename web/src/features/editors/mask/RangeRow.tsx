@@ -22,9 +22,7 @@ export function RangeRow({ id, label, min, max, step, value, output, onChange }:
         max={max}
         step={step}
         value={value}
-        onChange={(e) => {
-          onChange(Number(e.target.value))
-        }}
+        onChange={(e) => onChange(Number(e.target.value))}
       />
       <output htmlFor={id}>{output}</output>
     </div>

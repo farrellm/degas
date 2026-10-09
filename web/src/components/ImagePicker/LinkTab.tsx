@@ -26,9 +26,7 @@ export function LinkTab({ onPick }: { onPick: (p: Picked) => void }) {
           autoCapitalize="none"
           autoCorrect="off"
           value={url}
-          onChange={(e) => {
-            setUrl(e.target.value)
-          }}
+          onChange={(e) => setUrl(e.target.value)}
           onKeyDown={(e) => {
             if (e.key !== 'Enter') return
             e.preventDefault()
@@ -43,12 +41,8 @@ export function LinkTab({ onPick }: { onPick: (p: Picked) => void }) {
               setPasteFailed(false)
               navigator.clipboard
                 .readText()
-                .then((text) => {
-                  setUrl(text.trim())
-                })
-                .catch(() => {
-                  setPasteFailed(true)
-                })
+                .then((text) => setUrl(text.trim()))
+                .catch(() => setPasteFailed(true))
             }}
           >
             Paste

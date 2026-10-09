@@ -62,9 +62,7 @@ export function GenerateBar({
               type="button"
               aria-label={`Fewer ${noun(2)}`}
               disabled={batchCount <= 1}
-              onClick={() => {
-                onBatchCount((n) => Math.max(1, n - 1))
-              }}
+              onClick={() => onBatchCount((n) => Math.max(1, n - 1))}
             >
               −
             </button>
@@ -73,9 +71,7 @@ export function GenerateBar({
               type="button"
               aria-label={`More ${noun(2)}`}
               disabled={batchCount >= MAX_BATCH}
-              onClick={() => {
-                onBatchCount((n) => Math.min(MAX_BATCH, n + 1))
-              }}
+              onClick={() => onBatchCount((n) => Math.min(MAX_BATCH, n + 1))}
             >
               +
             </button>
@@ -85,7 +81,7 @@ export function GenerateBar({
               ? 'Queuing…'
               : batchCount === 1
                 ? 'Generate'
-                : `Generate ${String(batchCount)} ${noun(batchCount)}`}
+                : `Generate ${batchCount} ${noun(batchCount)}`}
           </button>
         </div>
       </div>

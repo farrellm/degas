@@ -19,8 +19,8 @@ export function stepSpan(
 export function stepsLabel(start: number, end: number, steps: number): string {
   const span = stepSpan(start, end, steps)
   if (!span) return 'No steps. Widen the range.'
-  if (span.first === span.last) return `Step ${String(span.first)} of ${String(steps)}`
-  return `Steps ${String(span.first)}–${String(span.last)} of ${String(steps)}`
+  if (span.first === span.last) return `Step ${span.first} of ${steps}`
+  return `Steps ${span.first}–${span.last} of ${steps}`
 }
 
 /** A step as a fraction of the run, to the three places a job spec carries. */

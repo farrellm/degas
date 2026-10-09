@@ -103,21 +103,19 @@ export function ImagePromptEditor({
     },
   })
 
-  const putPicture = (picture: Source, at: number) => {
+  const putPicture = (picture: Source, at: number) =>
     onChange((u) => ({
       ...u,
       pictures: [...u.pictures.slice(0, at), picture, ...u.pictures.slice(at + 1)],
     }))
-  }
 
-  const choose = (take: Take) => {
+  const choose = (take: Take) =>
     onChange((u) => {
       const current = adapters.find((a) => a.path === u.model)
       const keep = !!u.model && !!current && !mismatch(current, u.model, take)
       const model = keep ? u.model : (modelFor(adapters, take)?.path ?? u.model)
       return { ...u, take, model, weight: weightFor(take, model) }
     })
-  }
 
   if (overlay === 'image') {
     return (
@@ -130,9 +128,7 @@ export function ImagePromptEditor({
           setCropping({ sha: image.sha256, at: unit.pictures.length })
           setOverlay('crop')
         }}
-        onClose={() => {
-          setOverlay(null)
-        }}
+        onClose={() => setOverlay(null)}
       />
     )
   }
@@ -147,9 +143,7 @@ export function ImagePromptEditor({
           putPicture(toSource(image), cropping.at)
           setOverlay(null)
         }}
-        onCancel={() => {
-          setOverlay(null)
-        }}
+        onCancel={() => setOverlay(null)}
       />
     )
   }
@@ -172,9 +166,7 @@ export function ImagePromptEditor({
           }))
           setOverlay(null)
         }}
-        onCancel={() => {
-          setOverlay(null)
-        }}
+        onCancel={() => setOverlay(null)}
       />
     )
   }
@@ -189,9 +181,7 @@ export function ImagePromptEditor({
           onChange((u) => ({ ...u, model: a.path }))
           setOverlay(null)
         }}
-        onClose={() => {
-          setOverlay(null)
-        }}
+        onClose={() => setOverlay(null)}
       />
     )
   }
@@ -199,9 +189,8 @@ export function ImagePromptEditor({
   const model = adapters.find((a) => a.path === unit.model)
   const warning = unit.model ? mismatch(model, unit.model, unit.take) : null
   const span = { a: Math.round(unit.start * steps), b: Math.round(unit.end * steps) }
-  const setSpan = (a: number, b: number) => {
+  const setSpan = (a: number, b: number) =>
     onChange((u) => ({ ...u, start: stepFraction(a, steps), end: stepFraction(b, steps) }))
-  }
 
   return (
     <Sheet title="Image prompt" onClose={onClose}>
@@ -216,12 +205,10 @@ export function ImagePromptEditor({
             setCropping({ sha: picture.sha, at: i })
             setOverlay('crop')
           }}
-          onRemove={(i) => {
+          onRemove={(i) =>
             onChange((u) => ({ ...u, pictures: u.pictures.filter((_, j) => j !== i) }))
-          }}
-          onAdd={() => {
-            setOverlay('image')
-          }}
+          }
+          onAdd={() => setOverlay('image')}
         />
 
         <TakePicker
@@ -229,9 +216,7 @@ export function ImagePromptEditor({
           options={options}
           faceid={faceid}
           onTake={choose}
-          onDownsample={(downsample) => {
-            onChange((u) => ({ ...u, downsample }))
-          }}
+          onDownsample={(downsample) => onChange((u) => ({ ...u, downsample }))}
         />
 
         <UnitModelRow
@@ -239,9 +224,7 @@ export function ImagePromptEditor({
           placeholder="Choose a model"
           missing={unit.model && !model ? 'Not found in Drive. Pick another model.' : null}
           warning={warning}
-          onPick={() => {
-            setOverlay('model')
-          }}
+          onPick={() => setOverlay('model')}
         />
 
         <SliderRow
@@ -250,21 +233,15 @@ export function ImagePromptEditor({
           min={0}
           max={2}
           value={unit.weight}
-          onChange={(weight) => {
-            onChange((u) => ({ ...u, weight }))
-          }}
+          onChange={(weight) => onChange((u) => ({ ...u, weight }))}
         />
 
         {faceid && (
           <FaceSliders
             structure={unit.structure}
             loraWeight={unit.loraWeight}
-            onStructure={(structure) => {
-              onChange((u) => ({ ...u, structure }))
-            }}
-            onLoraWeight={(loraWeight) => {
-              onChange((u) => ({ ...u, loraWeight }))
-            }}
+            onStructure={(structure) => onChange((u) => ({ ...u, structure }))}
+            onLoraWeight={(loraWeight) => onChange((u) => ({ ...u, loraWeight }))}
           />
         )}
 
@@ -301,12 +278,8 @@ export function ImagePromptEditor({
                 </p>
               )
             }
-            onOpen={() => {
-              openArea.mutate()
-            }}
-            onClear={() => {
-              onChange((u) => ({ ...u, area: null }))
-            }}
+            onOpen={() => openArea.mutate()}
+            onClear={() => onChange((u) => ({ ...u, area: null }))}
           />
         )}
 
@@ -316,9 +289,7 @@ export function ImagePromptEditor({
             label="Show it"
             value={unit.fit}
             options={FITS}
-            onChange={(fit) => {
-              onChange((u) => ({ ...u, fit }))
-            }}
+            onChange={(fit) => onChange((u) => ({ ...u, fit }))}
           />
         )}
 

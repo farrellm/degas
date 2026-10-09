@@ -8,9 +8,7 @@ export function NotificationsSection() {
   const state = useQuery(pushQuery())
   const toggle = useMutation({
     mutationFn: (on: boolean): Promise<PushState> => (on ? enablePush() : disablePush()),
-    onSuccess: (next) => {
-      qc.setQueryData(pushQuery().queryKey, next)
-    },
+    onSuccess: (next) => qc.setQueryData(pushQuery().queryKey, next),
   })
   const s = state.data
   if (!s) return null
@@ -36,9 +34,7 @@ export function NotificationsSection() {
             type="checkbox"
             checked={s === 'on'}
             disabled={toggle.isPending}
-            onChange={(e) => {
-              toggle.mutate(e.target.checked)
-            }}
+            onChange={(e) => toggle.mutate(e.target.checked)}
           />
         </label>
       )}

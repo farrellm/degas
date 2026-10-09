@@ -17,9 +17,7 @@ export function CacheSection({ cache }: { cache: Cache }) {
         <>
           <div>
             <div className="meter" aria-hidden>
-              <span
-                style={{ width: `${String(Math.min(100, (100 * cache.used) / cache.budget))}%` }}
-              />
+              <span style={{ width: `${Math.min(100, (100 * cache.used) / cache.budget)}%` }} />
             </div>
             <p className="bar-note">
               {formatBytes(cache.used)} of {formatBytes(cache.budget)} used. The least recently used

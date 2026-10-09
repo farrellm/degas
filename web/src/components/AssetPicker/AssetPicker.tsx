@@ -104,9 +104,7 @@ export function AssetPicker({
           aria-label={`Search ${noun}`}
           placeholder={`Search ${noun}`}
           value={query}
-          onChange={(e) => {
-            setQuery(e.target.value)
-          }}
+          onChange={(e) => setQuery(e.target.value)}
         />
       )}
       {assets.length === 0 ? (
@@ -169,9 +167,7 @@ export function AssetPicker({
                       type="button"
                       className="btn danger"
                       disabled={going}
-                      onClick={() => {
-                        remove.mutate(a)
-                      }}
+                      onClick={() => remove.mutate(a)}
                     >
                       {going ? 'Deleting…' : 'Delete'}
                     </button>

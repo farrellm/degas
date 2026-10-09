@@ -23,7 +23,7 @@ export function StepRange({
   note = 'Early steps set the layout; ending early leaves the details free.',
 }: StepRangeProps) {
   const n = Math.max(1, steps)
-  const pct = (x: number) => `${String((x / n) * 100)}%`
+  const pct = (x: number) => `${(x / n) * 100}%`
   const span = stepSpan(a / n, b / n, n)
   return (
     <div className="setting stacked step-range" role="group" aria-labelledby="step-range-label">
@@ -46,9 +46,7 @@ export function StepRange({
             max={n}
             step={1}
             value={a}
-            onChange={(e) => {
-              onChange(Math.min(Number(e.target.value), b - 1), b)
-            }}
+            onChange={(e) => onChange(Math.min(Number(e.target.value), b - 1), b)}
           />
           <input
             type="range"
@@ -57,9 +55,7 @@ export function StepRange({
             max={n}
             step={1}
             value={b}
-            onChange={(e) => {
-              onChange(a, Math.max(Number(e.target.value), a + 1))
-            }}
+            onChange={(e) => onChange(a, Math.max(Number(e.target.value), a + 1))}
           />
         </div>
         <p className="row-note">{note}</p>

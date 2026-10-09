@@ -55,13 +55,12 @@ export function ResultsScreen({ onRemix, onCreate }: ResultsScreenProps) {
   })
   const restore = useMutation({
     mutationFn: api.restoreJob,
-    onSuccess: () => {
-      setUndo(null)
-    },
+    onSuccess: () => setUndo(null),
     onSettled: refreshJobs,
   })
   const move = useMutation({
     mutationFn: ({ id, position }: { id: string; position: number }) => api.moveJob(id, position),
+    // A block: what onMutate returns becomes the mutation's context.
     onMutate: ({ id, position }) => {
       qc.setQueryData(queries.jobs().queryKey, (js) => js && reorder(js, id, position))
     },
@@ -82,9 +81,7 @@ export function ResultsScreen({ onRemix, onCreate }: ResultsScreenProps) {
   })
   const clear = useMutation({
     mutationFn: api.clearResults,
-    onSuccess: () => {
-      setOpen(null)
-    },
+    onSuccess: () => setOpen(null),
     onSettled: refreshResultsAnd('jobs'),
   })
   const retry = useMutation({
@@ -99,12 +96,8 @@ export function ResultsScreen({ onRemix, onCreate }: ResultsScreenProps) {
     onSettled: refreshResultsAnd('jobs'),
   })
 
-  const queueDrag = useQueueDrag((id, position) => {
-    move.mutate({ id, position })
-  })
-  useAutoDismiss(undo, UNDO_MS, () => {
-    setUndo(null)
-  })
+  const queueDrag = useQueueDrag((id, position) => move.mutate({ id, position }))
+  useAutoDismiss(undo, UNDO_MS, () => setUndo(null))
 
   if (jobs.isPending || results.isPending) return <p className="loading">Loading…</p>
   if (jobs.error ?? results.error) {
@@ -125,9 +118,7 @@ export function ResultsScreen({ onRemix, onCreate }: ResultsScreenProps) {
         type="button"
         className="link"
         disabled={restore.isPending}
-        onClick={() => {
-          restore.mutate(undo)
-        }}
+        onClick={() => restore.mutate(undo)}
       >
         Undo
       </button>
@@ -163,17 +154,11 @@ export function ResultsScreen({ onRemix, onCreate }: ResultsScreenProps) {
             queued={queueDrag.place(queue, g.id)}
             sectionRef={queueDrag.sectionRef(g.id)}
             onOpen={setOpen}
-            onCancel={(job) => {
-              cancel.mutate(job)
-            }}
+            onCancel={(job) => cancel.mutate(job)}
             retrying={retry.isPending && retry.variables === g.jobId}
-            onRetry={() => {
-              retry.mutate(g.jobId)
-            }}
+            onRetry={() => retry.mutate(g.jobId)}
             deleting={remove.isPending && remove.variables.id === g.id}
-            onDelete={() => {
-              remove.mutate(g)
-            }}
+            onDelete={() => remove.mutate(g)}
           />
         ))}
       </div>
@@ -181,9 +166,7 @@ export function ResultsScreen({ onRemix, onCreate }: ResultsScreenProps) {
         <ClearResults
           pending={clear.isPending}
           error={clear.error?.message}
-          onClear={() => {
-            clear.mutate()
-          }}
+          onClear={() => clear.mutate()}
         />
       )}
       <p className="visually-hidden" id="drag-hint">
@@ -203,12 +186,8 @@ export function ResultsScreen({ onRemix, onCreate }: ResultsScreenProps) {
           items={flat}
           assets={assets.data}
           index={openIndex}
-          onIndex={(i) => {
-            setOpen(flat[i]?.key ?? null)
-          }}
-          onClose={() => {
-            setOpen(null)
-          }}
+          onIndex={(i) => setOpen(flat[i]?.key ?? null)}
+          onClose={() => setOpen(null)}
           sketch={(x) =>
             x.job && (
               <div
@@ -237,12 +216,8 @@ export function ResultsScreen({ onRemix, onCreate }: ResultsScreenProps) {
                 keeping={keep.isPending}
                 extending={extend.isPending}
                 error={(keep.error ?? extend.error)?.message}
-                onKeep={() => {
-                  keep.mutate(r)
-                }}
-                onExtend={() => {
-                  extend.mutate(r)
-                }}
+                onKeep={() => keep.mutate(r)}
+                onExtend={() => extend.mutate(r)}
                 onRemix={onRemix}
               />
             )

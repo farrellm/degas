@@ -41,9 +41,7 @@ export function PromptPictures({
                   type="button"
                   className="btn quiet small"
                   aria-label={`Crop picture ${n}`}
-                  onClick={() => {
-                    onCrop(i)
-                  }}
+                  onClick={() => onCrop(i)}
                 >
                   Crop
                 </button>
@@ -51,9 +49,7 @@ export function PromptPictures({
                   type="button"
                   className="lora-remove"
                   aria-label={`Remove picture ${n}`}
-                  onClick={() => {
-                    onRemove(i)
-                  }}
+                  onClick={() => onRemove(i)}
                 >
                   <svg viewBox="0 0 12 12" aria-hidden>
                     <path d="M2 2l8 8M10 2l-8 8" />

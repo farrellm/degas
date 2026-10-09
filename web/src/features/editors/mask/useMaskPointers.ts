@@ -120,8 +120,6 @@ export function useMaskPointers({
     onPointerMove,
     onPointerUp,
     onPointerCancel: onPointerUp,
-    onPointerLeave: () => {
-      setRing(null)
-    },
+    onPointerLeave: () => setRing(null),
   }
 }

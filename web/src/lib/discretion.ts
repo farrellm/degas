@@ -19,17 +19,15 @@ function emit() {
 /** For `useSyncExternalStore`: see hooks/useDiscretion.ts. */
 export function subscribe(l: () => void) {
   listeners.add(l)
-  return () => {
-    listeners.delete(l)
-  }
+  return () => listeners.delete(l)
 }
 
 /** Tell the service worker, so a notification leaves the prompt out while covered. */
 function tellWorker() {
   if (!('serviceWorker' in navigator)) return
-  void navigator.serviceWorker.ready.then((reg) => {
-    reg.active?.postMessage({ type: 'discretion', on })
-  })
+  void navigator.serviceWorker.ready.then((reg) =>
+    reg.active?.postMessage({ type: 'discretion', on }),
+  )
 }
 
 export const isDiscreet = () => on

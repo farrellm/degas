@@ -6,11 +6,7 @@ export function useAutoDismiss(value: unknown, ms: number, dismiss: () => void) 
 
   useEffect(() => {
     if (value === null) return
-    const id = setTimeout(() => {
-      onDismiss()
-    }, ms)
-    return () => {
-      clearTimeout(id)
-    }
+    const id = setTimeout(() => onDismiss(), ms)
+    return () => clearTimeout(id)
   }, [value, ms])
 }

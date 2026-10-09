@@ -242,11 +242,8 @@ describe('Create', () => {
     expect(posted).toEqual([{ url: 'https://civitai.com/models/100001', hint: 'sdxl' }])
     expect(await within(sheet).findByText('Copying to Drive, 0% of 228 MB')).toBeInTheDocument()
 
-    const send = (data: unknown) => {
-      act(() => {
-        source?.onmessage?.(new MessageEvent('message', { data: JSON.stringify(data) }))
-      })
-    }
+    const send = (data: unknown) =>
+      act(() => source?.onmessage?.(new MessageEvent('message', { data: JSON.stringify(data) })))
     send({ type: 'import', import: { ...job, done: 114_000_000 } })
     expect(await within(sheet).findByText('Copying to Drive, 50% of 228 MB')).toBeInTheDocument()
     assets = [...ASSETS, imported]
@@ -875,9 +872,7 @@ describe('Create', () => {
     await user.click(screen.getByRole('button', { name: 'Count up' }))
     expect(screen.getByLabelText('from')).toHaveValue(1234)
     await user.click(screen.getByRole('button', { name: 'Generate 2 images' }))
-    await vi.waitFor(() => {
-      expect(submitted).toHaveLength(2)
-    })
+    await vi.waitFor(() => expect(submitted).toHaveLength(2))
     expect(submitted[1]?.seed_mode).toBe('increment')
     expect(submitted[1]?.spec.params.seed).toBe(1234)
   })

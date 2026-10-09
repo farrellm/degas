@@ -91,9 +91,7 @@ export function Viewer<T extends ViewerItem>({
       if (e.key === 'ArrowLeft' && index > 0) onIndex(index - 1)
     }
     document.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('keydown', onKey)
-    }
+    return () => document.removeEventListener('keydown', onKey)
   }, [index, items.length, onIndex, close])
 
   const spec = r?.spec
@@ -146,9 +144,7 @@ export function Viewer<T extends ViewerItem>({
             className="btn quiet small"
             aria-label="Previous image"
             disabled={index === 0}
-            onClick={() => {
-              onIndex(index - 1)
-            }}
+            onClick={() => onIndex(index - 1)}
           >
             ‹
           </button>
@@ -157,9 +153,7 @@ export function Viewer<T extends ViewerItem>({
             className="btn quiet small"
             aria-label="Next image"
             disabled={index === items.length - 1}
-            onClick={() => {
-              onIndex(index + 1)
-            }}
+            onClick={() => onIndex(index + 1)}
           >
             ›
           </button>

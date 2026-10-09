@@ -39,9 +39,7 @@ export function SavedPromptsSheet({
           type="button"
           className="btn quiet"
           disabled={!prompt.trim() || isSaved || save.isPending}
-          onClick={() => {
-            save.mutate()
-          }}
+          onClick={() => save.mutate()}
         >
           {isSaved && prompt.trim() ? 'Saved' : 'Save this prompt'}
         </button>
@@ -56,13 +54,7 @@ export function SavedPromptsSheet({
       <ul className="prompt-list">
         {prompts.data?.map((p) => (
           <li key={p.id}>
-            <button
-              type="button"
-              className="prompt-row"
-              onClick={() => {
-                onUse(p)
-              }}
-            >
+            <button type="button" className="prompt-row" onClick={() => onUse(p)}>
               <SavedPromptText p={p} />
             </button>
           </li>

@@ -34,7 +34,7 @@ export type FeedItem = (Result & { key: string; job?: undefined }) | SketchItem
  * Where an item sits in the feed, kept while a sketch turns into its result so the viewer
  * stays on it. A chain has its own group, apart from the job's clips.
  */
-export const slotKey = (jobId: string, item: number) => `${jobId}:${String(item)}`
+export const slotKey = (jobId: string, item: number) => `${jobId}:${item}`
 export const resultKey = (r: Result) => (r.segments ? r.id : slotKey(r.job_id, r.item_index))
 
 export function feedItems(groups: Group[]): FeedItem[] {
@@ -70,7 +70,7 @@ export function feedItems(groups: Group[]): FeedItem[] {
 export function modelLine(spec: Spec, assets: Asset[] | undefined): string {
   const n = spec.loras?.length ?? 0
   const model = assetLabel(spec.model.path, assets)
-  return n === 0 ? model : `${model} + ${String(n)} ${n === 1 ? 'LoRA' : 'LoRAs'}`
+  return n === 0 ? model : `${model} + ${n} ${n === 1 ? 'LoRA' : 'LoRAs'}`
 }
 
 export function buildGroups(jobs: Job[], results: Result[]): Group[] {
@@ -135,7 +135,7 @@ export function deleteQuestion(results: Result[]): string {
   const n = results.length
   if (n === 0) return 'Delete this failed job?'
   const noun = results.every((r) => isVideo(r.media_type)) ? 'clip' : 'image'
-  const what = n === 1 ? `this ${noun}` : `these ${String(n)} ${noun}s`
+  const what = n === 1 ? `this ${noun}` : `these ${n} ${noun}s`
   const kept = results.filter((r) => r.library_id).length
   const note =
     kept === 0 ? '' : kept === n ? ' They stay in the library.' : ' Kept ones stay in the library.'

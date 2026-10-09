@@ -42,9 +42,7 @@ export function ImagePicker({ onUse, onCrop, onClose }: ImagePickerProps) {
                 type="button"
                 role="tab"
                 aria-selected={t === tab}
-                onClick={() => {
-                  setTab(t)
-                }}
+                onClick={() => setTab(t)}
               >
                 {t}
               </button>
@@ -58,13 +56,7 @@ export function ImagePicker({ onUse, onCrop, onClose }: ImagePickerProps) {
           </div>
         </>
       ) : isVideo(picked.media_type) ? (
-        <FramePicker
-          video={picked}
-          onFrame={setPicked}
-          onBack={() => {
-            setPicked(null)
-          }}
-        />
+        <FramePicker video={picked} onFrame={setPicked} onBack={() => setPicked(null)} />
       ) : (
         <div className="picked">
           <div className="picked-image">
@@ -74,33 +66,15 @@ export function ImagePicker({ onUse, onCrop, onClose }: ImagePickerProps) {
             {picked.width && picked.height ? formatSize(picked.width, picked.height) : null}
           </p>
           <div className="picked-actions">
-            <button
-              type="button"
-              className="btn quiet"
-              onClick={() => {
-                setPicked(null)
-              }}
-            >
+            <button type="button" className="btn quiet" onClick={() => setPicked(null)}>
               Back
             </button>
             {onCrop && (
-              <button
-                type="button"
-                className="btn quiet"
-                onClick={() => {
-                  onCrop(picked)
-                }}
-              >
+              <button type="button" className="btn quiet" onClick={() => onCrop(picked)}>
                 Crop
               </button>
             )}
-            <button
-              type="button"
-              className="btn"
-              onClick={() => {
-                onUse(picked)
-              }}
-            >
+            <button type="button" className="btn" onClick={() => onUse(picked)}>
               Use image
             </button>
           </div>

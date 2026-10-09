@@ -233,9 +233,7 @@ describe('Results', () => {
     handle.focus()
     await user.keyboard('{ArrowUp}')
     expect(moves[1]).toEqual({ id: 'b', body: { position: 1 } })
-    await vi.waitFor(() => {
-      expect(regions()).toEqual(['third', 'second', 'first'])
-    })
+    await vi.waitFor(() => expect(regions()).toEqual(['third', 'second', 'first']))
     expect(document.activeElement).toHaveAccessibleName('Queue position 2 of 3')
   })
 
@@ -284,9 +282,9 @@ describe('Results', () => {
     expect(confirm).toHaveTextContent('Delete this image?')
     expect(deleted).toEqual([])
     await user.click(within(confirm).getByRole('button', { name: 'Delete' }))
-    await vi.waitFor(() => {
-      expect(screen.queryByRole('region', { name: 'second' })).not.toBeInTheDocument()
-    })
+    await vi.waitFor(() =>
+      expect(screen.queryByRole('region', { name: 'second' })).not.toBeInTheDocument(),
+    )
     expect(deleted).toEqual(['j2'])
     expect(screen.getAllByRole('region')).toHaveLength(1)
   })

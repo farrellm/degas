@@ -27,21 +27,13 @@ export function BatchSeeds({
       </span>
       <div className="seed-batch-control">
         <div className="seed-modes">
-          <button
-            type="button"
-            aria-pressed={mode === 'random'}
-            onClick={() => {
-              onMode('random')
-            }}
-          >
+          <button type="button" aria-pressed={mode === 'random'} onClick={() => onMode('random')}>
             Random seeds
           </button>
           <button
             type="button"
             aria-pressed={mode === 'increment'}
-            onClick={() => {
-              onMode('increment')
-            }}
+            onClick={() => onMode('increment')}
           >
             Count up
           </button>
@@ -57,9 +49,7 @@ export function BatchSeeds({
               inputMode="numeric"
               placeholder="a random seed"
               value={random ? '' : String(value)}
-              onChange={(e) => {
-                set(e.target.value === '' ? -1 : Number(e.target.value))
-              }}
+              onChange={(e) => set(e.target.value === '' ? -1 : Number(e.target.value))}
             />
           </div>
         )}

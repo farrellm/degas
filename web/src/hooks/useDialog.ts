@@ -8,9 +8,7 @@ import { useEffect, useEffectEvent, useRef } from 'react'
 export function useDialog<T extends HTMLElement = HTMLDivElement>(onEscape?: () => void) {
   const ref = useRef<T>(null)
   // Callers pass a fresh closure each render; re-running the effect would move focus.
-  const escape = useEffectEvent(() => {
-    onEscape?.()
-  })
+  const escape = useEffectEvent(() => onEscape?.())
 
   useEffect(() => {
     const opener = document.activeElement as HTMLElement | null

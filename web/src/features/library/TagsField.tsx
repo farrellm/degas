@@ -32,9 +32,7 @@ export function TagsField({ item }: { item: LibraryItem }) {
         placeholder="Add tags, separated by commas"
         autoCapitalize="none"
         value={text}
-        onChange={(e) => {
-          setText(e.target.value)
-        }}
+        onChange={(e) => setText(e.target.value)}
         onBlur={commit}
         onKeyDown={(e) => {
           if (e.key === 'Enter') e.currentTarget.blur()

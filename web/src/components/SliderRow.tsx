@@ -38,9 +38,7 @@ export function SliderRow({
             max={max}
             step={step}
             value={value}
-            onChange={(e) => {
-              onChange(Number(e.target.value))
-            }}
+            onChange={(e) => onChange(Number(e.target.value))}
           />
           <output htmlFor={id}>{format(value)}</output>
         </div>

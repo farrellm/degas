@@ -31,9 +31,7 @@ export function App() {
       if (target.session) setSessionOpen(true)
     }
     sw?.addEventListener('message', onMessage)
-    return () => {
-      sw?.removeEventListener('message', onMessage)
-    }
+    return () => sw?.removeEventListener('message', onMessage)
   }, [])
 
   const session = useQuery(queries.session())
@@ -46,11 +44,7 @@ export function App() {
         <span className="wordmark">Degas</span>
         <div className="header-actions">
           <DiscretionToggle />
-          <SessionChip
-            onOpen={() => {
-              setSessionOpen(true)
-            }}
-          />
+          <SessionChip onOpen={() => setSessionOpen(true)} />
         </div>
       </header>
       {session.error && (
@@ -63,31 +57,14 @@ export function App() {
       <main className={tab === 'Create' ? 'app-main' : 'app-main results-main'}>
         {tab === 'Create' && (
           <CreateScreen
-            onOpenSession={() => {
-              setSessionOpen(true)
-            }}
-            onShowResults={() => {
-              setTab('Results')
-            }}
+            onOpenSession={() => setSessionOpen(true)}
+            onShowResults={() => setTab('Results')}
           />
         )}
         {tab === 'Results' && (
-          <ResultsScreen
-            onRemix={() => {
-              setTab('Create')
-            }}
-            onCreate={() => {
-              setTab('Create')
-            }}
-          />
+          <ResultsScreen onRemix={() => setTab('Create')} onCreate={() => setTab('Create')} />
         )}
-        {tab === 'Library' && (
-          <LibraryScreen
-            onRemix={() => {
-              setTab('Create')
-            }}
-          />
-        )}
+        {tab === 'Library' && <LibraryScreen onRemix={() => setTab('Create')} />}
       </main>
       <nav className="tabbar" aria-label="Sections">
         {TABS.map((t) => (
@@ -102,20 +79,14 @@ export function App() {
           >
             {t}
             {t === 'Results' && pending ? (
-              <span className="count" aria-label={`${String(pending)} in progress`}>
+              <span className="count" aria-label={`${pending} in progress`}>
                 {pending}
               </span>
             ) : null}
           </button>
         ))}
       </nav>
-      {sessionOpen && (
-        <SessionSheet
-          onClose={() => {
-            setSessionOpen(false)
-          }}
-        />
-      )}
+      {sessionOpen && <SessionSheet onClose={() => setSessionOpen(false)} />}
     </div>
   )
 }

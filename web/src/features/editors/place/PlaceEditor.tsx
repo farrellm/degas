@@ -29,7 +29,7 @@ export function PlaceEditor({ source, canvas, place, onChange }: PlaceEditorProp
   const box = useRef<HTMLDivElement>(null)
   const drag = useRef<{ x: number; y: number; from: Place } | null>(null)
   const shape = { w: source.width, h: source.height }
-  const pct = (v: number, of: number) => `${String((v / of) * 100)}%`
+  const pct = (v: number, of: number) => `${(v / of) * 100}%`
 
   const onPointerDown = (e: PointerEvent<HTMLDivElement>) => {
     e.currentTarget.setPointerCapture(e.pointerId)
@@ -67,8 +67,8 @@ export function PlaceEditor({ source, canvas, place, onChange }: PlaceEditorProp
         ref={box}
         className="place-canvas"
         style={{
-          aspectRatio: `${String(canvas.w)} / ${String(canvas.h)}`,
-          width: `min(100%, calc(50vh * ${String(canvas.w / canvas.h)}))`,
+          aspectRatio: `${canvas.w} / ${canvas.h}`,
+          width: `min(100%, calc(50vh * ${canvas.w / canvas.h}))`,
         }}
       >
         <div
@@ -111,9 +111,7 @@ export function PlaceEditor({ source, canvas, place, onChange }: PlaceEditorProp
             max={1}
             step={0.01}
             value={scaleOf(place, shape, canvas)}
-            onChange={(e) => {
-              onChange(rescale(place, shape, canvas, Number(e.target.value)))
-            }}
+            onChange={(e) => onChange(rescale(place, shape, canvas, Number(e.target.value)))}
           />
           <output htmlFor="place-scale">{Math.round(scaleOf(place, shape, canvas) * 100)}%</output>
         </div>
@@ -126,9 +124,7 @@ export function PlaceEditor({ source, canvas, place, onChange }: PlaceEditorProp
               key={edge.id}
               type="button"
               disabled={to.x === place.x && to.y === place.y}
-              onClick={() => {
-                onChange(to)
-              }}
+              onClick={() => onChange(to)}
             >
               {edge.label}
             </button>

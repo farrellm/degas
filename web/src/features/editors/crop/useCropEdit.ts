@@ -231,9 +231,7 @@ export function useCropEdit({
       if (edit) setEdit({ ...edit, resize })
     },
     /** Zoom by `factor` about a point on the stage. */
-    zoom: (factor: number, cx: number, cy: number) => {
-      moveView((v) => zoomAt(v, factor, cx, cy))
-    },
+    zoom: (factor: number, cx: number, cy: number) => moveView((v) => zoomAt(v, factor, cx, cy)),
     onPointerDown,
     onPointerMove,
     onPointerUp,

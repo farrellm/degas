@@ -75,9 +75,7 @@ export function useSourceInput(draft: Partial<FamilyDraft>) {
     setFit,
     setPlace,
     take,
-    markGone: () => {
-      setGone(true)
-    },
+    markGone: () => setGone(true),
     remove: () => {
       setSource(null)
       setExtends(null)

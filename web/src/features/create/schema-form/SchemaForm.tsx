@@ -38,9 +38,8 @@ export function SchemaForm({
   promptPlaceholder = 'Describe the picture',
   seeds,
 }: SchemaFormProps) {
-  const set = (name: string, value: string | number | boolean | null) => {
+  const set = (name: string, value: string | number | boolean | null) =>
     onChange({ ...values, [name]: value })
-  }
   const entries = Object.entries(schema.properties)
   const prompts = entries.filter(([, p]) => p['x-widget'] === 'prompt')
   const rest = entries.filter(([, p]) => p['x-widget'] !== 'prompt' && p['x-widget'] !== 'aspect')
@@ -82,9 +81,7 @@ export function SchemaForm({
                 rows={i === 0 ? 3 : 1}
                 placeholder={i === 0 ? promptPlaceholder : undefined}
                 value={String(values[name] ?? '')}
-                onChange={(e) => {
-                  set(name, e.target.value)
-                }}
+                onChange={(e) => set(name, e.target.value)}
               />
             </Fragment>
           ))}
@@ -102,9 +99,7 @@ export function SchemaForm({
               Number(schema.properties.width?.default),
               Number(schema.properties.height?.default),
             ]}
-            onChange={(w, h) => {
-              onChange({ ...values, width: w, height: h })
-            }}
+            onChange={(w, h) => onChange({ ...values, width: w, height: h })}
           />
         )}
         {basic.map(render)}

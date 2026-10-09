@@ -30,7 +30,7 @@ export function SketchTile({
         : 'Queued'
   const className = `tile sketch ${cls}`
   const style = { '--p': fraction ?? 0 } as CSSProperties
-  const what = `${job.spec.params.num_frames == null ? 'image' : 'clip'} ${String(item + 1)}`
+  const what = `${job.spec.params.num_frames == null ? 'image' : 'clip'} ${item + 1}`
   const caption = (current || item === 0 || !onOpen) && (
     <span className="sketch-label">{label}</span>
   )

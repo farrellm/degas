@@ -20,9 +20,9 @@ const queryClient = new QueryClient({
 
 // The service worker keeps the app shell offline and shows push notifications.
 if (import.meta.env.PROD && 'serviceWorker' in navigator) {
-  navigator.serviceWorker.register('/sw.js').catch((e: unknown) => {
-    console.warn('service worker registration failed', e)
-  })
+  navigator.serviceWorker
+    .register('/sw.js')
+    .catch((e: unknown) => console.warn('service worker registration failed', e))
 }
 
 installShield()

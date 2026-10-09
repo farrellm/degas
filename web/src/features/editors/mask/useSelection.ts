@@ -94,9 +94,7 @@ export function useSelection({
     pending: select.isPending,
     error: select.error?.message ?? null,
     /** Look again with the taps so far and the description. */
-    find: () => {
-      select.mutate({ points, text: text.trim() })
-    },
+    find: () => select.mutate({ points, text: text.trim() }),
     /** A tap at `x, y` in working px: look again with it added. */
     addPoint: (x: number, y: number, include: boolean) => {
       const next = [...points, { x: x / toWork, y: y / toWork, include }]

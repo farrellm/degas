@@ -82,9 +82,7 @@ export function ControlEditor({
           setCropping(image.sha256)
           setOverlay('crop')
         }}
-        onClose={() => {
-          setOverlay(null)
-        }}
+        onClose={() => setOverlay(null)}
       />
     )
   }
@@ -99,9 +97,7 @@ export function ControlEditor({
           setOverlay(null)
           takePicture(toSource(image), cropping === photo?.sha)
         }}
-        onCancel={() => {
-          setOverlay(null)
-        }}
+        onCancel={() => setOverlay(null)}
       />
     )
   }
@@ -119,9 +115,7 @@ export function ControlEditor({
           clearNote()
           setOverlay(null)
         }}
-        onCancel={() => {
-          setOverlay(null)
-        }}
+        onCancel={() => setOverlay(null)}
       />
     )
   }
@@ -135,9 +129,7 @@ export function ControlEditor({
           onChange((u) => ({ ...u, model: a.path }))
           setOverlay(null)
         }}
-        onClose={() => {
-          setOverlay(null)
-        }}
+        onClose={() => setOverlay(null)}
       />
     )
   }
@@ -149,9 +141,8 @@ export function ControlEditor({
     unit.image.height > 0 &&
     ratioDiffers(unit.image.width / unit.image.height, target.w / target.h)
   const span = { a: Math.round(unit.start * steps), b: Math.round(unit.end * steps) }
-  const setSpan = (a: number, b: number) => {
+  const setSpan = (a: number, b: number) =>
     onChange((u) => ({ ...u, start: stepFraction(a, steps), end: stepFraction(b, steps) }))
-  }
 
   return (
     <Sheet title="ControlNet" onClose={onClose}>
@@ -166,12 +157,8 @@ export function ControlEditor({
             setCropping(sha)
             setOverlay('crop')
           }}
-          onChoose={() => {
-            setOverlay('image')
-          }}
-          onUseSource={(picture) => {
-            takePicture(picture, false)
-          }}
+          onChoose={() => setOverlay('image')}
+          onUseSource={(picture) => takePicture(picture, false)}
         />
 
         <TracePicker
@@ -204,9 +191,7 @@ export function ControlEditor({
           placeholder="Choose a ControlNet"
           missing={unit.model && !model ? 'Not found in Drive. Pick another ControlNet.' : null}
           warning={warning}
-          onPick={() => {
-            setOverlay('model')
-          }}
+          onPick={() => setOverlay('model')}
         />
 
         <SliderRow
@@ -215,9 +200,7 @@ export function ControlEditor({
           min={0}
           max={2}
           value={unit.scale}
-          onChange={(scale) => {
-            onChange((u) => ({ ...u, scale }))
-          }}
+          onChange={(scale) => onChange((u) => ({ ...u, scale }))}
         />
 
         <StepRange steps={steps} a={span.a} b={span.b} onChange={setSpan} />
@@ -228,12 +211,8 @@ export function ControlEditor({
             area={unit.area ? { source: underlay(unit) ?? unit.image.sha, mask: unit.area } : null}
             editText="Edit area"
             emptyText="Limit to an area"
-            onOpen={() => {
-              setOverlay('area')
-            }}
-            onClear={() => {
-              onChange((u) => ({ ...u, area: null }))
-            }}
+            onOpen={() => setOverlay('area')}
+            onClear={() => onChange((u) => ({ ...u, area: null }))}
           />
         )}
 
@@ -241,9 +220,7 @@ export function ControlEditor({
           <FitSelect
             id="control-fit"
             value={unit.fit}
-            onChange={(fit) => {
-              onChange((u) => ({ ...u, fit }))
-            }}
+            onChange={(fit) => onChange((u) => ({ ...u, fit }))}
           />
         )}
 

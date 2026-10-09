@@ -59,7 +59,7 @@ export function ImagePrompts({ id, prompts, steps, assets, shown }: ImagePrompts
                   key={at}
                   type="button"
                   aria-label={
-                    covered ? 'Show image prompt' : `Open picture ${String(at + 1)}, ${unit.model}`
+                    covered ? 'Show image prompt' : `Open picture ${at + 1}, ${unit.model}`
                   }
                   onClick={() => {
                     if (covered) reveal(`prompt:${id}`)
@@ -84,9 +84,7 @@ export function ImagePrompts({ id, prompts, steps, assets, shown }: ImagePrompts
           pictures={pictures}
           index={open}
           onIndex={setOpen}
-          onClose={() => {
-            setOpen(null)
-          }}
+          onClose={() => setOpen(null)}
         />
       )}
     </div>

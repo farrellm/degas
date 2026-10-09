@@ -49,9 +49,7 @@ export function MaskTools({
           type="button"
           className="tool"
           aria-pressed={showBlur}
-          onClick={() => {
-            onShowBlur(!showBlur)
-          }}
+          onClick={() => onShowBlur(!showBlur)}
         >
           Blur
         </button>

@@ -26,9 +26,7 @@ export function ChoiceChips<T extends string | number>({
           type="button"
           aria-pressed={value === o.id}
           disabled={disabled}
-          onClick={() => {
-            onChoose(o.id)
-          }}
+          onClick={() => onChoose(o.id)}
         >
           {o.label}
         </button>

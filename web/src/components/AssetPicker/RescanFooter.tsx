@@ -23,9 +23,7 @@ export function RescanFooter() {
         type="button"
         className="btn quiet small"
         disabled={rescan.isPending || !d?.authorized}
-        onClick={() => {
-          rescan.mutate()
-        }}
+        onClick={() => rescan.mutate()}
       >
         {rescan.isPending ? 'Rescanning…' : 'Rescan Drive'}
       </button>

@@ -12,9 +12,7 @@ export async function blankCanvas(target: Size): Promise<Source> {
     g.fillStyle = '#80868c'
     g.fillRect(0, 0, target.w, target.h)
   }
-  const blob = await new Promise<Blob | null>((resolve) => {
-    canvas.toBlob(resolve, 'image/png')
-  })
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'))
   if (!blob) throw new Error('Couldn’t make a canvas to paint the area on.')
   return toSource(await api.upload(blob))
 }

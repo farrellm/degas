@@ -96,14 +96,12 @@ export function LibraryImages({ q, onRemix }: { q: string; onRemix: () => void }
                 duration={item.duration}
                 style={
                   {
-                    '--ratio': `${String(item.width ?? 1)} / ${String(item.height ?? 1)}`,
+                    '--ratio': `${item.width ?? 1} / ${item.height ?? 1}`,
                   } as CSSProperties
                 }
                 label={`Open ${String(item.config.params.prompt ?? 'image')}`}
                 coveredLabel={`Show ${isVideo(item.media_type) ? 'clip' : 'image'}`}
-                onOpen={() => {
-                  setOpen(item.id)
-                }}
+                onOpen={() => setOpen(item.id)}
               />
             ))}
           </div>
@@ -126,12 +124,8 @@ export function LibraryImages({ q, onRemix }: { q: string; onRemix: () => void }
           items={items}
           assets={assets.data}
           index={openIndex}
-          onIndex={(i) => {
-            setOpen(items[i]?.id ?? null)
-          }}
-          onClose={() => {
-            setOpen(null)
-          }}
+          onIndex={(i) => setOpen(items[i]?.id ?? null)}
+          onClose={() => setOpen(null)}
           extra={(item) => <TagsField key={item.id} item={item} />}
           actions={(item) => (
             <LibraryActions
@@ -144,9 +138,7 @@ export function LibraryImages({ q, onRemix }: { q: string; onRemix: () => void }
               }}
               onExtend={
                 item.kind === 'video' && extendable(item.config.family)
-                  ? () => {
-                      extend.mutate(item.id)
-                    }
+                  ? () => extend.mutate(item.id)
                   : undefined
               }
               onUseAsSource={
@@ -164,9 +156,7 @@ export function LibraryImages({ q, onRemix }: { q: string; onRemix: () => void }
               onDelete={() => {
                 const next = items[openIndex + 1] ?? items[openIndex - 1]
                 remove.mutate(item.id, {
-                  onSuccess: () => {
-                    setOpen(next?.id ?? null)
-                  },
+                  onSuccess: () => setOpen(next?.id ?? null),
                 })
               }}
             />

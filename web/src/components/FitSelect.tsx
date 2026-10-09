@@ -22,13 +22,7 @@ export function FitSelect({
       <label className="setting-label" htmlFor={id}>
         {label}
       </label>
-      <select
-        id={id}
-        value={value}
-        onChange={(e) => {
-          onChange(e.target.value as Fit)
-        }}
-      >
+      <select id={id} value={value} onChange={(e) => onChange(e.target.value as Fit)}>
         {options.map((f) => (
           <option key={f.id} value={f.id}>
             {f.label}

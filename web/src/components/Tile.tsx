@@ -40,9 +40,7 @@ export function Tile({
       style={style}
       aria-label={covered ? coveredLabel : label}
       {...press}
-      onClick={() => {
-        tap(onOpen)
-      }}
+      onClick={() => tap(onOpen)}
     >
       <img src={thumbUrl(blobSha)} alt="" loading="lazy" draggable={false} />
       {isVideo(mediaType) && duration != null && (

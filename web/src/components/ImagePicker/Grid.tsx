@@ -34,12 +34,10 @@ export function Grid({
           blobSha={it.blob_sha}
           mediaType={it.media_type}
           duration={it.duration}
-          style={
-            { '--ratio': `${String(it.width ?? 1)} / ${String(it.height ?? 1)}` } as CSSProperties
-          }
+          style={{ '--ratio': `${it.width ?? 1} / ${it.height ?? 1}` } as CSSProperties}
           label={`${isVideo(it.media_type) ? 'Video' : 'Image'}: ${it.label}`}
           coveredLabel={`Show ${isVideo(it.media_type) ? 'video' : 'image'}`}
-          onOpen={() => {
+          onOpen={() =>
             onPick({
               sha256: it.blob_sha,
               media_type: it.media_type,
@@ -47,7 +45,7 @@ export function Grid({
               height: it.height,
               duration: it.duration,
             })
-          }}
+          }
         />
       ))}
     </div>

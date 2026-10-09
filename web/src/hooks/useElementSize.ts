@@ -17,9 +17,7 @@ export function useElementSize(ref: RefObject<HTMLElement | null>, fallback: Siz
       if (r && r.width > 0 && r.height > 0) setSize({ w: r.width, h: r.height })
     })
     observer.observe(el)
-    return () => {
-      observer.disconnect()
-    }
+    return () => observer.disconnect()
   }, [ref])
 
   return size

@@ -3,9 +3,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { loadDraft, switchFamily } from './draft'
 
 describe('loadDraft', () => {
-  beforeEach(() => {
-    localStorage.clear()
-  })
+  beforeEach(() => localStorage.clear())
 
   it('fills in fields that units saved before they existed lack', () => {
     // A FaceID image prompt from before Phase 12 (no structure or LoRA weight) and a

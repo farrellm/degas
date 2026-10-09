@@ -49,9 +49,7 @@ export function ImagePromptList({
               type="button"
               className="control-open"
               aria-label={`Edit image prompt: ${name}`}
-              onClick={() => {
-                onOpen(unit.key)
-              }}
+              onClick={() => onOpen(unit.key)}
             >
               {first ? (
                 <span className={second ? 'prompt-thumbs stacked' : 'prompt-thumbs'}>

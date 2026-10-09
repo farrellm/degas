@@ -21,14 +21,7 @@ export function CoveredText({
   const covered = useCovered(id)
   if (!covered || shown) return children
   return (
-    <button
-      type="button"
-      className="covered-text"
-      aria-label={label}
-      onClick={() => {
-        reveal(id)
-      }}
-    >
+    <button type="button" className="covered-text" aria-label={label} onClick={() => reveal(id)}>
       <span aria-hidden>{children}</span>
     </button>
   )

@@ -42,9 +42,7 @@ export function FramePicker({
           type="button"
           className="btn quiet"
           disabled={frame.isPending}
-          onClick={() => {
-            frame.mutate('first')
-          }}
+          onClick={() => frame.mutate('first')}
         >
           First frame
         </button>
@@ -52,9 +50,7 @@ export function FramePicker({
           type="button"
           className="btn quiet"
           disabled={frame.isPending}
-          onClick={() => {
-            frame.mutate('last')
-          }}
+          onClick={() => frame.mutate('last')}
         >
           Last frame
         </button>
@@ -62,9 +58,7 @@ export function FramePicker({
           type="button"
           className="btn"
           disabled={frame.isPending}
-          onClick={() => {
-            frame.mutate(ref.current?.currentTime ?? 0)
-          }}
+          onClick={() => frame.mutate(ref.current?.currentTime ?? 0)}
         >
           Use this frame
         </button>

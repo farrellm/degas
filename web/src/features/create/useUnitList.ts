@@ -19,9 +19,8 @@ export function useUnitList<T extends { key: string }>(initial: T[]) {
       setEditing(unit.key)
     },
     /** Change the open unit. */
-    update: (change: (unit: T) => T) => {
-      setUnits((us) => us.map((u) => (u.key === editing ? change(u) : u)))
-    },
+    update: (change: (unit: T) => T) =>
+      setUnits((us) => us.map((u) => (u.key === editing ? change(u) : u))),
     /** Remove the open unit. */
     remove: () => {
       setUnits((us) => us.filter((u) => u.key !== editing))

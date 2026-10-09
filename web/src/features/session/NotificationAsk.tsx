@@ -46,9 +46,7 @@ export function NotificationAsk({ jobs }: { jobs: Job[] | undefined }) {
           type="button"
           className="btn small"
           disabled={allow.isPending}
-          onClick={() => {
-            allow.mutate()
-          }}
+          onClick={() => allow.mutate()}
         >
           Allow
         </button>

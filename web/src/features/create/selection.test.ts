@@ -74,13 +74,12 @@ describe('resolveSelection', () => {
     expect(resolve('wan22').allModes).toEqual(['t2v', 'i2v'])
   })
 
-  it('offers every model of the same media that can do the mode', () => {
+  it('offers every model of the same media that can do the mode', () =>
     expect(resolve('sdxl', '', 'inpaint').pickable?.map((a) => a.path)).toEqual([
       'models/sdxl/a.safetensors',
       'models/sdxl/b.safetensors',
       'models/qwen/edit/e',
-    ])
-  })
+    ]))
 
   it('takes the first model that can do the mode when the chosen one cannot', () => {
     const s = resolve('qwen', 'models/qwen/image/q', 'edit')
@@ -114,17 +113,15 @@ describe('resolveSelection', () => {
   })
 })
 
-describe('variantOf', () => {
+describe('variantOf', () =>
   it("is the model's variant, else the first that does the mode, else the first", () => {
     expect(variantOf(QWEN, 'models/qwen/edit/e', 't2i')?.id).toBe('edit')
     expect(variantOf(QWEN, undefined, 'inpaint')?.id).toBe('edit')
     expect(variantOf(QWEN, undefined, undefined)?.id).toBe('image')
-  })
-})
+  }))
 
-describe('modelForMode', () => {
+describe('modelForMode', () =>
   it("finds a family's first model for a mode", () => {
     expect(modelForMode(ASSETS, QWEN, 'edit')?.path).toBe('models/qwen/edit/e')
     expect(modelForMode(ASSETS, WAN, 't2v')).toBeUndefined()
-  })
-})
+  }))

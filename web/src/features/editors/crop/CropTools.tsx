@@ -69,9 +69,7 @@ export function CropTools({
             className="tool"
             aria-pressed={resize}
             disabled={disabled}
-            onClick={() => {
-              onResize(!resize)
-            }}
+            onClick={() => onResize(!resize)}
           >
             <svg viewBox="0 0 20 20" aria-hidden>
               <path d="M3 8V3h5" />

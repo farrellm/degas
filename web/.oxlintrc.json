@@ -100,7 +100,12 @@
         ],
         "typescript/no-array-delete": "error",
         "typescript/no-base-to-string": "error",
-        "typescript/no-confusing-void-expression": "error",
+        "typescript/no-confusing-void-expression": [
+          "error",
+          {
+            "ignoreArrowShorthand": true
+          }
+        ],
         "typescript/no-deprecated": "error",
         "typescript/no-duplicate-enum-values": "error",
         "typescript/no-duplicate-type-constituents": "error",
@@ -170,7 +175,7 @@
             "allowBoolean": false,
             "allowNever": false,
             "allowNullish": false,
-            "allowNumber": false,
+            "allowNumber": true,
             "allowRegExp": false
           }
         ],

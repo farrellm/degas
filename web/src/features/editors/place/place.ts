@@ -101,6 +101,6 @@ export function margins(p: Place, canvas: Size): string {
     ['top', p.y],
     ['bottom', canvas.h - p.y - p.h],
   ]
-  const parts = sides.filter(([, v]) => v > 0).map(([side, v]) => `+${String(v)} px ${side}`)
+  const parts = sides.filter(([, v]) => v > 0).map(([side, v]) => `+${v} px ${side}`)
   return parts.length ? parts.join(', ') : 'No new pixels'
 }

@@ -20,20 +20,11 @@ export function LibraryScreen({ onRemix }: { onRemix: () => void }) {
           aria-label="Search the library"
           placeholder="Search prompts and tags"
           value={query}
-          onChange={(e) => {
-            setQuery(e.target.value)
-          }}
+          onChange={(e) => setQuery(e.target.value)}
         />
         <div className="segmented" role="group" aria-label="Show">
           {VIEWS.map((v) => (
-            <button
-              key={v}
-              type="button"
-              aria-pressed={v === view}
-              onClick={() => {
-                setView(v)
-              }}
-            >
+            <button key={v} type="button" aria-pressed={v === view} onClick={() => setView(v)}>
               {v}
             </button>
           ))}

@@ -40,9 +40,7 @@ export function ControlList({ units, index, steps, onOpen, onAdd }: ControlListP
               type="button"
               className="control-open"
               aria-label={`Edit ControlNet: ${name}`}
-              onClick={() => {
-                onOpen(unit.key)
-              }}
+              onClick={() => onOpen(unit.key)}
             >
               {unit.image ? (
                 <ControlThumb image={unit.image.sha} area={unit.area} />
