@@ -262,7 +262,7 @@ export function CreateForm({ familyId, onFamily, onOpenSession, onShowResults }:
       {picker === 'end' && (
         <ImagePicker
           onUse={(image) => {
-            lastFrame.take(image)
+            lastFrame.take(image, target)
             closePicker()
           }}
           onCrop={(image) => {
@@ -341,7 +341,7 @@ export function CreateForm({ familyId, onFamily, onOpenSession, onShowResults }:
           refsKeepSize={variant.ref_max_pixels != null}
           onApply={(image, out) => {
             const at = cropping.ref
-            if (cropping.end) lastFrame.take(image)
+            if (cropping.end) lastFrame.take(image, target)
             else if (at === undefined) form.takeSource(image, true, out)
             else form.setRefs([...refs.slice(0, at), toSource(image), ...refs.slice(at + 1)])
             setCropping(null)

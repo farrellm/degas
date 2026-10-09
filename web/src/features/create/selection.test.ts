@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import type { Asset, Family, Variant } from '@/api/types'
 
-import { modelForMode, resolveSelection, variantOf } from './selection'
+import { familyForMode, modelForMode, resolveSelection, variantOf } from './selection'
 
 const variant = (id: string, modes: string[], extra: Partial<Variant> = {}): Variant => ({
   id,
@@ -125,3 +125,43 @@ describe('modelForMode', () =>
     expect(modelForMode(ASSETS, QWEN, 'edit')?.path).toBe('models/qwen/edit/e')
     expect(modelForMode(ASSETS, WAN, 't2v')).toBeUndefined()
   }))
+
+describe('familyForMode', () => {
+  const FLUX = family('flux', [variant('dev', ['t2i', 'inpaint'])])
+  const siblings = [SDXL, QWEN, FLUX]
+  const go = (from: Family, mode: string, recent: string[], assets = ASSETS) =>
+    familyForMode({ family: from, siblings, assets, recent, mode })
+
+  it('stays in this family when it has a model for the mode', () => {
+    expect(go(SDXL, 'inpaint', ['qwen'])).toMatchObject({
+      family: { id: 'sdxl' },
+      model: { path: 'models/sdxl/a.safetensors' },
+    })
+  })
+
+  it('goes to the most recent other family with a model for it', () => {
+    const flux = [...ASSETS, asset('models/flux/f', 'flux')]
+    expect(go(QWEN, 'i2i', [], flux)?.family.id).toBe('sdxl')
+    expect(go(SDXL, 'edit', ['flux', 'qwen'], flux)).toMatchObject({
+      family: { id: 'qwen' },
+      model: { path: 'models/qwen/edit/e' },
+    })
+  })
+
+  it('passes over families without a model, unless none has one', () => {
+    // FLUX does inpaint and is the most recent, but has no model on Drive.
+    expect(
+      go(
+        QWEN,
+        'inpaint',
+        ['flux'],
+        ASSETS.filter((a) => a.family !== 'qwen'),
+      ),
+    ).toMatchObject({
+      family: { id: 'sdxl' },
+    })
+    expect(go(QWEN, 'inpaint', ['flux'], [])).toEqual({ family: QWEN, model: undefined })
+  })
+
+  it('is null for a mode no family does', () => expect(go(SDXL, 't2v', [])).toBeNull())
+})

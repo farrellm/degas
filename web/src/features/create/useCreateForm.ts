@@ -1,26 +1,27 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 
 import { api } from '@/api/client'
 import { queries } from '@/api/queries'
-import type { Asset, BlobInfo, Family, LoraEntry, Params, SavedPrompt, SeedMode } from '@/api/types'
+import type { Asset, BlobInfo, Family, Params, SavedPrompt, SeedMode } from '@/api/types'
 import { defaultPlace, validPlace } from '@/features/editors/place/place'
 import { useAssets } from '@/hooks/useAssets'
 import { useAutoDismiss } from '@/hooks/useAutoDismiss'
 import { variantFor } from '@/lib/assets'
 import { ratioDiffers, type Size } from '@/lib/geometry'
 import { belowGpu } from '@/lib/gpu'
-import type { Source } from '@/lib/image'
-import { loraPaths, sameLora } from '@/lib/loras'
 import { initialParams } from '@/lib/schema'
 import { isActive } from '@/lib/session'
 
 import { unitReady } from './control/control'
-import { loadDraft, saveFamilyDraft, switchFamily } from './draft'
+import { type Carry, loadDraft, switchFamily } from './draft'
 import { promptReady } from './image-prompt/imagePrompt'
 import { insertWord } from './prompt'
-import { modelForMode, resolveSelection } from './selection'
+import { familyForMode, resolveSelection } from './selection'
 import { buildJob } from './spec'
+import { useLastFrame } from './useLastFrame'
+import { useLoras } from './useLoras'
+import { useSaveDraft } from './useSaveDraft'
 import { useSourceInput } from './useSourceInput'
 import { useUnitList } from './useUnitList'
 
@@ -40,13 +41,13 @@ export function useCreateForm(familyId: string, onFamily: (id: string) => void) 
   const [chosenModel, setModel] = useState(draft.model ?? '')
   const [chosenMode, setMode] = useState(draft.mode)
   const [editedParams, setParams] = useState<Params | null>(null)
-  const [loras, setLoras] = useState<LoraEntry[]>(draft.loras ?? [])
+  const lora = useLoras(draft.loras)
+  const { loras } = lora
   const input = useSourceInput(draft)
   const { source, mask, maskFits } = input
   const [refs, setRefs] = useState(draft.refs ?? [])
-  const [end, setEnd] = useState<Source | null>(draft.end ?? null)
-  // The server no longer stores the last frame (its thumbnail failed to load).
-  const [endGone, setEndGone] = useState(false)
+  const lastFrame = useLastFrame(draft.end)
+  const end = lastFrame.image
   const control = useUnitList(draft.control ?? [])
   const prompts = useUnitList(draft.prompts ?? [])
   const [batchCount, setBatchCount] = useState(draft.batchCount)
@@ -70,46 +71,28 @@ export function useCreateForm(familyId: string, onFamily: (id: string) => void) 
   // The form always fits the current variant's schema: defaults, then what was typed.
   const params = schema.data ? initialParams(schema.data, editedParams ?? draft.params) : null
 
-  useEffect(() => {
-    if (!params || !mode) return
-    saveFamilyDraft(
-      familyId,
-      {
-        model,
-        mode,
-        loras,
-        params,
-        source,
-        fit: input.fit,
-        extends: input.extendsClip,
-        mask,
-        place: input.place,
-        end,
-        control: control.units,
-        refs,
-        prompts: prompts.units,
-      },
-      batchCount,
-      seedMode,
-    )
-  }, [
+  useSaveDraft(
     familyId,
-    model,
-    mode,
-    loras,
-    params,
-    source,
-    input.fit,
-    input.extendsClip,
-    mask,
-    input.place,
-    end,
-    control.units,
-    refs,
-    prompts.units,
+    params && mode
+      ? {
+          model,
+          mode,
+          loras,
+          params,
+          source,
+          fit: input.fit,
+          extends: input.extendsClip,
+          mask,
+          place: input.place,
+          end,
+          control: control.units,
+          refs,
+          prompts: prompts.units,
+        }
+      : null,
     batchCount,
     seedMode,
-  ])
+  )
 
   useAutoDismiss(queued, QUEUED_MS, () => setQueued(null))
 
@@ -165,8 +148,14 @@ export function useCreateForm(familyId: string, onFamily: (id: string) => void) 
   const misfit = !!source && ratioDiffers(source.width / source.height, target.w / target.h)
   const sourceUsable = !!source && !input.gone
 
+  /** Hand Create over to another family's form, taking `carry` along. */
+  const leave = (to: string, carry: Carry) => {
+    switchFamily(to, carry)
+    onFamily(to)
+  }
+
   // Changing the model keeps the prompt and images, even over ones the other family had.
-  const carry = (m: string, next?: Asset) => ({
+  const carry = (m: string, next?: Asset): Carry => ({
     prompt: String(params.prompt ?? ''),
     ...('negative_prompt' in params && { negative: String(params.negative_prompt ?? '') }),
     keep: true,
@@ -178,7 +167,7 @@ export function useCreateForm(familyId: string, onFamily: (id: string) => void) 
 
   const pickModel = (path: string) => {
     const next = family && variantFor(path, family)
-    if (next && next.lora_format !== variant?.lora_format) setLoras([])
+    if (next && next.lora_format !== variant?.lora_format) lora.setLoras([])
     setModel(path)
   }
 
@@ -195,26 +184,9 @@ export function useCreateForm(familyId: string, onFamily: (id: string) => void) 
     place,
     refs,
     setRefs,
-    /** First and last frame: the last frame, which is fitted to the output like the source. */
-    lastFrame: {
-      image: end,
-      gone: endGone,
-      take: (image: BlobInfo) => {
-        setEnd({
-          sha: image.sha256,
-          width: image.width ?? target.w,
-          height: image.height ?? target.h,
-        })
-        setEndGone(false)
-      },
-      remove: () => {
-        setEnd(null)
-        setEndGone(false)
-      },
-      markGone: () => setEndGone(true),
-    },
+    lastFrame,
     loras,
-    setLoras,
+    setLoras: lora.setLoras,
     control,
     prompts,
     batchCount,
@@ -248,7 +220,7 @@ export function useCreateForm(familyId: string, onFamily: (id: string) => void) 
       String(params.prompt ?? '').trim() === '' ||
       (needsSource && !sourceUsable) ||
       (mode === 'inpaint' && !maskFits) ||
-      (mode === 'flf2v' && (!end || endGone)) ||
+      (mode === 'flf2v' && (!end || lastFrame.gone)) ||
       (withControl && !control.units.every(unitReady)) ||
       (withPrompts && !prompts.units.every(promptReady)),
 
@@ -265,20 +237,14 @@ export function useCreateForm(familyId: string, onFamily: (id: string) => void) 
       setParams(next)
     },
 
-    /** Adding a LoRA that's already in the form does nothing. */
-    addLora: (entry: LoraEntry) =>
-      setLoras((ls) => (ls.some((l) => sameLora(l, entry)) ? ls : [...ls, entry])),
-
-    /** Drop the LoRAs whose files were deleted from Drive. */
-    dropLoras: (paths: string[]) =>
-      setLoras((ls) => ls.filter((l) => !loraPaths(l).some((p) => paths.includes(p)))),
+    addLora: lora.add,
+    dropLoras: lora.drop,
 
     /** Image ⇄ Video: the first family making the other media takes the prompt along. */
     chooseMedia: (media: Family['media']) => {
       const next = families.data.find((f) => f.media === media)
       if (!next || next.id === familyId) return
-      switchFamily(next.id, { prompt: String(params.prompt ?? '') })
-      onFamily(next.id)
+      leave(next.id, { prompt: String(params.prompt ?? '') })
     },
 
     /**
@@ -288,22 +254,15 @@ export function useCreateForm(familyId: string, onFamily: (id: string) => void) 
     chooseMode: (m: string) => {
       if (!family) return
       const recent = loadDraft().recent
-      const rank = (f: Family) => (f.id === family.id ? -1 : recent.indexOf(f.id) + 1 || Infinity)
-      const candidates = siblings
-        .filter((f) => f.variants.some((v) => v.modes.includes(m)))
-        .sort((a, b) => rank(a) - rank(b))
-      const withModel = candidates.find((f) => modelForMode(assets.data, f, m))
-      const to = withModel ?? candidates[0]
+      const to = familyForMode({ family, siblings, assets: assets.data, recent, mode: m })
       if (!to) return
-      if (to.id !== family.id) {
-        switchFamily(to.id, carry(m, withModel && modelForMode(assets.data, withModel, m)))
-        onFamily(to.id)
+      if (to.family.id !== family.id) {
+        leave(to.family.id, carry(m, to.model))
         return
       }
       setMode(m)
       const current = model ? variantFor(model, family) : undefined
-      const next = modelForMode(assets.data, family, m)
-      if (!current?.modes.includes(m) && next) pickModel(next.path)
+      if (!current?.modes.includes(m) && to.model) pickModel(to.model.path)
     },
 
     /** Letterboxing → outpaint: draw what's beyond the image instead of bars. */
@@ -315,8 +274,7 @@ export function useCreateForm(familyId: string, onFamily: (id: string) => void) 
     /** Choose a model; another family's switches Create to that family. */
     chooseModel: (asset: Asset) => {
       if (family && asset.family && asset.family !== family.id) {
-        switchFamily(asset.family, carry(mode ?? '', asset))
-        onFamily(asset.family)
+        leave(asset.family, carry(mode ?? '', asset))
         return
       }
       pickModel(asset.path)

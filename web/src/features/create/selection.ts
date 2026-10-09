@@ -36,6 +36,37 @@ export function modelForMode(
   )
 }
 
+/**
+ * Where choosing `mode` takes Create: the first family that has a model for it (this one,
+ * then the others by how recently Create had them, `recent` first), and that model; else the
+ * first family that can do it at all, with no model yet. Null when no family can.
+ */
+export function familyForMode({
+  family,
+  siblings,
+  assets,
+  recent,
+  mode,
+}: {
+  family: Family
+  /** The families making the same media, `family` among them. */
+  siblings: Family[]
+  assets: Asset[] | undefined
+  recent: string[]
+  mode: string
+}): { family: Family; model: Asset | undefined } | null {
+  const rank = (f: Family) => (f.id === family.id ? -1 : recent.indexOf(f.id) + 1 || Infinity)
+  const candidates = siblings
+    .filter((f) => f.variants.some((v) => v.modes.includes(mode)))
+    .sort((a, b) => rank(a) - rank(b))
+  for (const f of candidates) {
+    const model = modelForMode(assets, f, mode)
+    if (model) return { family: f, model }
+  }
+  const first = candidates[0]
+  return first ? { family: first, model: undefined } : null
+}
+
 export interface Selection {
   family: Family | undefined
   /** The families making the same media, this one included. */
