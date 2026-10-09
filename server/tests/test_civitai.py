@@ -24,7 +24,7 @@ from degas.drive import parse_sidecar
 from degas.families import FAMILIES
 from degas.rclone import AsyncRclone, RcloneError
 
-from .conftest import Harness
+from .conftest import Harness, services
 
 WEIGHTS = b"safetensors weights " * 1000
 SHA = hashlib.sha256(WEIGHTS).hexdigest()
@@ -604,7 +604,7 @@ def test_api_import_refuses_while_one_runs(
 
 def test_api_delete_lora(civitai_client: tuple[TestClient, FakeCivitai, FakeRemote]) -> None:
     client, _fake, remote = civitai_client
-    svc = client.app.state.services  # type: ignore[attr-defined]
+    svc = services(client)
     base = "gdrive:degas/loras/wan22"
     for name in [
         "motion_high_noise.safetensors",

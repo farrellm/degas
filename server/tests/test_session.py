@@ -7,6 +7,8 @@ from typing import Any
 from degas.colab.session import BOOTSTRAP
 from degas.db import now
 
+from .conftest import some
+
 
 async def until(fn: Callable[[], Any], timeout: float = 5) -> None:
     async with asyncio.timeout(timeout):
@@ -50,7 +52,7 @@ async def test_recover_when_vm_is_gone(harness: Any) -> None:
     await svc.start()
     try:
         assert svc.sessions.state == "stopped"
-        assert svc.db.get_job(job["id"])["status"] == "error"  # type: ignore[index]
+        assert some(svc.db.get_job(job["id"]))["status"] == "error"
         assert harness.tunnels == []
     finally:
         await svc.stop()

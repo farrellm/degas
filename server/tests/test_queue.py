@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 from degas.notices import idle_notice, job_notice, ready_notice
 from degas.push import application_server_key, load_vapid
 
-from .conftest import FastIntervals
+from .conftest import FastIntervals, services
 from .test_api import SPEC, job, session_state, wait_for
 from .test_session import until
 
@@ -85,7 +85,7 @@ def test_push_key_and_subscriptions(client: TestClient) -> None:
 
     assert client.post("/api/push/subscribe", json=SUB).status_code == 201
     assert client.post("/api/push/subscribe", json=SUB).status_code == 201  # idempotent
-    db = client.app.state.services.db  # type: ignore[attr-defined]
+    db = services(client).db
     (stored,) = db.list_push_subscriptions()
     assert stored["keys"] == SUB["keys"]
 
@@ -116,7 +116,7 @@ def test_finished_job_sends_a_notification(client: TestClient, harness: Any) -> 
     harness.push_status = 410
     second = submit(client, "b")
     wait_for(lambda: job(client, second)["status"] == "done")
-    db = client.app.state.services.db  # type: ignore[attr-defined]
+    db = services(client).db
     wait_for(lambda: db.list_push_subscriptions() == [])
 
 
@@ -190,7 +190,7 @@ def results(client: TestClient, job_id: str) -> list[dict[str, Any]]:
 def test_a_dropped_tunnel_fails_no_jobs(client: TestClient, harness: Any) -> None:
     """The SSH tunnel dies mid-job while the worker carries on: the running job is followed
     again once the session reconnects, and the queued ones still run."""
-    sessions = client.app.state.services.sessions  # type: ignore[attr-defined]
+    sessions = services(client).sessions
     harness.runner.gate = threading.Event()
     client.post("/api/session", json={"gpu": "L4"})
     a, b = submit(client, "a", n=2), submit(client, "b")
@@ -206,7 +206,7 @@ def test_a_dropped_tunnel_fails_no_jobs(client: TestClient, harness: Any) -> Non
 
 
 def test_a_job_waits_for_the_tunnel_to_start(client: TestClient, harness: Any) -> None:
-    sessions = client.app.state.services.sessions  # type: ignore[attr-defined]
+    sessions = services(client).sessions
     client.post("/api/session", json={"gpu": "L4"})
     wait_for(lambda: session_state(client) == "ready")
     sessions.iv = NoHealth()
@@ -255,7 +255,7 @@ def test_retry_keeps_what_finished(client: TestClient, harness: Any) -> None:
     client.post("/api/session", json={"gpu": "L4"})
     a = submit(client, "a", n=3)
     failed = wait_for(lambda: (j := job(client, a))["status"] == "error" and j)
-    db = client.app.state.services.db  # type: ignore[attr-defined]
+    db = services(client).db
     db.insert_result(a, 1, "0" * 64, "image/png", failed["seeds"][1], 8, 8)
 
     b = client.post(f"/api/jobs/{a}/retry").json()

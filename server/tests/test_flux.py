@@ -11,7 +11,7 @@ from degas.families.flux1 import Flux1
 from degas.families.klein import Klein
 from degas.families.qwen21 import Qwen21
 
-from .conftest import FLUX1, KLEIN, Harness
+from .conftest import FLUX1, KLEIN, Harness, services
 from .test_video import image, run, upload
 
 FLUX: dict[str, Any] = {
@@ -122,7 +122,7 @@ def test_a_flux_job_names_the_base_folder(client: TestClient, harness: Harness) 
 
 
 def test_a_flux_job_without_the_base_folder_is_refused(client: TestClient) -> None:
-    client.app.state.services.db.replace_assets([FLUX1])  # type: ignore[attr-defined]
+    services(client).db.replace_assets([FLUX1])
     resp = client.post("/api/jobs", json={"spec": FLUX})
     assert resp.status_code == 400
     assert "degas/configs/flux1/FLUX.1-dev/" in resp.json()["detail"]

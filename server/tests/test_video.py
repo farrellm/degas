@@ -10,7 +10,7 @@ from degas.families import FAMILIES
 from degas.library import staged_blobs
 from degas.media import MediaError, apply_ops, fit_ops, validate_ops
 
-from .conftest import WAN_5B, WAN_I2V, Harness
+from .conftest import WAN_5B, WAN_I2V, Harness, services
 from .test_api import job, wait_for
 
 WAN_SPEC: dict[str, Any] = {
@@ -225,7 +225,7 @@ def test_extend_a_clip_and_stitch_the_chain(client: TestClient, harness: Harness
 
     # A14B clips continue with the I2V model from the index.
     a14b = {**spec, "variant": "t2v-a14b", "model": {"path": "models/wan22/t2v-a14b/x"}}
-    svc = client.app.state.services  # type: ignore[attr-defined]
+    svc = services(client)
     ext = client.portal.call(svc.inputs.extend, FAMILIES["wan22"], clip["blob_sha"], a14b)  # type: ignore[attr-defined]
     assert ext["spec"]["variant"] == "i2v-a14b"
     assert ext["spec"]["model"]["path"].startswith("models/wan22/i2v-a14b/")

@@ -6,10 +6,11 @@ import stat
 import threading
 from collections.abc import AsyncIterator, Callable, Iterator
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import httpx2
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from PIL import Image
 
@@ -424,6 +425,18 @@ class Harness:
         return self.build
 
 
+def services(client: TestClient) -> Services:
+    """The services of the app `client` drives."""
+    svc: Services = cast("FastAPI", client.app).state.services
+    return svc
+
+
+def some[T](value: T | None) -> T:
+    """`value`, which the test expects to be there."""
+    assert value is not None
+    return value
+
+
 @pytest.fixture
 def harness(tmp_path: Path) -> Harness:
     return Harness(tmp_path)
@@ -590,7 +603,7 @@ WAN_I2V = {
 def client(harness: Harness) -> Iterator[TestClient]:
     app = create_app(harness.config, harness.services_factory())
     with TestClient(app) as c:
-        c.app.state.services.db.replace_assets(  # type: ignore[attr-defined]
+        services(c).db.replace_assets(
             [
                 harness.model,
                 LORA,

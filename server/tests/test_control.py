@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from degas.families.base import SpecError, spec_assets
 from degas.families.sdxl import Sdxl
 
-from .conftest import CONFIGS, CONTROLNET, MODEL, VAE, Harness
+from .conftest import CONFIGS, CONTROLNET, MODEL, VAE, Harness, services
 from .test_api import session_state, wait_for
 from .test_inpaint import mask_png, put_mask, read
 from .test_video import image, results, run, upload
@@ -145,7 +145,7 @@ def test_control_is_checked_before_queueing(client: TestClient) -> None:
 
 
 def test_controlnets_are_fetched_with_the_model(client: TestClient, harness: Harness) -> None:
-    svc = client.app.state.services  # type: ignore[attr-defined]
+    svc = services(client)
     svc.db.replace_assets([{**MODEL, "size": 10}, {**CONTROLNET, "size": 10}, VAE, *CONFIGS])
     harness.worker_app.state.cache.set_token("tok", "2026-09-27T12:00:00Z", "degas")
     harness.runner.fetch = True

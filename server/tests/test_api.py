@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from degas import __version__
 from degas.colab.worker_client import WorkerClient
 
-from .conftest import CONFIGS, LORA, MODEL, VAE
+from .conftest import CONFIGS, LORA, MODEL, VAE, services
 
 
 def wait_for(fn: Callable[[], Any], timeout: float = 5) -> Any:
@@ -140,7 +140,7 @@ def test_job_error_is_reported(client: TestClient, harness: Any) -> None:
     done = wait_for(lambda: (j := job(client, submitted["id"]))["status"] == "error" and j)
     assert done["error"] == "CUDA out of memory"
     assert "log" not in done
-    stored = client.app.state.services.db.get_job(submitted["id"])  # type: ignore[attr-defined]
+    stored = services(client).db.get_job(submitted["id"])
     assert stored["log"].startswith("Traceback")
     assert "RuntimeError: CUDA out of memory" in stored["log"]
     wait_for(lambda: session_state(client) == "ready")
@@ -188,13 +188,13 @@ def test_sdxl_uses_the_fp16_fix_vae_unless_asked(client: TestClient) -> None:
     bad = {**SPEC, "params": {**SPEC["params"], "vae_fp32": 1}}
     assert client.post("/api/jobs", json={"spec": bad}).status_code == 400
 
-    client.app.state.services.db.replace_assets([MODEL, *CONFIGS])  # type: ignore[attr-defined]
+    services(client).db.replace_assets([MODEL, *CONFIGS])
     resp = client.post("/api/jobs", json={"spec": SPEC})
     assert resp.status_code == 400
     assert "fp16-fix VAE isn't in Drive" in resp.json()["detail"]
     assert client.post("/api/jobs", json={"spec": fp32}).status_code == 201
 
-    client.app.state.services.db.replace_assets([MODEL, VAE])  # type: ignore[attr-defined]
+    services(client).db.replace_assets([MODEL, VAE])
     resp = client.post("/api/jobs", json={"spec": SPEC})
     assert resp.status_code == 400
     assert (
@@ -213,7 +213,7 @@ def test_next_jobs_assets_are_prefetched(
         return real_fetch(self, assets)
 
     monkeypatch.setattr(WorkerClient, "fetch_assets", spy)
-    svc = client.app.state.services  # type: ignore[attr-defined]
+    svc = services(client)
     other = {**MODEL, "path": "models/sdxl/other.safetensors", "drive_file_id": "f2", "size": 10}
     svc.db.replace_assets([{**MODEL, "size": 10}, other, LORA, VAE, *CONFIGS])
     harness.worker_app.state.cache.set_token("tok", "2026-09-27T12:00:00Z", "degas")

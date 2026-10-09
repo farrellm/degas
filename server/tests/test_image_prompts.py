@@ -21,6 +21,7 @@ from .conftest import (
     REDUX,
     VAE,
     Harness,
+    services,
 )
 from .test_api import session_state, wait_for
 from .test_inpaint import mask_png, put_mask, read
@@ -172,7 +173,7 @@ def test_image_prompts_are_checked_before_queueing(client: TestClient) -> None:
     assert resp.json()["detail"] == (
         "Image prompt model ip_adapters/sdxl/gone.safetensors is not in the Drive index"
     )
-    svc = client.app.state.services  # type: ignore[attr-defined]
+    svc = services(client)
     svc.db.replace_assets([MODEL, VAE, *CONFIGS, IP_ADAPTER])
     resp = client.post(
         "/api/jobs", json={"spec": {**SPEC, "image_prompts": [unit(images=[picture])]}}
@@ -200,7 +201,7 @@ def test_an_empty_area_is_refused(client: TestClient) -> None:
 
 
 def test_adapters_are_fetched_with_the_model(client: TestClient, harness: Harness) -> None:
-    svc = client.app.state.services  # type: ignore[attr-defined]
+    svc = services(client)
     svc.db.replace_assets(
         [
             {**MODEL, "size": 10},
@@ -255,7 +256,7 @@ def test_a_faceid_job_fetches_insightface(client: TestClient, harness: Harness) 
     picture = f"sha256:{upload(client, image(512, 512))['sha256']}"
     done = run(client, {**SPEC, "image_prompts": [faceid(images=[picture])]})
     assert done["spec"]["face_detector"]["size"] == INSIGHTFACE["size"]
-    svc = client.app.state.services  # type: ignore[attr-defined]
+    svc = services(client)
     svc.db.replace_assets([MODEL, VAE, *CONFIGS, FACEID, IMAGE_ENCODER])
     resp = client.post(
         "/api/jobs", json={"spec": {**SPEC, "image_prompts": [faceid(images=[picture])]}}

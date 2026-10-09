@@ -10,7 +10,7 @@ from degas.families.base import SpecError
 from degas.families.ltx2 import Ltx2
 from degas.library import input_blobs, staged_blobs
 
-from .conftest import LTX25, Harness
+from .conftest import LTX25, Harness, services
 from .test_video import image, results, run, upload
 
 LTX_SPEC: dict[str, Any] = {
@@ -24,7 +24,7 @@ LTX23 = {**LTX_SPEC, "variant": "ltx23", "model": {"path": "models/ltx2/ltx23/LT
 
 
 def probe(client: TestClient, sha: str) -> dict[str, Any]:
-    svc = client.app.state.services  # type: ignore[attr-defined]
+    svc = services(client)
     info = asyncio.run(media.probe(svc.blobs.path(sha)))
     assert info is not None
     return info

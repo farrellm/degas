@@ -12,6 +12,8 @@ from degas.families.base import SpecError, spec_assets
 from degas.families.sdxl import Sdxl
 from degas.families.wan22 import Wan22
 
+from .conftest import some
+
 # -- colab CLI -----------------------------------------------------------------------------
 
 FAKE_COLAB = """#!/bin/sh
@@ -174,7 +176,7 @@ def test_database_migrates_old_asset_tables(tmp_path: Path) -> None:
     conn.close()
     db = Database(tmp_path / "db.sqlite")
     db.replace_assets([{"path": "p", "kind": "lora", "drive_file_id": "a", "sidecar_rev": "r"}])
-    assert db.get_asset("p")["sidecar_rev"] == "r"  # type: ignore[index]
+    assert some(db.get_asset("p"))["sidecar_rev"] == "r"
     db.close()
 
 
@@ -189,7 +191,7 @@ def test_database_upgrades_sdxl_schedules(tmp_path: Path) -> None:
     ids = [db.insert_job(spec, [1])["id"] for spec in specs]
     db.close()
     db = Database(tmp_path / "db.sqlite")
-    params = [db.get_job(id_)["spec"]["params"] for id_ in ids]  # type: ignore[index]
+    params = [some(db.get_job(id_))["spec"]["params"] for id_ in ids]
     assert params == [
         {"scheduler": "dpmpp_2m", "schedule": "karras"},
         {"scheduler": "euler_a", "schedule": "default"},
@@ -221,8 +223,8 @@ def test_results_expire_when_their_session_ends(tmp_path: Path) -> None:
     result = db.insert_result(job["id"], 0, "a" * 64, "image/png", 1, 8, 8)
     assert result["expires_at"] is None
     db.end_session(session["id"], "stopped")
-    expires = db.get_result(result["id"])["expires_at"]  # type: ignore[index]
-    assert expires > db.get_session(session["id"])["ended_at"]  # type: ignore[index]
+    expires = some(db.get_result(result["id"]))["expires_at"]
+    assert expires > some(db.get_session(session["id"]))["ended_at"]
     db.close()
 
 
