@@ -33,7 +33,8 @@ from degas.families.base import GPUS
 log = logging.getLogger(__name__)
 
 REMOTE = "/content/degas"
-WORKER_MATCH = "degas_worker.app:app"
+WORKER_APP = "degas_worker.app:create_app"  # an app factory: uvicorn --factory
+WORKER_MATCH = "degas_worker.app:"  # finds the worker in `ps`, however it was started
 STARTED_MARKER = "@@degas-worker-started"
 PORT_WAIT_S = 90  # how long a new worker waits for the old one's port
 RCLONE_URL = "https://downloads.rclone.org/rclone-current-linux-amd64.zip"
@@ -83,8 +84,8 @@ if _port_free():
                 PYTORCH_CUDA_ALLOC_CONF="expandable_segments:True")
     _log = open("{REMOTE}/worker.log", "ab")
     _p = subprocess.Popen(
-        [sys.executable, "-m", "uvicorn", {WORKER_MATCH!r}, "--host", "127.0.0.1",
-         "--port", "{{port}}"],
+        [sys.executable, "-m", "uvicorn", "--factory", {WORKER_APP!r}, "--host",
+         "127.0.0.1", "--port", "{{port}}"],
         env=_env, cwd="{REMOTE}", stdin=subprocess.DEVNULL, stdout=_log,
         stderr=subprocess.STDOUT, start_new_session=True)
     print("{STARTED_MARKER}", _p.pid)

@@ -57,6 +57,3 @@ def create_app(
 
 def _terminate() -> None:
     os.kill(os.getpid(), signal.SIGTERM)  # uvicorn shuts down gracefully
-
-
-app = create_app()
