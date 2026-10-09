@@ -1,4 +1,4 @@
-import { type RefObject, useCallback, useEffect, useRef, useState } from 'react'
+import { type RefObject, useCallback, useEffect, useEffectEvent, useRef, useState } from 'react'
 
 import type { Size } from '@/lib/geometry'
 
@@ -74,10 +74,13 @@ export function useMaskCanvas({
     recomposite()
   }, [displayRef, hatchGap, recomposite])
 
+  // Load once, at open: the mask and size the editor opened with.
+  const loadBase = useEffectEvent(() => (mask ? loadLayer(mask, work) : null))
   useEffect(() => {
-    if (!mask) return
+    const loading = loadBase()
+    if (!loading) return
     let live = true
-    loadLayer(mask, work)
+    loading
       .then((layer) => {
         if (!live) return
         base.current = layer
@@ -89,7 +92,6 @@ export function useMaskCanvas({
     return () => {
       live = false
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- load once, at open
   }, [])
 
   useEffect(() => {

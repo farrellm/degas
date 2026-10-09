@@ -1,5 +1,5 @@
 import { useMutation } from '@tanstack/react-query'
-import { useEffect, useState } from 'react'
+import { useEffect, useEffectEvent, useState } from 'react'
 
 import { api } from '@/api/client'
 import type { Asset, Params, TraceId } from '@/api/types'
@@ -113,15 +113,17 @@ export function useControlTrace({
 
   // Edges: trace again once the Detail slider rests.
   const cannyTrace = unit.trace?.id === 'canny' ? unit.trace : null
+  const retrace = useEffectEvent((from: Source) => {
+    trace.mutate({ id: 'canny', params: edgeParams(detail), from })
+  })
   useEffect(() => {
     if (!cannyTrace || edgeDetail(cannyTrace.params) === detail) return
     const id = setTimeout(() => {
-      trace.mutate({ id: 'canny', params: edgeParams(detail), from: cannyTrace.from })
+      retrace(cannyTrace.from)
     }, RETRACE_MS)
     return () => {
       clearTimeout(id)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- the mutation object changes each render
   }, [detail, cannyTrace])
 
   const takePicture = (photo: Source, cropped: boolean) => {
