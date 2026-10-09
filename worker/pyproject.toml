@@ -5,8 +5,12 @@ description = "Degas GPU worker: HTTP server running on the Colab VM"
 # Must match the Colab runtime's Python (3.13 as of 2026-09).
 requires-python = ">=3.13,<3.14"
 # Keep this minimal: the Colab image already provides these (see docs/phase0-findings.md).
+# The VM never installs this package (the bundle is a tarball of the source), so these only
+# describe what the code imports, for local installs and tests.
 dependencies = [
     "fastapi>=0.141",
+    "pillow>=12",
+    "pydantic>=2.11",
     "uvicorn>=0.52",
 ]
 
@@ -19,6 +23,9 @@ gpu = [
     "accelerate>=1.14",
     "peft>=0.20",
     "safetensors>=0.8",
+    "numpy>=2",
+    "opencv-python-headless>=4.10",
+    "onnxruntime>=1.20",
 ]
 
 [build-system]

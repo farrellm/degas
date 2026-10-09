@@ -7,8 +7,11 @@ dependencies = [
     "degas-worker",  # the worker bundle is built from the installed package
     "fastapi>=0.141",
     "httpx2>=2.13",
+    "cryptography>=45",
     "pillow>=12",
     "pillow-heif>=1",
+    "py-vapid>=1.9",
+    "pydantic>=2.11",
     "pywebpush>=2.5.0",
     "pyyaml>=6",
     "uvicorn[standard]>=0.54",

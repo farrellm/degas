@@ -13,7 +13,7 @@ from typing import Any, NotRequired, TypedDict, cast
 from urllib.parse import unquote_to_bytes
 
 import httpx2
-from starlette.concurrency import run_in_threadpool
+from fastapi.concurrency import run_in_threadpool
 
 from degas import media
 from degas.blobs import THUMB_SIZE, BlobStore, ref, unref

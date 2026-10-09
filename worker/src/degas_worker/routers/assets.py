@@ -5,9 +5,9 @@ from collections.abc import AsyncIterator
 from typing import Any
 
 from fastapi import APIRouter
+from fastapi.concurrency import run_in_threadpool
 from fastapi.sse import EventSourceResponse
 from pydantic import BaseModel
-from starlette.concurrency import run_in_threadpool
 
 from degas_worker.state import Worker
 
