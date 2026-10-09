@@ -30,7 +30,8 @@ export function mockApi(overrides: Record<string, Handler> = {}) {
   const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
     const href = input instanceof Request ? input.url : input.toString()
     const url = new URL(href, 'http://localhost')
-    const key = `${init?.method ?? 'GET'} ${url.pathname}`
+    // Decoded, as the server routes it.
+    const key = `${init?.method ?? 'GET'} ${decodeURIComponent(url.pathname)}`
     const handler = routes[key]
     if (!handler) return Promise.resolve(new Response(null, { status: 404 }))
     return Promise.resolve(Response.json(handler(init)))

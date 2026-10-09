@@ -33,9 +33,9 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+async function request<T>(method: string, route: string, body?: unknown): Promise<T> {
   const raw = body instanceof Blob
-  const res = await fetch(`/api${path}`, {
+  const res = await fetch(`/api${route}`, {
     method,
     headers:
       body === undefined
@@ -59,18 +59,12 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 export const api = {
   families: () => request<Family[]>('GET', '/families'),
   schema: (family: string, variant: string, mode: string) =>
-    request<ParamSchema>(
-      'GET',
-      `/families/${family}/schema?variant=${encodeURIComponent(variant)}&mode=${encodeURIComponent(mode)}`,
-    ),
+    request<ParamSchema>('GET', path`/families/${family}/schema` + query({ variant, mode })),
   assets: () => request<Asset[]>('GET', '/assets'),
   rescan: () => request<{ count: number; indexed_at: string }>('POST', '/assets/rescan'),
   /** Move LoRA files (both halves of a pair together) to Drive's trash. */
   deleteLoras: (paths: string[]) =>
-    request<{ deleted: string[] }>(
-      'DELETE',
-      `/assets?${paths.map((p) => `path=${encodeURIComponent(p)}`).join('&')}`,
-    ),
+    request<{ deleted: string[] }>('DELETE', `/assets${query({ path: paths })}`),
   drive: () => request<DriveStatus>('GET', '/drive'),
   /** `hint`: the family for a Hugging Face LoRA whose page doesn't name its base model. */
   civitaiPlan: (url: string, hint?: string) =>
@@ -87,60 +81,57 @@ export const api = {
   jobs: () => request<Job[]>('GET', '/jobs'),
   submitJob: (spec: Spec, batchCount: number, seedMode: SeedMode) =>
     request<Job>('POST', '/jobs', { spec, batch_count: batchCount, seed_mode: seedMode }),
-  cancelJob: (id: string) => request<{ cancelled: boolean }>('DELETE', `/jobs/${id}`),
+  cancelJob: (id: string) => request<{ cancelled: boolean }>('DELETE', path`/jobs/${id}`),
   /** Move a queued job to `position` in the queue (0 runs next). */
-  moveJob: (id: string, position: number) => request<Job>('PATCH', `/jobs/${id}`, { position }),
+  moveJob: (id: string, position: number) => request<Job>('PATCH', path`/jobs/${id}`, { position }),
   /** Undo cancelling a queued job. */
-  restoreJob: (id: string) => request<Job>('POST', `/jobs/${id}/restore`),
+  restoreJob: (id: string) => request<Job>('POST', path`/jobs/${id}/restore`),
   /** Queue a failed job's unfinished images again, in its place. */
-  retryJob: (id: string) => request<Job>('POST', `/jobs/${id}/retry`),
+  retryJob: (id: string) => request<Job>('POST', path`/jobs/${id}/retry`),
   pushKey: () => request<{ public_key: string }>('GET', '/push'),
   pushSubscribe: (sub: PushSubscriptionJSON) =>
     request<{ subscribed: boolean }>('POST', '/push/subscribe', sub),
   pushUnsubscribe: (endpoint: string) =>
     request<{ unsubscribed: boolean }>('POST', '/push/unsubscribe', { endpoint }),
   results: (cursor?: string) =>
-    request<{ results: Result[]; cursor: string | null }>(
-      'GET',
-      `/results${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`,
-    ),
+    request<{ results: Result[]; cursor: string | null }>('GET', `/results${query({ cursor })}`),
   /** Delete finished jobs and their results now; kept images stay in the library. */
   clearResults: () => request<{ results: number; jobs: number }>('DELETE', '/results'),
   /** Delete one finished job's results: its stitched chain with `chain`, else the rest. */
   deleteJobResults: (jobId: string, chain: boolean) =>
     request<{ results: number; jobs: number }>(
       'DELETE',
-      `/jobs/${jobId}/results${chain ? '?chain=true' : ''}`,
+      path`/jobs/${jobId}/results` + query({ chain }),
     ),
-  keep: (resultId: string) => request<LibraryItem>('POST', `/results/${resultId}/save`),
+  keep: (resultId: string) => request<LibraryItem>('POST', path`/results/${resultId}/save`),
   library: (q: string, cursor?: string) =>
     request<{ items: LibraryItem[]; cursor: string | null }>(
       'GET',
       `/library${query({ q, cursor })}`,
     ),
   editLibraryItem: (id: string, edit: { title?: string; tags?: string[] }) =>
-    request<LibraryItem>('PATCH', `/library/${id}`, edit),
-  deleteLibraryItem: (id: string) => request<{ deleted: boolean }>('DELETE', `/library/${id}`),
+    request<LibraryItem>('PATCH', path`/library/${id}`, edit),
+  deleteLibraryItem: (id: string) => request<{ deleted: boolean }>('DELETE', path`/library/${id}`),
   prompts: (q = '') => request<SavedPrompt[]>('GET', `/prompts${query({ q })}`),
   savePrompt: (p: { prompt: string; negative_prompt: string; family: string | null }) =>
     request<SavedPrompt>('POST', '/prompts', p),
   editPrompt: (id: string, edit: { name?: string; tags?: string[] }) =>
-    request<SavedPrompt>('PATCH', `/prompts/${id}`, edit),
-  deletePrompt: (id: string) => request<{ deleted: boolean }>('DELETE', `/prompts/${id}`),
+    request<SavedPrompt>('PATCH', path`/prompts/${id}`, edit),
+  deletePrompt: (id: string) => request<{ deleted: boolean }>('DELETE', path`/prompts/${id}`),
   upload: (file: Blob) => request<BlobInfo>('POST', '/blobs', file),
   fromUrl: (url: string) => request<BlobInfo>('POST', '/blobs/from-url', { url }),
   frame: (sha: string, at: 'first' | 'last' | number) =>
-    request<BlobInfo>('POST', `/blobs/${sha}/frame`, { at }),
+    request<BlobInfo>('POST', path`/blobs/${sha}/frame`, { at }),
   transform: (sha: string, ops: Op[]) =>
-    request<BlobInfo>('POST', `/blobs/${sha}/transform`, { ops }),
+    request<BlobInfo>('POST', path`/blobs/${sha}/transform`, { ops }),
   getTransform: (sha: string) =>
-    request<{ original: string; ops: Op[] }>('GET', `/blobs/${sha}/transform`),
+    request<{ original: string; ops: Op[] }>('GET', path`/blobs/${sha}/transform`),
   /** Store a mask painted over image `source` (a PNG; alpha or white is redrawn). */
   uploadMask: (source: string, png: Blob) =>
-    request<BlobInfo>('POST', `/blobs/${source}/mask`, png),
+    request<BlobInfo>('POST', path`/blobs/${source}/mask`, png),
   /** Carry a mask from the image it was painted on to a new crop of that image. */
   remapMask: (mask: string, source: string, to: string) =>
-    request<BlobInfo & { empty: boolean }>('POST', `/blobs/${mask}/remap`, { source, to }),
+    request<BlobInfo & { empty: boolean }>('POST', path`/blobs/${mask}/remap`, { source, to }),
   /** SAM 3: candidate masks for taps (`include` false leaves out) and/or a description. */
   select: (image: string, params: { points: SelectPoint[]; text?: string }) =>
     request<Selection>('POST', '/preprocess', { id: 'sam', image, params }),
@@ -154,14 +145,21 @@ export const api = {
       image,
       params: {},
     }),
-  extendResult: (id: string) => request<Extension>('POST', `/results/${id}/extend`),
-  extendLibraryItem: (id: string) => request<Extension>('POST', `/library/${id}/extend`),
+  extendResult: (id: string) => request<Extension>('POST', path`/results/${id}/extend`),
+  extendLibraryItem: (id: string) => request<Extension>('POST', path`/library/${id}/extend`),
 }
 
-/** "?q=cat&cursor=…", leaving out empty values. */
-function query(params: Record<string, string | undefined>): string {
+/** A path with each interpolated segment encoded: path`/jobs/${id}`. */
+function path(strings: TemplateStringsArray, ...segments: string[]): string {
+  return String.raw({ raw: strings }, ...segments.map(encodeURIComponent))
+}
+
+/** "?q=cat&path=a&path=b", leaving out empty and false values. */
+function query(params: Record<string, string | string[] | boolean | undefined>): string {
   const q = new URLSearchParams()
-  for (const [k, v] of Object.entries(params)) if (v) q.set(k, v)
+  for (const [k, v] of Object.entries(params)) {
+    for (const item of [v].flat()) if (item) q.append(k, String(item))
+  }
   const s = q.toString()
   return s ? `?${s}` : ''
 }
