@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useEffectEvent, useRef } from 'react'
 
 /**
  * What every modal surface does while it's open: take focus, stop the page behind from
@@ -7,6 +7,10 @@ import { useEffect, useRef } from 'react'
  */
 export function useDialog<T extends HTMLElement = HTMLDivElement>(onEscape?: () => void) {
   const ref = useRef<T>(null)
+  // Callers pass a fresh closure each render; re-running the effect would move focus.
+  const escape = useEffectEvent(() => {
+    onEscape?.()
+  })
 
   useEffect(() => {
     const opener = document.activeElement as HTMLElement | null
@@ -14,15 +18,15 @@ export function useDialog<T extends HTMLElement = HTMLDivElement>(onEscape?: () 
     const overflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onEscape?.()
+      if (e.key === 'Escape') escape()
     }
-    if (onEscape) document.addEventListener('keydown', onKey)
+    document.addEventListener('keydown', onKey)
     return () => {
       document.removeEventListener('keydown', onKey)
       document.body.style.overflow = overflow
       opener?.focus()
     }
-  }, [onEscape])
+  }, [])
 
   return ref
 }
