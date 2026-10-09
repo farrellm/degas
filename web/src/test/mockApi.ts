@@ -1,3 +1,4 @@
+import { act } from '@testing-library/react'
 import { vi } from 'vitest'
 
 import { ASSETS, FAMILIES, SCHEMA, SESSION, WAN, WAN_ASSETS, WAN_SCHEMA } from './fixtures'
@@ -6,6 +7,25 @@ export class FakeEventSource {
   onmessage: ((e: MessageEvent<string>) => void) | null = null
   close() {
     // nothing to close
+  }
+}
+
+/** Stand in for `/api/events`: `send` delivers an event to the app, as the server would. */
+export function serverEvents() {
+  let source: FakeEventSource | undefined
+  vi.stubGlobal(
+    'EventSource',
+    class extends FakeEventSource {
+      constructor() {
+        super()
+        // eslint-disable-next-line @typescript-eslint/no-this-alias -- the test drives it
+        source = this
+      }
+    },
+  )
+  return {
+    send: (data: unknown) =>
+      act(() => source?.onmessage?.(new MessageEvent('message', { data: JSON.stringify(data) }))),
   }
 }
 

@@ -1,4 +1,4 @@
-import { act, fireEvent, screen, within } from '@testing-library/react'
+import { fireEvent, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -13,7 +13,7 @@ import {
   WAN,
   WAN_ASSETS,
 } from '@/test/fixtures'
-import { FakeEventSource, mockApi, VIDEO_ROUTES } from '@/test/mockApi'
+import { mockApi, serverEvents, VIDEO_ROUTES } from '@/test/mockApi'
 import { renderApp } from '@/test/render'
 
 describe('Create', () => {
@@ -173,17 +173,7 @@ describe('Create', () => {
   })
 
   it('imports a LoRA from Civitai and adds it to the form', async () => {
-    let source: FakeEventSource | undefined
-    vi.stubGlobal(
-      'EventSource',
-      class extends FakeEventSource {
-        constructor() {
-          super()
-          // eslint-disable-next-line @typescript-eslint/no-this-alias -- the test drives it
-          source = this
-        }
-      },
-    )
+    const { send } = serverEvents()
     const imported = {
       path: 'loras/sdxl/test_style_xl_v1.0.safetensors',
       family: 'sdxl',
@@ -242,8 +232,6 @@ describe('Create', () => {
     expect(posted).toEqual([{ url: 'https://civitai.com/models/100001', hint: 'sdxl' }])
     expect(await within(sheet).findByText('Copying to Drive, 0% of 228 MB')).toBeInTheDocument()
 
-    const send = (data: unknown) =>
-      act(() => source?.onmessage?.(new MessageEvent('message', { data: JSON.stringify(data) })))
     send({ type: 'import', import: { ...job, done: 114_000_000 } })
     expect(await within(sheet).findByText('Copying to Drive, 50% of 228 MB')).toBeInTheDocument()
     assets = [...ASSETS, imported]

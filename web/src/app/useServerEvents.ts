@@ -1,20 +1,8 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { useEffect } from 'react'
 
+import { parseEvent } from '@/api/events'
 import { queries, queryKeys } from '@/api/queries'
-import type { CivitaiImport, Job, Progress, SessionSnapshot } from '@/api/types'
-
-type ServerEvent =
-  | { type: 'hello' }
-  | ({ type: 'session' } & SessionSnapshot)
-  | { type: 'job'; job: Job }
-  | ({ type: 'progress' } & Progress)
-  | { type: 'result' }
-  | { type: 'assets' }
-  | { type: 'library' }
-  | { type: 'prompts' }
-  | { type: 'swept' }
-  | { type: 'import'; import: CivitaiImport }
 
 /** Follow `/api/events` and keep the query cache in sync with the server. */
 export function useServerEvents() {
@@ -24,7 +12,14 @@ export function useServerEvents() {
     const source = new EventSource('/api/events')
 
     source.onmessage = (msg: MessageEvent<string>) => {
-      const event = JSON.parse(msg.data) as ServerEvent
+      const event = parseEvent(msg.data)
+      if (!event) {
+        // Not an event this app can read (an older app, a newer server): don't let it into
+        // the cache; fetch everything instead.
+        console.warn('unreadable server event', msg.data)
+        void qc.invalidateQueries()
+        return
+      }
       switch (event.type) {
         case 'hello':
           // (Re)connected: anything may have changed while we were away.
