@@ -5,7 +5,7 @@ description = "Degas home server: API, job queue, Colab session manager"
 requires-python = ">=3.13,<3.14"
 dependencies = [
     "degas-worker",  # the worker bundle is built from the installed package
-    "fastapi>=0.141",
+    "fastapi>=0.142.2",
     "httpx2>=2.13",
     "cryptography>=45",
     "pillow>=12",
