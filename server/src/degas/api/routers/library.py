@@ -7,6 +7,7 @@ from fastapi import APIRouter, Query
 
 from degas.api.deps import Svc, family_or_400, library_item_or_404
 from degas.api.schemas import LibraryEdit
+from degas.db import LibraryItemUpdate
 from degas.library import clean_tags, release
 
 router = APIRouter(tags=["library"])
@@ -32,7 +33,7 @@ async def get_library_item(svc: Svc, item_id: str) -> Mapping[str, Any]:
 @router.patch("/library/{item_id}")
 async def edit_library_item(svc: Svc, item_id: str, body: LibraryEdit) -> Mapping[str, Any]:
     library_item_or_404(svc, item_id)
-    fields: dict[str, Any] = {}
+    fields: LibraryItemUpdate = {}
     if body.title is not None:
         fields["title"] = body.title.strip() or None
     if body.tags is not None:

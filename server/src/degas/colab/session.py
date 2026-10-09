@@ -11,7 +11,7 @@ import time
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, Unpack
 
 from degas.colab.bundle import Bundle, build_bundle
 from degas.colab.cli import Colab, ColabError
@@ -23,6 +23,8 @@ from degas.db import (
     RUNNING_SESSION_STATES,
     Database,
     SessionRow,
+    SessionState,
+    SessionUpdate,
     now,
 )
 from degas.drive import DriveAuth, DriveError
@@ -174,7 +176,7 @@ class SessionManager:
     # -- state -----------------------------------------------------------------------------
 
     @property
-    def state(self) -> str | None:
+    def state(self) -> SessionState | None:
         return self.session["state"] if self.session else None
 
     @property
@@ -211,7 +213,7 @@ class SessionManager:
     def _publish(self) -> None:
         self.bus.publish({"type": "session", **self.snapshot()})
 
-    def _update(self, **fields: Any) -> None:
+    def _update(self, **fields: Unpack[SessionUpdate]) -> None:
         assert self.session is not None
         self.db.update_session(self.session["id"], **fields)
         self.session = self.db.get_session(self.session["id"])
@@ -301,7 +303,7 @@ class SessionManager:
             self.tunnel = None
         self._ready.clear()
 
-    def _end(self, state: str, error: str | None) -> None:
+    def _end(self, state: SessionState, error: str | None) -> None:
         assert self.session is not None
         self.db.end_session(self.session["id"], state, error)
         self.session = self.db.get_session(self.session["id"])
@@ -575,6 +577,7 @@ class SessionManager:
                 await self._wait_health()
                 await self._push_token()
                 self._step(None)
+            assert self.state is not None
             self._update(state=self.state)  # re-arm readiness with the new worker
             return True
         except Exception as e:

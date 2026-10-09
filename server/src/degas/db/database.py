@@ -10,18 +10,24 @@ import uuid
 from collections.abc import Iterable, Iterator, Mapping, Sequence
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Unpack, cast
 
 from degas.db.rows import (
     AssetRow,
     Cleared,
     JobRow,
+    JobStatus,
+    JobUpdate,
     LibraryItem,
+    LibraryItemUpdate,
+    PromptUpdate,
     PushSubscriptionRow,
     ResultRow,
     SavedConfig,
     SavedPrompt,
     SessionRow,
+    SessionState,
+    SessionUpdate,
     TransformRecord,
 )
 from degas.db.schema import migrate
@@ -101,7 +107,7 @@ class Database:
             self.conn.execute("BEGIN")
             yield
 
-    def _update(self, table: str, id_: str, fields: dict[str, Any]) -> None:
+    def _update(self, table: str, id_: str, fields: Mapping[str, Any]) -> None:
         if not fields:
             return
         cols = ", ".join(f"{k} = ?" for k in fields)
@@ -130,10 +136,10 @@ class Database:
         ).fetchone()
         return _session(row)
 
-    def update_session(self, id_: str, **fields: Any) -> None:
+    def update_session(self, id_: str, **fields: Unpack[SessionUpdate]) -> None:
         self._update("sessions", id_, fields)
 
-    def end_session(self, id_: str, state: str, error: str | None = None) -> None:
+    def end_session(self, id_: str, state: SessionState, error: str | None = None) -> None:
         """Mark a session ended; its results start their retention clock."""
         ended = now()
         self.update_session(id_, state=state, ended_at=ended, error=error)
@@ -177,7 +183,7 @@ class Database:
         ).fetchall()
         return _rows([*active, *done], JobRow, JOB_JSON)
 
-    def jobs_with_status(self, status: str) -> list[JobRow]:
+    def jobs_with_status(self, status: JobStatus) -> list[JobRow]:
         rows = self.conn.execute(
             "SELECT * FROM jobs WHERE status = ? ORDER BY queue_position", (status,)
         ).fetchall()
@@ -215,10 +221,11 @@ class Database:
         ).fetchone()
         return int(n)
 
-    def update_job(self, id_: str, **fields: Any) -> None:
+    def update_job(self, id_: str, **fields: Unpack[JobUpdate]) -> None:
+        encoded: dict[str, Any] = {**fields}
         if "runtime" in fields:
-            fields["runtime"] = json.dumps(fields["runtime"])
-        self._update("jobs", id_, fields)
+            encoded["runtime"] = json.dumps(fields["runtime"])
+        self._update("jobs", id_, encoded)
 
     # -- results ---------------------------------------------------------------------------
 
@@ -504,10 +511,11 @@ class Database:
         rows = self.conn.execute(sql, args).fetchall()
         return _rows(rows, LibraryItem, LIBRARY_JSON)
 
-    def update_library_item(self, id_: str, **fields: Any) -> None:
+    def update_library_item(self, id_: str, **fields: Unpack[LibraryItemUpdate]) -> None:
+        encoded: dict[str, Any] = {**fields}
         if "tags" in fields:
-            fields["tags"] = json.dumps(fields["tags"], ensure_ascii=False)
-        self._update("library_items", id_, fields)
+            encoded["tags"] = json.dumps(fields["tags"], ensure_ascii=False)
+        self._update("library_items", id_, encoded)
 
     def delete_library_item(self, id_: str) -> list[str]:
         """Delete a kept item; returns the blobs it held."""
@@ -561,10 +569,11 @@ class Database:
         rows = self.conn.execute(sql, args).fetchall()
         return _rows(rows, SavedPrompt, PROMPT_JSON)
 
-    def update_prompt(self, id_: str, **fields: Any) -> None:
+    def update_prompt(self, id_: str, **fields: Unpack[PromptUpdate]) -> None:
+        encoded: dict[str, Any] = {**fields}
         if "tags" in fields:
-            fields["tags"] = json.dumps(fields["tags"], ensure_ascii=False)
-        self._update("prompts", id_, fields)
+            encoded["tags"] = json.dumps(fields["tags"], ensure_ascii=False)
+        self._update("prompts", id_, encoded)
 
     def delete_prompt(self, id_: str) -> bool:
         return self.conn.execute("DELETE FROM prompts WHERE id = ?", (id_,)).rowcount > 0

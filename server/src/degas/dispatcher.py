@@ -26,7 +26,7 @@ from degas.colab.worker_client import (
     WorkerError,
     WorkerUnreachableError,
 )
-from degas.db import Database, JobRow, JobRuntime, SavedConfig, now
+from degas.db import Database, JobRow, JobRuntime, JobStatus, SavedConfig, now
 from degas.events import EventBus
 from degas.families.base import spec_assets
 from degas.inputs import Inputs
@@ -227,7 +227,7 @@ class Dispatcher:
             runtime["duration_s"] = round((datetime.now(UTC) - started).total_seconds(), 1)
         self.db.update_job(job_id, runtime=runtime)
 
-    def _finish(self, job_id: str, status: str, error: str | None) -> None:
+    def _finish(self, job_id: str, status: JobStatus, error: str | None) -> None:
         self.db.update_job(job_id, status=status, error=error, finished_at=now())
         self.progress.pop(job_id, None)
         self.publish_job(job_id)
@@ -281,7 +281,7 @@ class Dispatcher:
                 raise WorkerError(f"Input blob {sha} is missing")
             await worker.put_blob(sha, path.read_bytes())
 
-    async def _follow(self, worker: WorkerClient, job_id: str) -> tuple[str, str | None]:
+    async def _follow(self, worker: WorkerClient, job_id: str) -> tuple[JobStatus, str | None]:
         attempts = 0
         while attempts < MAX_REATTACH:
             terminal = await self._relay(worker, job_id)
@@ -289,7 +289,7 @@ class Dispatcher:
                 await self._collect(worker, job_id)
                 if terminal["t"] == "error":
                     return "error", self._failed(job_id, terminal)
-                return str(terminal["t"]), None
+                return ("cancelled" if terminal["t"] == "cancelled" else "done"), None
 
             # The stream ended without a terminal event: reconcile via /state.
             try:

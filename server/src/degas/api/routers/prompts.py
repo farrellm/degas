@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException
 
 from degas.api.deps import Svc
 from degas.api.schemas import NewPrompt, PromptEdit
+from degas.db import PromptUpdate
 from degas.library import clean_tags, prompt_name
 
 router = APIRouter(tags=["prompts"])
@@ -36,7 +37,7 @@ async def save_prompt(svc: Svc, body: NewPrompt) -> Mapping[str, Any]:
 async def edit_prompt(svc: Svc, prompt_id: str, body: PromptEdit) -> Mapping[str, Any]:
     if svc.db.get_prompt(prompt_id) is None:
         raise HTTPException(404, "Unknown prompt")
-    fields: dict[str, Any] = {}
+    fields: PromptUpdate = {}
     if body.name is not None and body.name.strip():
         fields["name"] = body.name.strip()
     if body.tags is not None:

@@ -31,6 +31,15 @@ class SessionRow(TypedDict):
     error: str | None
 
 
+class SessionUpdate(TypedDict, total=False):
+    """The session columns that change after it starts."""
+
+    state: SessionState
+    ended_at: str | None
+    last_activity_at: str
+    error: str | None
+
+
 class JobRuntime(TypedDict, total=False):
     """What a job ran on, kept with saved configs (design §6.4)."""
 
@@ -52,6 +61,18 @@ class JobRow(TypedDict):
     finished_at: str | None
     error: str | None
     log: str | None  # a failed job's traceback from the worker
+    runtime: JobRuntime | None
+
+
+class JobUpdate(TypedDict, total=False):
+    """The job columns that change after it is queued."""
+
+    session_id: str | None
+    status: JobStatus
+    started_at: str | None
+    finished_at: str | None
+    error: str | None
+    log: str | None
     runtime: JobRuntime | None
 
 
@@ -103,6 +124,13 @@ class LibraryItem(TypedDict):
     source_result_id: str | None
 
 
+class LibraryItemUpdate(TypedDict, total=False):
+    """What can be edited on a kept item."""
+
+    title: str | None
+    tags: list[str]
+
+
 class SavedPrompt(TypedDict):
     id: str
     name: str
@@ -111,6 +139,13 @@ class SavedPrompt(TypedDict):
     family: str | None
     tags: list[str]
     created_at: str
+
+
+class PromptUpdate(TypedDict, total=False):
+    """What can be edited on a saved prompt."""
+
+    name: str
+    tags: list[str]
 
 
 class AssetRow(TypedDict):
