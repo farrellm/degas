@@ -35,7 +35,7 @@ export function CivitaiImport({ family, onImported }: CivitaiImportProps) {
   const start = useMutation({
     mutationFn: (link: string) => api.civitaiImport(link, family),
     onSuccess: (j) => {
-      qc.setQueryData(['civitai-import'], j)
+      qc.setQueryData(queries.civitaiImport().queryKey, j)
       setStarted(j.id)
       setAdded(null)
       setUrl('')
