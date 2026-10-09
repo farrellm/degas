@@ -1,7 +1,8 @@
 import type { Result } from '@/api/types'
 import { SavePrompt } from '@/components/Viewer/SavePrompt'
 import { SaveToPhotos } from '@/components/Viewer/SaveToPhotos'
-import { draftFromSpec, draftWithSource, useSourceTarget } from '@/features/create/draft'
+import { draftFromSpec, draftWithSource } from '@/features/create/draft'
+import { useSourceTarget } from '@/features/create/useSourceTarget'
 import { useExtendable } from '@/hooks/useExtendable'
 import { isVideo } from '@/lib/image'
 

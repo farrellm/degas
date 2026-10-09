@@ -1,16 +1,4 @@
-import { useQuery } from '@tanstack/react-query'
-
-import { queries } from '@/api/queries'
-import type {
-  BlobInfo,
-  Fit,
-  LoraEntry,
-  Params,
-  SavedPrompt,
-  SeedMode,
-  Spec,
-  Variant,
-} from '@/api/types'
+import type { BlobInfo, Fit, LoraEntry, Params, SavedPrompt, SeedMode, Spec } from '@/api/types'
 import type { Place } from '@/features/editors/place/place'
 import { type MaskRef, type Source, unref } from '@/lib/image'
 import { isPair } from '@/lib/loras'
@@ -18,8 +6,6 @@ import { readStored, writeStored } from '@/lib/storage'
 
 import { type ControlUnit, restoreUnit, unitFromSpec } from './control/control'
 import { type ImagePromptUnit, promptFromSpec, restorePrompt } from './image-prompt/imagePrompt'
-import { SOURCE_MODES } from './modes'
-import { variantOf } from './selection'
 
 // The Create form's draft, kept across visits and reloads.
 const DRAFT_KEY = 'degas.create.draft'
@@ -240,41 +226,4 @@ export function draftWithPrompt(p: SavedPrompt) {
 /** Start from an image: `family`'s draft switches to `mode` with this source. */
 export function draftWithSource(family: string, mode: string, source: Source) {
   update(family, (fd) => ({ ...fd, mode, source, extends: null, mask: null, place: null }))
-}
-
-/**
- * Where "Use as source" sends an image: the family Create has open (image-to-image for
- * pictures, image-to-video for clips), staying in its current image mode if it has one.
- * Families that can't start from an image are skipped.
- */
-export function useSourceTarget(): { family: string; mode: string } | null {
-  const families = useQuery(queries.families())
-  const draft = loadDraft()
-  const list = families.data ?? []
-  const ordered = [
-    ...list.filter((f) => f.id === draft.family),
-    ...list.filter((f) => f.id !== draft.family),
-  ]
-  for (const f of ordered) {
-    const modes = [...new Set(f.variants.flatMap((v) => v.modes))].filter((m) =>
-      SOURCE_MODES.has(m),
-    )
-    const current = draft.families[f.id]?.mode
-    const mode = current && modes.includes(current) ? current : modes[0]
-    if (mode) return { family: f.id, mode }
-  }
-  return null
-}
-
-/**
- * The model variant Create has open, the way Create resolves it: the chosen model's, else
- * the first that does the chosen mode, else the family's first. Undefined until families load.
- */
-export function useDraftVariant(): Variant | undefined {
-  const families = useQuery(queries.families())
-  const draft = loadDraft()
-  const family = families.data?.find((f) => f.id === draft.family) ?? families.data?.[0]
-  if (!family) return undefined
-  const { model, mode } = draft.families[family.id] ?? {}
-  return variantOf(family, model, mode)
 }

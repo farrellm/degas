@@ -259,6 +259,117 @@
       }
     },
     {
+      "files": ["src/features/editors/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["../*", "../**"],
+                "message": "Import from another folder as `@/…`."
+              },
+              {
+                "group": [
+                  "@/features/create/*",
+                  "@/features/results/*",
+                  "@/features/library/*",
+                  "@/features/session/*",
+                  "@/app/*"
+                ],
+                "message": "Features layer app → results/library/session → create → editors; editors know no other."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["src/features/create/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["../*", "../**"],
+                "message": "Import from another folder as `@/…`."
+              },
+              {
+                "group": [
+                  "@/features/results/*",
+                  "@/features/library/*",
+                  "@/features/session/*",
+                  "@/app/*"
+                ],
+                "message": "Features layer app → results/library/session → create → editors; create uses only editors."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["src/features/results/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["../*", "../**"],
+                "message": "Import from another folder as `@/…`."
+              },
+              {
+                "group": ["@/features/library/*", "@/features/session/*", "@/app/*"],
+                "message": "Features layer app → results/library/session → create → editors; these three don't use each other."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["src/features/library/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["../*", "../**"],
+                "message": "Import from another folder as `@/…`."
+              },
+              {
+                "group": ["@/features/results/*", "@/features/session/*", "@/app/*"],
+                "message": "Features layer app → results/library/session → create → editors; these three don't use each other."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["src/features/session/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["../*", "../**"],
+                "message": "Import from another folder as `@/…`."
+              },
+              {
+                "group": ["@/features/results/*", "@/features/library/*", "@/app/*"],
+                "message": "Features layer app → results/library/session → create → editors; these three don't use each other."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
       "files": ["public/sw.js"],
       "env": {
         "serviceworker": true
