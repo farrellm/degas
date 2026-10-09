@@ -13,7 +13,7 @@ The visual language comes from Degas's working materials. He drew in pastel on t
 
 ## 2. Tokens
 
-Defined in `web/src/styles/tokens.css` (the other sheets in `web/src/styles/` use them). Dark is the default look on the phone; light follows the system setting.
+Defined in `web/src/styles/tokens.css` (every sheet uses them: the global ones in `web/src/styles/`, the others beside the code they style, all loaded in order from `styles/index.css`). Dark is the default look on the phone; light follows the system setting.
 
 | Token | Dark (slate paper) | Light (grey-green paper) | Use |
 |---|---|---|---|

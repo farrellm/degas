@@ -12,3 +12,6 @@
 - A custom hook must not return a ref inside its result object: `react-hooks/refs` then
   flags every read of that object during render. Create the ref in the component and pass
   it in.
+- A part's stylesheet sits beside it (`features/create/create.css`), but components don't
+  import CSS: every sheet is `@import`ed from `styles/index.css`, whose order the cascade
+  relies on (sheets win ties with earlier ones). Add a new sheet to that list.

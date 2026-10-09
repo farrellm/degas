@@ -1,30 +1,32 @@
 /*
- * Degas styles, one sheet per part of the app. Order matters: later sheets rely on
- * winning ties with earlier ones, so add new sheets where they belong, not at the top.
+ * Degas styles: the global sheets here, and one sheet beside each part of the app. All are
+ * loaded from this list, in this order, rather than imported by their components: later
+ * sheets rely on winning ties with earlier ones, so add new sheets where they belong, not at
+ * the top.
  */
 
 @import './tokens.css';
 @import './buttons.css';
 @import './shell.css';
-@import './discretion.css';
-@import './session-chip.css';
-@import './create.css';
-@import './results.css';
-@import './queue.css';
-@import './notifications.css';
-@import './tiles.css';
-@import './sheets.css';
-@import './asset-picker.css';
-@import './civitai.css';
-@import './viewer.css';
-@import './library.css';
-@import './sources.css';
-@import './image-picker.css';
-@import './crop-editor.css';
-@import './mask-editor.css';
-@import './control.css';
-@import './step-range.css';
+@import '@/app/discretion.css';
+@import '@/features/session/SessionChip.css';
+@import '@/features/create/create.css';
+@import '@/features/results/results.css';
+@import '@/features/results/queue.css';
+@import '@/features/session/NotificationAsk.css';
+@import '@/components/Tile.css';
+@import '@/components/Sheet.css';
+@import '@/components/AssetPicker/AssetPicker.css';
+@import '@/features/create/CivitaiImport.css';
+@import '@/components/Viewer/Viewer.css';
+@import '@/features/library/library.css';
+@import '@/features/create/sources.css';
+@import '@/components/ImagePicker/ImagePicker.css';
+@import '@/features/editors/editors.css';
+@import '@/features/editors/mask/MaskEditor.css';
+@import '@/features/create/control/control.css';
+@import '@/components/StepRange.css';
 @import './motion.css';
 @import './status.css';
-@import './image-prompts.css';
-@import './refs.css';
+@import '@/features/create/image-prompt/image-prompt.css';
+@import '@/features/create/rows/RefList.css';
