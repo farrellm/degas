@@ -31,7 +31,7 @@ async function registration(): Promise<ServiceWorkerRegistration> {
   return navigator.serviceWorker.ready
 }
 
-export async function pushState(): Promise<PushState> {
+async function pushState(): Promise<PushState> {
   if (!pushSupported()) return 'unsupported'
   if (Notification.permission === 'denied') return 'blocked'
   // No worker registered (the dev server): nothing could deliver a notification.

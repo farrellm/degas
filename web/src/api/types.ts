@@ -74,7 +74,7 @@ export interface ParamSchema {
 }
 
 /** Optional YAML next to an asset in Drive (design §5). */
-export interface Sidecar {
+interface Sidecar {
   label?: string
   trigger_words?: string[]
   default_weight?: number
@@ -166,7 +166,7 @@ export type LoraEntry = LoraRef | LoraPair
 
 export type Fit = 'crop' | 'pad' | 'stretch'
 
-export interface Inputs {
+interface Inputs {
   /** `sha256:…` of the source image (i2i, edit, inpaint, outpaint, i2v, flf2v). */
   source?: string
   /** First and last frame (flf2v): `sha256:…` of the last frame; the source is the first. */

@@ -54,7 +54,7 @@ export function frameFor(stage: Size, aspect: number): Rect {
 }
 
 /** The smallest scale at which the image covers the frame. */
-export function coverScale(frame: Rect, image: Size): number {
+function coverScale(frame: Rect, image: Size): number {
   return Math.max(frame.w / image.w, frame.h / image.h)
 }
 
@@ -65,16 +65,6 @@ export function clampView(view: View, frame: Rect, image: Size): View {
   const tx = Math.min(frame.x, Math.max(frame.x + frame.w - image.w * s, view.tx))
   const ty = Math.min(frame.y, Math.max(frame.y + frame.h - image.h * s, view.ty))
   return { s, tx, ty }
-}
-
-/** The image centred under the frame, just covering it. */
-export function coverView(frame: Rect, image: Size): View {
-  const s = coverScale(frame, image)
-  return {
-    s,
-    tx: frame.x + (frame.w - image.w * s) / 2,
-    ty: frame.y + (frame.h - image.h * s) / 2,
-  }
 }
 
 /** Zoom by `factor` about the stage point `(cx, cy)`. */

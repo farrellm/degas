@@ -20,7 +20,7 @@ export interface Group {
 export const PENDING = new Set(['queued', 'running'])
 
 /** An image or clip a pending job hasn't made yet, for the viewer. */
-export interface SketchItem extends ViewerItem {
+interface SketchItem extends ViewerItem {
   key: string
   blob_sha: null
   job: Job

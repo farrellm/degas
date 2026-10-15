@@ -4,7 +4,7 @@ import { queries } from '@/api/queries'
 import { useAssets } from '@/hooks/useAssets'
 import { isActive, isGpuReady } from '@/lib/session'
 
-export const SAM_ASSET = 'preprocessors/sam3'
+const SAM_ASSET = 'preprocessors/sam3'
 
 /** Why Select can't be used right now (SAM 3 isn't in Drive, or no GPU is ready); null when it can. */
 export function useSelectNote(): string | null {

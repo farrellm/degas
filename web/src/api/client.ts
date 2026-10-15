@@ -23,7 +23,7 @@ import type {
   TraceId,
 } from './types'
 
-export class ApiError extends Error {
+class ApiError extends Error {
   override readonly name = 'ApiError'
   readonly status: number
 
