@@ -38,3 +38,6 @@ spike/*.bin
 !.vscode/extensions.json
 *.swp
 .DS_Store
+
+# Pinned tools (`make tools`)
+/bin/

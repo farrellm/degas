@@ -1,0 +1,11 @@
+**/dist/
+**/node_modules/
+**/coverage/
+web/pnpm-lock.yaml
+bin/
+data/
+spike/
+# Hand-formatted: Prettier pads every table to its widest cell and re-indents continuation
+# lines into the bullets above them.
+README.md
+docs/
