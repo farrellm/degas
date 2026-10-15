@@ -16,8 +16,8 @@ export function pairName(path: string): string {
 }
 
 interface Pair {
-  high?: Asset
-  low?: Asset
+  high?: Asset | undefined
+  low?: Asset | undefined
 }
 
 /**

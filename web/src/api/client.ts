@@ -35,14 +35,14 @@ export class ApiError extends Error {
 
 async function request<T>(method: string, route: string, body?: unknown): Promise<T> {
   const raw = body instanceof Blob
-  const res = await fetch(`/api${route}`, {
-    method,
-    headers:
-      body === undefined
-        ? undefined
-        : { 'Content-Type': raw ? body.type || 'application/octet-stream' : 'application/json' },
-    body: body === undefined ? undefined : raw ? body : JSON.stringify(body),
-  })
+  const init: RequestInit = { method }
+  if (body !== undefined) {
+    init.headers = {
+      'Content-Type': raw ? body.type || 'application/octet-stream' : 'application/json',
+    }
+    init.body = raw ? body : JSON.stringify(body)
+  }
+  const res = await fetch(`/api${route}`, init)
   if (!res.ok) {
     let message = `HTTP ${res.status}`
     try {
@@ -133,7 +133,7 @@ export const api = {
   remapMask: (mask: string, source: string, to: string) =>
     request<BlobInfo & { empty: boolean }>('POST', path`/blobs/${mask}/remap`, { source, to }),
   /** SAM 3: candidate masks for taps (`include` false leaves out) and/or a description. */
-  select: (image: string, params: { points: SelectPoint[]; text?: string }) =>
+  select: (image: string, params: { points: SelectPoint[]; text?: string | undefined }) =>
     request<Selection>('POST', '/preprocess', { id: 'sam', image, params }),
   /** Trace a control image (a depth map, a pose, edges) from a picture, at its size. */
   trace: (id: TraceId, image: string, params: Params) =>
@@ -158,7 +158,9 @@ function path(strings: TemplateStringsArray, ...segments: string[]): string {
 function query(params: Record<string, string | string[] | boolean | undefined>): string {
   const q = new URLSearchParams()
   for (const [k, v] of Object.entries(params)) {
-    for (const item of [v].flat()) if (item) q.append(k, String(item))
+    for (const item of [v].flat()) {
+      if (item !== undefined && item !== false && item !== '') q.append(k, String(item))
+    }
   }
   const s = q.toString()
   return s ? `?${s}` : ''

@@ -23,6 +23,8 @@ const EDGES: { id: Edge | 'centre'; label: string }[] = [
   { id: 'bottom', label: 'Bottom' },
 ]
 
+const pct = (v: number, of: number) => `${(v / of) * 100}%`
+
 /**
  * Outpaint: the source on its canvas. The margins are hatched like a sketch tile, since
  * that's where new pixels will be drawn. Drag the image to move it.
@@ -31,7 +33,6 @@ export function PlaceEditor({ source, canvas, place, onChange }: PlaceEditorProp
   const box = useRef<HTMLDivElement>(null)
   const drag = useRef<{ x: number; y: number; from: Place } | null>(null)
   const shape = { w: source.width, h: source.height }
-  const pct = (v: number, of: number) => `${(v / of) * 100}%`
 
   const onPointerDown = (e: PointerEvent<HTMLDivElement>) => {
     e.currentTarget.setPointerCapture(e.pointerId)
@@ -40,7 +41,7 @@ export function PlaceEditor({ source, canvas, place, onChange }: PlaceEditorProp
   const onPointerMove = (e: PointerEvent<HTMLDivElement>) => {
     const d = drag.current
     const width = box.current?.clientWidth
-    if (!d || !width) return
+    if (!d || width === undefined || width === 0) return
     const k = canvas.w / width // canvas px per screen px
     onChange(
       clampPlace(
@@ -75,6 +76,8 @@ export function PlaceEditor({ source, canvas, place, onChange }: PlaceEditorProp
       >
         <div
           className="place-image"
+          // A 2-D position has no single value; aria-valuetext gives the margins.
+          // oxlint-disable-next-line jsx-a11y/role-has-required-aria-props
           role="slider"
           tabIndex={0}
           aria-label="Image on the canvas. Drag, or use the arrow keys, to move it."

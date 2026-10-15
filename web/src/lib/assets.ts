@@ -21,7 +21,7 @@ export function copyEstimate(size: number): string {
 /** The variant a model belongs to: the one whose Drive folder holds it. */
 export function variantFor(path: string, family: Family): Variant | undefined {
   const inDir = family.variants.find(
-    (v) => v.model_dir && (path === v.model_dir || path.startsWith(`${v.model_dir}/`)),
+    (v) => v.model_dir !== null && (path === v.model_dir || path.startsWith(`${v.model_dir}/`)),
   )
   if (inDir) return inDir
   return family.variants.find((v) => !v.model_dir)

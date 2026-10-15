@@ -142,7 +142,7 @@ export function LibraryImages({ q, onRemix }: { q: string; onRemix: () => void }
                   : undefined
               }
               onUseAsSource={
-                item.kind === 'image' && sourceTarget && item.width && item.height
+                item.kind === 'image' && sourceTarget && item.width !== null && item.height !== null
                   ? () => {
                       draftWithSource(sourceTarget.family, sourceTarget.mode, {
                         sha: item.blob_sha,

@@ -37,6 +37,8 @@ export type FeedItem = (Result & { key: string; job?: undefined }) | SketchItem
 export const slotKey = (jobId: string, item: number) => `${jobId}:${item}`
 export const resultKey = (r: Result) => (r.segments ? r.id : slotKey(r.job_id, r.item_index))
 
+const size = (v: unknown) => (typeof v === 'number' ? v : null)
+
 export function feedItems(groups: Group[]): FeedItem[] {
   return groups.flatMap((g) => {
     const items: FeedItem[] = g.results.map((r) => ({ ...r, key: resultKey(r) }))
@@ -44,7 +46,6 @@ export function feedItems(groups: Group[]): FeedItem[] {
     if (g.chain || !job || !PENDING.has(job.status)) return items
     const done = new Set(g.results.map((r) => r.item_index))
     const { params } = job.spec
-    const size = (v: unknown) => (typeof v === 'number' ? v : null)
     job.seeds.forEach((seed, item) => {
       if (done.has(item)) return
       const key = slotKey(job.id, item)

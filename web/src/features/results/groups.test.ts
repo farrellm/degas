@@ -80,7 +80,7 @@ describe('buildGroups', () => {
     expect(buildGroups([job('c', 'cancelled')], [])).toEqual([]))
 })
 
-describe('reorder', () =>
+describe('reorder', () => {
   it('moves a queued job, reusing the queue positions already handed out', () => {
     const jobs = [
       job('a', 'queued', { queue_position: 10 }),
@@ -95,7 +95,8 @@ describe('reorder', () =>
       ['c', 10],
       ['run', 5],
     ])
-  }))
+  })
+})
 
 describe('captions', () => {
   it('names the model and counts its LoRAs', () => {

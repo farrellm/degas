@@ -65,7 +65,9 @@ export function ImagePicker({ onUse, onCrop, onClose }: ImagePickerProps) {
             <img src={blobUrl(picked.sha256)} alt="The chosen image" />
           </div>
           <p className="picked-size">
-            {picked.width && picked.height ? formatSize(picked.width, picked.height) : null}
+            {picked.width !== null && picked.height !== null
+              ? formatSize(picked.width, picked.height)
+              : null}
           </p>
           <div className="picked-actions">
             <button type="button" className="btn quiet" onClick={() => setPicked(null)}>

@@ -6,7 +6,11 @@ import { useNow } from '@/hooks/useNow'
 import { useRescan } from '@/hooks/useRescan'
 import { ago } from '@/lib/time'
 
-export function DriveSection({ authorizedHint }: { authorizedHint?: SessionSnapshot['drive'] }) {
+export function DriveSection({
+  authorizedHint,
+}: {
+  authorizedHint?: SessionSnapshot['drive'] | undefined
+}) {
   const now = useNow(60_000)
   const drive = useQuery(queries.drive())
   const rescan = useRescan()

@@ -7,7 +7,7 @@ export interface FitRowProps {
   fit: Fit
   onFit: (fit: Fit) => void
   /** Offered while letterboxing, when the model can draw the bars instead. */
-  onOutpaint?: () => void
+  onOutpaint?: (() => void) | undefined
 }
 
 /** How a source of another shape is fitted to the output. */

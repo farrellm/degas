@@ -18,7 +18,7 @@ export interface SchemaFormProps {
   /** Shown beside the first prompt's label (e.g. saved prompts). */
   promptAside?: ReactNode
   promptPlaceholder?: string
-  seeds?: SeedChoice
+  seeds?: SeedChoice | undefined
 }
 
 /**
@@ -65,7 +65,7 @@ export function SchemaForm({
           {prompts.map(([name, prop], i) => (
             <Fragment key={name}>
               {i > 0 && <hr />}
-              {i === 0 && promptAside ? (
+              {i === 0 && promptAside != null ? (
                 <div className="prompt-head">
                   <label htmlFor={`param-${name}`}>{prop.title ?? name}</label>
                   {promptAside}

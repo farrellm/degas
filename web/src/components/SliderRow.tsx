@@ -13,6 +13,8 @@ export interface SliderRowProps {
 }
 
 /** A settings row with a slider and its value. */
+const twoPlaces = (v: number) => v.toFixed(2)
+
 export function SliderRow({
   id,
   label,
@@ -20,7 +22,7 @@ export function SliderRow({
   max,
   step = 0.05,
   value,
-  format = (v) => v.toFixed(2),
+  format = twoPlaces,
   note,
   onChange,
 }: SliderRowProps) {

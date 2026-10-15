@@ -36,7 +36,8 @@ export function App() {
 
   const session = useQuery(queries.session())
   const jobs = useQuery(queries.jobs())
-  const pending = jobs.data?.filter((j) => j.status === 'queued' || j.status === 'running').length
+  const pending =
+    jobs.data?.filter((j) => j.status === 'queued' || j.status === 'running').length ?? 0
 
   return (
     <div className="app">
@@ -78,7 +79,7 @@ export function App() {
             }}
           >
             {t}
-            {t === 'Results' && pending ? (
+            {t === 'Results' && pending > 0 ? (
               <span className="count" aria-label={`${pending} in progress`}>
                 {pending}
               </span>

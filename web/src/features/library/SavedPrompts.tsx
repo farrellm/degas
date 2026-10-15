@@ -65,6 +65,7 @@ function PromptRow({ p, onUse }: { p: SavedPrompt; onUse: () => void }) {
           <input
             aria-label="Prompt name"
             value={name}
+            // oxlint-disable-next-line jsx-a11y/no-autofocus -- shown by tapping Rename, to type in
             autoFocus
             onChange={(e) => setName(e.target.value)}
           />

@@ -3,8 +3,7 @@ import { vi } from 'vitest'
 
 import { ASSETS, FAMILIES, SCHEMA, SESSION, WAN, WAN_ASSETS, WAN_SCHEMA } from './fixtures'
 
-export class FakeEventSource {
-  onmessage: ((e: MessageEvent<string>) => void) | null = null
+export class FakeEventSource extends EventTarget {
   close() {
     // nothing to close
   }
@@ -25,7 +24,9 @@ export function serverEvents() {
   )
   return {
     send: (data: unknown) =>
-      act(() => source?.onmessage?.(new MessageEvent('message', { data: JSON.stringify(data) }))),
+      act(() => {
+        source?.dispatchEvent(new MessageEvent('message', { data: JSON.stringify(data) }))
+      }),
   }
 }
 
@@ -47,7 +48,7 @@ export function mockApi(overrides: Record<string, Handler> = {}) {
     'GET /api/results': () => ({ results: [], cursor: null }),
     ...overrides,
   }
-  const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+  const fetchMock = vi.fn<typeof fetch>((input, init) => {
     const href = input instanceof Request ? input.url : input.toString()
     const url = new URL(href, 'http://localhost')
     // Decoded, as the server routes it.
