@@ -81,16 +81,17 @@ A [CivArchive](https://civarchive.com) link (`civarchive.com` or `civitaiarchive
 
 ## Development
 
-Requires [uv](https://docs.astral.sh/uv/), Node ≥ 24 and pnpm.
+Requires [uv](https://docs.astral.sh/uv/), Node ≥ 24 (CI uses `web/.nvmrc`) and pnpm.
 
 ```sh
-make install     # uv sync + pnpm install + git hooks
-make check       # lint + typecheck + test (what CI runs)
-make fmt         # ruff format/fix + prettier
+make tools       # pinned tools into ./bin, uv sync, pnpm install, git hooks
+make fmt         # ruff format/fix, Prettier, shfmt
+make check       # everything CI runs: fmt-check, lint, test, gitleaks
 make dev-server  # API on 127.0.0.1:8420
 make dev-web     # Vite dev server, proxies /api to the API
+make help        # every target
 ```
 
-Git hooks ([pre-commit](https://pre-commit.com), config in `.pre-commit-config.yaml`): on commit, ruff / Prettier / oxlint fix staged files plus generic file checks. `make check` runs in GitHub CI. Bypass once with `--no-verify`.
+Git hooks ([lefthook](https://lefthook.dev), `lefthook.yml`): on commit, the formatters in check mode and the linters run on the staged files, plus mypy, `tsc` and gitleaks; on push, the tests. They check and don't fix: run `make fmt`. GitHub CI runs `make tools && make check`, then `make build`. Bypass a hook once with `--no-verify`.
 
-Tooling: ruff (lint + format), mypy (strict), pytest · oxlint (type-aware, with the typescript-eslint strict rule set), Prettier, Vitest + Testing Library.
+Tooling: ruff (lint + format), mypy (strict), pytest (random order), pip-audit · oxlint (type-aware: correctness and suspicious categories, plus the typescript-eslint strict rule set), tsc, knip, Prettier, Vitest + Testing Library · shellcheck, shfmt, gitleaks. Tool versions are pinned in the `Makefile`, `uv.lock` and `web/package.json`; [Renovate](https://docs.renovatebot.com) bumps them.

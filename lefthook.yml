@@ -1,0 +1,31 @@
+# Installed by `make tools`. Pre-commit checks staged files only; pre-push
+# runs the tests. Tools are the pinned copies in ./bin and the project's venv
+# and node_modules, which hooks can't expect on PATH.
+pre-commit:
+  parallel: true
+  jobs:
+    - name: python
+      glob: '*.{py,pyi}'
+      run: >-
+        uv run ruff format --check --force-exclude {staged_files}
+        && uv run ruff check --force-exclude {staged_files}
+        && uv run mypy
+    - name: prettier
+      glob: '*.{ts,tsx,js,json,css,md,yml,yaml,html}'
+      run: web/node_modules/.bin/prettier --check --ignore-unknown {staged_files}
+    - name: web
+      root: web/
+      glob: '*.{ts,tsx,js}'
+      run: >-
+        node_modules/.bin/oxlint --deny-warnings --no-error-on-unmatched-pattern {staged_files}
+        && node_modules/.bin/tsc -b
+    - name: shell
+      glob: '*.sh'
+      run: bin/shellcheck {staged_files} && bin/shfmt -d {staged_files}
+    - name: gitleaks
+      run: bin/gitleaks git --pre-commit --staged --no-banner --redact .
+
+pre-push:
+  jobs:
+    - name: test
+      run: make test

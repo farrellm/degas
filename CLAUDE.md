@@ -7,7 +7,8 @@ Read `README.md` for layout/setup, `docs/design.md` for architecture and the pha
 ## Commands
 
 ```sh
-make check        # lint + typecheck + test; run before declaring done (CI adds `pnpm build`)
+make fmt          # format in place (hooks only check)
+make check        # fmt-check + lint + test + gitleaks; run before declaring done (CI adds `make build`)
 uv run ruff check . && uv run mypy && uv run pytest   # Python only (web untouched)
 uv run pytest server/tests/test_api.py -k name   # single Python test
 cd web && pnpm vitest run src/lib/schema.test.ts # single web test
@@ -61,7 +62,8 @@ cd web && pnpm vitest run src/lib/schema.test.ts # single web test
 - diffusers skips LoRA keys that match no module with only a log line ("unexpected keys" in
   `worker.log`), so a LoRA can load and still be partly ignored. Per-family key fixes live in
   `degas_worker/families/lora.py` (torch-free, unit-tested).
-- Pre-commit: hooks fix staged files on commit; `make check` runs in GitHub CI only.
+- Git hooks (lefthook, installed by `make tools`) check staged files on commit and run
+  `make test` on push; they don't fix, so run `make fmt` first.
 
 ## Debugging a live session
 
