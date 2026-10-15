@@ -42,7 +42,7 @@ export interface MaskEditorProps {
   blur: number
   /** A picture the same size as `source` to paint over and select in instead (a
    * ControlNet area is painted over the photo its trace came from). */
-  underlay?: string
+  underlay?: string | undefined
   /** "Mask", or "Area" for a ControlNet. */
   title?: string
   /** The stored mask, or null when nothing is painted. */
@@ -209,7 +209,7 @@ export function MaskEditor({
         onKeyDown={onKeyDown}
         onWheel={(e) => {
           const p = stagePoint(stageRef.current, e)
-          moveView((view) => zoomAt(view, Math.exp(-e.deltaY / 400), p.x, p.y))
+          moveView((prev) => zoomAt(prev, Math.exp(-e.deltaY / 400), p.x, p.y))
         }}
       >
         <div className="mask-layer" style={layerStyle}>

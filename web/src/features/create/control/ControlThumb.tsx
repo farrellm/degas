@@ -55,10 +55,10 @@ export function ControlThumb({ image, area }: { image: string; area: string | nu
         for (let i = 0; i < px.length; i += 4) {
           // Outside the area, fade towards black, which the chalk blend turns into paper.
           const m = inside ? (inside[i] ?? 0) / 255 : 1
-          const k = gain * (OUTSIDE + (1 - OUTSIDE) * m)
-          px[i] = (px[i] ?? 0) * k
-          px[i + 1] = (px[i + 1] ?? 0) * k
-          px[i + 2] = (px[i + 2] ?? 0) * k
+          const fade = gain * (OUTSIDE + (1 - OUTSIDE) * m)
+          px[i] = (px[i] ?? 0) * fade
+          px[i + 1] = (px[i + 1] ?? 0) * fade
+          px[i + 2] = (px[i + 2] ?? 0) * fade
         }
         ctx.putImageData(out, 0, 0)
       })

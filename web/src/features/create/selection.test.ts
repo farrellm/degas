@@ -113,18 +113,20 @@ describe('resolveSelection', () => {
   })
 })
 
-describe('variantOf', () =>
+describe('variantOf', () => {
   it("is the model's variant, else the first that does the mode, else the first", () => {
     expect(variantOf(QWEN, 'models/qwen/edit/e', 't2i')?.id).toBe('edit')
     expect(variantOf(QWEN, undefined, 'inpaint')?.id).toBe('edit')
     expect(variantOf(QWEN, undefined, undefined)?.id).toBe('image')
-  }))
+  })
+})
 
-describe('modelForMode', () =>
+describe('modelForMode', () => {
   it("finds a family's first model for a mode", () => {
     expect(modelForMode(ASSETS, QWEN, 'edit')?.path).toBe('models/qwen/edit/e')
     expect(modelForMode(ASSETS, WAN, 't2v')).toBeUndefined()
-  }))
+  })
+})
 
 describe('familyForMode', () => {
   const FLUX = family('flux', [variant('dev', ['t2i', 'inpaint'])])

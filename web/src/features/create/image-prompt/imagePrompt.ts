@@ -95,7 +95,9 @@ export const weightFor = (take: Take, model: string) =>
 /** The model a choice picks: the best of the first kind it wants that's in Drive. */
 export function modelFor(assets: Asset[], take: Take): Asset | undefined {
   for (const kind of WANTS[take]) {
-    const found = assets.filter((a) => adapterKind(a) === kind).sort((a, b) => rank(b) - rank(a))
+    const found = assets
+      .filter((a) => adapterKind(a) === kind)
+      .toSorted((a, b) => rank(b) - rank(a))
     if (found[0]) return found[0]
   }
   return undefined

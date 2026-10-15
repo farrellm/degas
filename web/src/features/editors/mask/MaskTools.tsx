@@ -4,7 +4,7 @@ export interface MaskToolsProps {
   /** The mask has loaded, so it can be inverted or cleared. */
   ready: boolean
   /** Whether the blur preview is on; undefined when the form has no mask blur to show. */
-  showBlur?: boolean
+  showBlur?: boolean | undefined
   onUndo: () => void
   onRedo: () => void
   onInvert: () => void

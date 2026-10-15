@@ -30,7 +30,7 @@ export function ResultGroup({
   group: Group
   now: number
   assets: Asset[] | undefined
-  queued?: Queued
+  queued?: Queued | undefined
   sectionRef: (el: HTMLElement | null) => void
   /** Open the viewer at a feed item's `key`. */
   onOpen: (key: string) => void
@@ -61,12 +61,12 @@ export function ResultGroup({
   const video = results[0] ? isVideo(results[0].media_type) : false
   const clips = results[0]?.segments?.length ?? 0
   const length = results[0]?.duration
-  const shape = [formatSize(w, h), video && length ? formatDuration(length) : null]
+  const shape = [formatSize(w, h), video && length != null ? formatDuration(length) : null]
     .filter(Boolean)
     .join(', ')
   // The model uncovers with the prompt: one tap on either shows the group's words.
   const meta = chain ? (
-    `Extended, ${clips} clips${length ? `, ${formatDuration(length)}` : ''}`
+    `Extended, ${clips} clips${length != null ? `, ${formatDuration(length)}` : ''}`
   ) : spec ? (
     <>
       <CoveredText id={`prompt:${group.id}`} label="Show model">

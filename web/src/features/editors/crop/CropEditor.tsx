@@ -73,7 +73,7 @@ export function CropEditor({
   const apply = useMutation({
     mutationFn: ({ ops }: { ops: Parameters<typeof api.transform>[1]; out: Size }) =>
       api.transform(original ?? sha, ops),
-    onSuccess: (image, { out }) => onApply(image, out),
+    onSuccess: (image, vars) => onApply(image, vars.out),
   })
 
   if (history.error) {

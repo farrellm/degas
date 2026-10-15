@@ -122,7 +122,7 @@ export function Viewer<T extends ViewerItem>({
   ].filter(Boolean)
   const frames = Number(params.num_frames)
   const fps = Number(params.fps)
-  const length = r.duration ?? (frames && fps ? frames / fps : null)
+  const length = r.duration ?? (frames > 0 && fps > 0 ? frames / fps : null)
 
   return (
     <div
@@ -210,14 +210,14 @@ export function Viewer<T extends ViewerItem>({
               {String(params.prompt ?? '') || 'No prompt'}
             </CoveredText>
           </p>
-          {params.negative_prompt ? (
+          {typeof params.negative_prompt === 'string' && params.negative_prompt !== '' ? (
             <p className="avoid">
               <CoveredText id={`prompt:${r.id}`} label="Show negative prompt" shown={!covered}>
-                Negative: {String(params.negative_prompt)}
+                Negative: {params.negative_prompt}
               </CoveredText>
             </p>
           ) : null}
-          {spec?.image_prompts?.length ? (
+          {spec?.image_prompts && spec.image_prompts.length > 0 ? (
             <ImagePrompts
               key={r.id}
               id={r.id}
@@ -244,11 +244,12 @@ export function Viewer<T extends ViewerItem>({
           </span>
           {video && r.segments ? (
             <span>
-              Extended, {r.segments.length} clips{length ? `, ${formatDuration(length)}` : ''}
+              Extended, {r.segments.length} clips
+              {length !== null ? `, ${formatDuration(length)}` : ''}
             </span>
           ) : video ? (
             <span>
-              {frames} frames at {fps} fps{length ? `, ${formatDuration(length)}` : ''}
+              {frames} frames at {fps} fps{length !== null ? `, ${formatDuration(length)}` : ''}
             </span>
           ) : null}
           <span>{sampling.join(', ')}</span>

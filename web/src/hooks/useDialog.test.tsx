@@ -25,8 +25,8 @@ describe('useDialog', () => {
 
   it('calls the latest onEscape', async () => {
     const user = userEvent.setup()
-    const first = vi.fn()
-    const latest = vi.fn()
+    const first = vi.fn<() => void>()
+    const latest = vi.fn<() => void>()
     const { rerender } = render(<Dialog onEscape={first} />)
     rerender(<Dialog onEscape={latest} />)
     await user.keyboard('{Escape}')

@@ -128,7 +128,7 @@ export interface SessionSnapshot {
     vram_total: number | null
     disk_free: number
     /** The VM's model cache; absent from workers older than Phase 2. */
-    cache?: { used: number; budget: number; files: CachedFile[] }
+    cache?: { used: number; budget: number; files: CachedFile[] } | undefined
   } | null
   idle_deadline: string | null
   idle_timeout_min: number
@@ -268,7 +268,7 @@ export interface Progress {
   step: number
   steps: number
   /** The Drive asset being copied, during the `copy` phase. */
-  asset?: string | null
+  asset?: string | null | undefined
 }
 
 export type JobStatus = 'queued' | 'running' | 'done' | 'cancelled' | 'error'

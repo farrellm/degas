@@ -11,7 +11,7 @@ export function useServerEvents() {
   useEffect(() => {
     const source = new EventSource('/api/events')
 
-    source.onmessage = (msg: MessageEvent<string>) => {
+    source.addEventListener('message', (msg: MessageEvent<string>) => {
       const event = parseEvent(msg.data)
       if (!event) {
         // Not an event this app can read (an older app, a newer server): don't let it into
@@ -70,7 +70,7 @@ export function useServerEvents() {
           qc.setQueryData(queries.civitaiImport().queryKey, event.import)
           break
       }
-    }
+    })
 
     // iOS suspends background tabs; refetch when the app comes back.
     const onVisible = () => {

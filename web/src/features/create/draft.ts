@@ -7,7 +7,7 @@ import { isPair } from '@/lib/loras'
 import { readStored, writeStored } from '@/lib/storage'
 
 import { type ControlUnit, unitFromSpec } from './control/control'
-import { storedSchema } from './draftSchema'
+import { storedSchema, withoutUndefined } from './draftSchema'
 import { type ImagePromptUnit, promptFromSpec } from './image-prompt/imagePrompt'
 
 // The Create form's draft, kept across visits and reloads.
@@ -59,7 +59,7 @@ function parseDraft(stored: string | null): Draft {
   const families = raw.families ?? {}
   // Before Phase 4 the draft held one family's settings at the top level.
   if (!raw.families && (raw.model !== undefined || raw.params || raw.loras)) {
-    families[family] = { model: raw.model, loras: raw.loras, params: raw.params }
+    families[family] = withoutUndefined({ model: raw.model, loras: raw.loras, params: raw.params })
   }
   return {
     family,
@@ -125,7 +125,7 @@ export interface Carry {
    * changing the model keeps what's been typed and chosen.
    */
   keep?: boolean
-  model?: string
+  model?: string | undefined
   mode?: string
   /** Kept only if the other family's draft has no source (or references) of its own. */
   source?: Source | null
@@ -148,7 +148,9 @@ export function switchFamily(family: string, carry: Carry) {
     if (source?.sha !== next.source?.sha) {
       Object.assign(next, { source, extends: null, mask: null, place: null })
     }
-    if (carry.keep ? carry.refs : carry.refs?.length && !next.refs?.length) next.refs = carry.refs
+    if (carry.refs && (carry.keep || (carry.refs.length > 0 && (next.refs?.length ?? 0) === 0))) {
+      next.refs = carry.refs
+    }
     if (carry.keep) {
       return {
         ...next,

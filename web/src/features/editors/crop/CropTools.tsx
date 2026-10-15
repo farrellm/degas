@@ -10,7 +10,7 @@ export interface CropToolsProps {
   disabled: boolean
   flipped: boolean
   /** Whether the crop is resized to the output size; undefined when it never is (a free crop). */
-  resize?: boolean
+  resize?: boolean | undefined
   onAspect: (aspect: Aspect) => void
   onRotate: () => void
   onFlip: () => void

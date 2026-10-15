@@ -6,7 +6,7 @@ import { ASSETS, FAMILIES, RUNNING } from '@/test/fixtures'
 import { mockApi } from '@/test/mockApi'
 import { renderApp } from '@/test/render'
 
-describe('Mask editor', () =>
+describe('Mask editor', () => {
   it('finds a described selection without submitting the Create form', async () => {
     vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null)
     const selects: unknown[] = []
@@ -49,12 +49,13 @@ describe('Mask editor', () =>
     await user.click(await screen.findByRole('button', { name: /Mask Paint the area to redraw/ }))
     const editor = await screen.findByRole('dialog', { name: 'Mask' })
     await user.click(within(editor).getByRole('button', { name: 'Select' }))
-    const describe = await within(editor).findByLabelText('Describe what to select')
-    await user.type(describe, 'the lighthouse{Enter}')
+    const description = await within(editor).findByLabelText('Describe what to select')
+    await user.type(description, 'the lighthouse{Enter}')
     await waitFor(() => expect(selects).toHaveLength(1))
     await user.click(within(editor).getByRole('button', { name: 'Find' }))
     await waitFor(() => expect(selects).toHaveLength(2))
     expect(selects[0]).toMatchObject({ id: 'sam', params: { text: 'the lighthouse' } })
     expect(screen.getByRole('dialog', { name: 'Mask' })).toBeInTheDocument()
     expect(jobs).toHaveLength(0)
-  }))
+  })
+})

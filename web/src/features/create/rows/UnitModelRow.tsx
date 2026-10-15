@@ -20,7 +20,7 @@ export function UnitModelRow({ value, placeholder, missing, warning, onPick }: U
         </span>
       </button>
       {missing && <p className="row-warning">{missing}</p>}
-      {warning && !missing && <p className="row-warning">{warning}</p>}
+      {typeof warning === 'string' && !missing && <p className="row-warning">{warning}</p>}
     </div>
   )
 }

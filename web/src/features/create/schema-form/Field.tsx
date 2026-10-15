@@ -17,7 +17,7 @@ export interface FieldProps {
   prop: ParamProp
   value: string | number | boolean | null
   set: (name: string, value: string | number | boolean | null) => void
-  seeds?: SeedChoice
+  seeds?: SeedChoice | undefined
 }
 
 export function Field({ name, prop, value, set, seeds }: FieldProps) {

@@ -58,7 +58,7 @@ export function familyForMode({
   const rank = (f: Family) => (f.id === family.id ? -1 : recent.indexOf(f.id) + 1 || Infinity)
   const candidates = siblings
     .filter((f) => f.variants.some((v) => v.modes.includes(mode)))
-    .sort((a, b) => rank(a) - rank(b))
+    .toSorted((a, b) => rank(a) - rank(b))
   for (const f of candidates) {
     const model = modelForMode(assets, f, mode)
     if (model) return { family: f, model }
