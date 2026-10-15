@@ -67,7 +67,7 @@ export const FACEID_NOTE =
 // FaceID starts a little stronger than a CLIP face model (docs/ip-adapter.md §2.2).
 const FACEID_WEIGHT = 0.8
 
-export const purposeOf = (take: Take): Purpose => (take === 'face' ? 'all' : take)
+const purposeOf = (take: Take): Purpose => (take === 'face' ? 'all' : take)
 
 /** The kind of model each choice wants, best first. */
 const WANTS: Record<Take, AdapterKind[]> = {

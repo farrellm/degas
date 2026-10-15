@@ -6,7 +6,7 @@ import { blobUrl } from '@/api/urls'
 import { useDialog } from '@/hooks/useDialog'
 
 /** One of an image's image prompt pictures, with its unit's lines for the label. */
-export interface PromptPicture {
+interface PromptPicture {
   sha: string
   model: string
   summary: string

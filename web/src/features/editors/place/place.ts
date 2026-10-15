@@ -5,20 +5,20 @@ export type Place = Rect
 
 /** Positions snap to this step, which SDXL's latents also use. */
 const STEP = 8
-export const MIN_SIDE = 64
+const MIN_SIDE = 64
 /** How much of the canvas the source fills by default, when fitting it would fill it all. */
 const ROOM = 0.75
 
 const snap = (v: number) => Math.round(v / STEP) * STEP
 
 /** The largest size of the source's shape that fits inside the canvas. */
-export function fitInside(source: Size, canvas: Size): Size {
+function fitInside(source: Size, canvas: Size): Size {
   const k = Math.min(canvas.w / source.w, canvas.h / source.h)
   return { w: source.w * k, h: source.h * k }
 }
 
 /** The source at `scale` (1 = fit inside) of the canvas, snapped, at least MIN_SIDE a side. */
-export function sized(source: Size, canvas: Size, scale: number): Size {
+function sized(source: Size, canvas: Size, scale: number): Size {
   const fit = fitInside(source, canvas)
   const min = MIN_SIDE / Math.min(fit.w, fit.h)
   const k = Math.min(1, Math.max(min, scale))
@@ -48,7 +48,7 @@ export function defaultPlace(source: Size, canvas: Size): Place {
   return centre(size, canvas)
 }
 
-export function centre(size: Size, canvas: Size): Place {
+function centre(size: Size, canvas: Size): Place {
   return clampPlace(
     { x: (canvas.w - size.w) / 2, y: (canvas.h - size.h) / 2, w: size.w, h: size.h },
     canvas,

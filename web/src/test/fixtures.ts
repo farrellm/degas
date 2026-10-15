@@ -61,7 +61,7 @@ export const SCHEMA = {
   },
 }
 
-export function SESSION_BASE() {
+function SESSION_BASE() {
   return {
     session: null,
     step: null,

@@ -82,7 +82,7 @@ const imagePromptUnit: v.GenericSchema<unknown, ImagePromptUnit> = v.pipe(
   v.transform(restorePrompt),
 )
 
-export const familyDraftSchema = keptObject({
+const familyDraftSchema = keptObject({
   model: kept(v.string()),
   mode: kept(v.string()),
   loras: kept(v.array(lora)),

@@ -1,7 +1,7 @@
 import type { ParamProp, Params, ParamSchema } from '@/api/types'
 
 /** Default values for every parameter in a schema. */
-export function schemaDefaults(schema: ParamSchema): Params {
+function schemaDefaults(schema: ParamSchema): Params {
   const out: Params = {}
   for (const [name, prop] of Object.entries(schema.properties)) {
     out[name] = prop.default ?? (prop.type === 'string' ? '' : null)

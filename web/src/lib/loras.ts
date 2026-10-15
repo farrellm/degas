@@ -10,7 +10,7 @@ const HALF = /^(.*?)[_-](high|low)[_-]?noise\.[^.]+$/i
 const PAIR_PREFIX = 'pair:'
 
 /** "Motion v2" for "loras/wan22/motion_v2_high_noise.safetensors". */
-export function pairName(path: string): string {
+function pairName(path: string): string {
   const file = path.split('/').pop() ?? path
   return modelName(file.replace(HALF, '$1'))
 }

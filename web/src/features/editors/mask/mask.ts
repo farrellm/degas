@@ -1,9 +1,9 @@
 // Pure helpers for the mask editor (design §8.2): working size, the view, the undo
 // history, and turning a stored mask (white = redraw) into canvas alpha and back.
-import type { Rect, Size, View } from '@/lib/geometry'
+import type { Size, View } from '@/lib/geometry'
 
 /** Masks are painted at most this big on a side; iOS limits canvas memory. */
-export const MAX_WORKING = 2048
+const MAX_WORKING = 2048
 const MAX_ZOOM = 8
 const STAGE_MARGIN = 12
 
@@ -118,9 +118,4 @@ export function ringOffsets(radius: number): { x: number; y: number }[] {
     const a = (i / n) * 2 * Math.PI
     return { x: Math.round(Math.cos(a) * radius), y: Math.round(Math.sin(a) * radius) }
   })
-}
-
-/** The stage rect of the image at a view. */
-export function imageRect(view: View, image: Size): Rect {
-  return { x: view.tx, y: view.ty, w: image.w * view.s, h: image.h * view.s }
 }
