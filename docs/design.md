@@ -707,7 +707,15 @@ Phases are numbered from 0.
     - `i2v-a14b` `flf2v`, 81 frames, 30 steps: 43 minutes including the cold copy of the 126 GB folder. It also ends on the last frame (mean difference about 4).
     - Regressions: `i2v` on `i2v-a14b` (49 frames, 20 steps, 12 minutes) and `t2v` on `ti2v-5b` (49 frames, 30 steps) both made sensible clips. Extending an FLF2V clip offers `wan21-i2v-14b` in `i2v` mode, with the first Wan 2.1 I2V folder in the index (480P here).
 
-16. **FLUX 3.** 🚧 Built; live test in progress. The `flux3` family (§4.3): FLUX 3 Image Klein Base for `t2i` and `edit` with up to 10 images, with BFL's prompt upsampler in front of it. Its scene caption is kept with each result (`results.caption`, the saved config's `caption`) and shown in the viewer's wall label under the prompt. The Drive index takes `upsamplers/<family>/` folders and folders with a `modular_model_index.json`. The diffusers pin moved to `d42ebf9c` on `main`, which has FLUX 3 and its upsampler block.
+16. **FLUX 3.** ✅ Built and tested on an A100. The `flux3` family (§4.3): FLUX 3 Image Klein Base for `t2i` and `edit` with up to 10 images, with BFL's prompt upsampler in front of it. Its scene caption is kept with each result (`results.caption`, the saved config's `caption`) and shown in the viewer's wall label under the prompt. The Drive index takes `upsamplers/<family>/` folders and folders with a `modular_model_index.json`. The diffusers pin moved to `d42ebf9c` on `main`, which has FLUX 3 and its upsampler block.
+
+    Live test on an A100 80 GB, high memory (2026-10-17, diffusers 0.41.0.dev0 at `d42ebf9c`, torch 2.11.0), on the real server. The six FLUX 3 images are kept in the library under the tag `flux3-test`.
+    - With the upsampler, everything stayed on the GPU (about 40 GB in use), so the offload chain hasn't run yet. The first job took 5.5 min, including the cold copy of both folders (39 GB) and the load. After that: 50 steps at 1024² in about 25 s (2 it/s). The upsampler adds roughly 10–20 s a job, and a two-image batch took 76 s. An edit with one image runs at 1.1 s a step (about 55 s), and with four images at 3.7 s a step (about 3 min).
+    - `t2i` (a knitted lighthouse with the banner text "KNIT HARBOUR"): the caption is a full scene description of about 250 words, and the image follows it, with the text spelled right. `t2i` with *Upsample prompt* off gave a sane image and stored no caption.
+    - An `edit` with no references ("the same scene at night under a knitted full moon") kept the composition and changed the lighting, sky and moon. An `edit` with 3 references: the upsampler read all four images, and its caption names the fox from the second, but the image model kept the source almost unchanged. The step time shows the references reached it, so this is the base model's edit and not the plumbing.
+    - Step progress, the *Writing caption* phase and cancelling mid-denoise all work. The caption shows in the Results and Library viewers at phone width, and the kept items carry it in their config.
+    - Regressions on the new pin: SDXL, FLUX.1 (fp8), Qwen-Image 2.1, klein, Wan 2.2 TI2V 5B (`t2v`) and LTX-2.5 (`t2v`) each ran one job.
+    - Still to do: the offload path (a 40 GB A100 or an L4) and a FLUX 3 LoRA (none in Drive yet).
 
 ## 11. Risks and open questions
 
