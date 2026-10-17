@@ -30,6 +30,8 @@ export interface ViewerItem {
   duration?: number | null
   /** A stitched video extension: its clips' configs. */
   segments?: SavedConfig[] | null
+  /** The scene caption the model was given in place of the prompt (FLUX 3). */
+  caption?: string | null
   spec: Spec | null
 }
 
@@ -214,6 +216,13 @@ export function Viewer<T extends ViewerItem>({
             <p className="avoid">
               <CoveredText id={`prompt:${r.id}`} label="Show negative prompt" shown={!covered}>
                 Negative: {params.negative_prompt}
+              </CoveredText>
+            </p>
+          ) : null}
+          {r.caption ? (
+            <p className="caption">
+              <CoveredText id={`prompt:${r.id}`} label="Show caption" shown={!covered}>
+                Caption: {r.caption}
               </CoveredText>
             </p>
           ) : null}

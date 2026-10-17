@@ -306,6 +306,14 @@ Built. LTX-2 is a video family found under the Model button. Its form comes from
 - **Distilled variants** (LTX-2.5 and LTX-2.3 Distilled) have no *Steps* or *CFG*: the schedule is fixed. Under More settings they have *Upscale 2×* (*Make the video at half size, then upsample and refine it*). LTX-2.3 has *Steps*, *CFG*, and under More settings *Audio CFG* and *STG*.
 - **Extend** shows for every family that can continue a clip (`extendable`), so LTX clips get it too. It is no longer tied to Wan.
 
+### Phase 16: FLUX 3
+
+Built. FLUX 3 Image is an image family found under the Model button. Its form comes from the schema, with one new switch.
+
+- **Upsample prompt.** A switch under CFG, on by default. On, BFL's prompt upsampler expands the prompt (and, for an edit, what it sees in the images) into a full scene caption, which is what the model is trained on. Off sends the prompt as written, for a caption you wrote or pasted yourself.
+- **Writing caption.** While the upsampler works, the sketch tile reads *Writing caption* and its hatching pulses, as it does for loading.
+- **On the wall label.** Under the prompt (and its negative), *Caption:* and the caption in full, in roman Newsreader at the negative prompt's size and colour: the italic title stays your words, and the caption is the model's. It's covered with the prompt in discretion mode (*Show caption*). Kept images keep it. *Remix* loads the prompt you wrote, not the caption.
+
 ## 5. Component inventory
 
 | Component | Status | Notes |

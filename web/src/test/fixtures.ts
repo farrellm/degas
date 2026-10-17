@@ -164,6 +164,8 @@ export const RESULT = {
   created_at: '2026-09-27T12:00:00Z',
   expires_at: null,
   library_id: null,
+  segments: null,
+  caption: null,
   spec: SPEC,
 }
 
@@ -343,5 +345,6 @@ export const VIDEO_RESULT = {
   height: 704,
   duration: 5.04,
   segments: null,
+  caption: null,
   spec: WAN_SPEC,
 }

@@ -412,7 +412,15 @@ class Dispatcher:
             sha = self.blobs.put(data, media_type)
             w, h, duration = await self._measure(sha, media_type)
             result = self.db.insert_result(
-                job_id, item, sha, media_type, event.get("seed"), w, h, duration
+                job_id,
+                item,
+                sha,
+                media_type,
+                event.get("seed"),
+                w,
+                h,
+                duration,
+                caption=event.get("caption"),
             )
             self.bus.publish({"type": "result", "result": result})
         try:

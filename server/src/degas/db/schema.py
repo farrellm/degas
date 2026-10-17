@@ -109,6 +109,7 @@ MIGRATIONS = (
     ("jobs", "runtime", "TEXT"),
     ("results", "segments", "TEXT"),
     ("library_items", "duration", "REAL"),
+    ("results", "caption", "TEXT"),
 )
 
 # Stored SDXL params from before the noise schedule was its own control: a Karras sampler

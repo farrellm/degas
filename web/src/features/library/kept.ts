@@ -10,5 +10,6 @@ export function asViewerItem(item: LibraryItem): Kept {
     seed: typeof seed === 'number' ? seed : null,
     spec: item.config,
     segments: item.config.segments ?? null,
+    caption: item.config.caption ?? null,
   }
 }

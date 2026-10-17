@@ -29,7 +29,8 @@ class FakeRunner:
                 ctx.progress(item, "denoise", step + 1, 3)
             if self.fail:
                 raise RuntimeError(self.fail)
-            yield Output(item, seed, f"img-{seed}".encode(), "image/png", "png")
+            caption = f"caption {seed}" if spec.get("caption") else None
+            yield Output(item, seed, f"img-{seed}".encode(), "image/png", "png", caption)
 
     def unload(self) -> None:
         pass
@@ -92,6 +93,16 @@ def test_job_lifecycle(client: TestClient) -> None:
 
     # Events can be replayed after the job has finished.
     assert events(client, "j1")[-1]["t"] == "done"
+
+
+def test_an_output_carries_its_caption(client: TestClient) -> None:
+    spec = {"family": "fake", "caption": True}
+    client.post("/jobs", json={"job_id": "j1", "spec": spec, "seeds": [7]})
+    [output] = [e for e in events(client, "j1") if e["t"] == "output"]
+    assert output["caption"] == "caption 7"
+    # A reconnecting server finds it with the output it hasn't fetched yet.
+    [pending] = client.get("/state").json()["outputs"]
+    assert pending["caption"] == "caption 7"
 
 
 def test_job_error(client: TestClient, runner: FakeRunner) -> None:

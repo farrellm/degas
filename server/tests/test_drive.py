@@ -26,11 +26,25 @@ TREE: dict[str, list[dict[str, Any]]] = {
         {"id": "cfg", "name": "configs", "mimeType": FOLDER},
         {"id": "ipa", "name": "ip_adapters", "mimeType": FOLDER},
         {"id": "enc", "name": "image_encoders", "mimeType": FOLDER},
+        {"id": "ups", "name": "upsamplers", "mimeType": FOLDER},
         {"id": "junk", "name": "notes.txt", "mimeType": "text/plain"},
     ],
     "models": [
         {"id": "m-sdxl", "name": "sdxl", "mimeType": FOLDER},
         {"id": "m-wan", "name": "wan22", "mimeType": FOLDER},
+        {"id": "m-f3", "name": "flux3", "mimeType": FOLDER},
+    ],
+    "m-f3": [{"id": "f3", "name": "flux-3-image-klein-base", "mimeType": FOLDER}],
+    "f3": [
+        {"id": "f3i", "name": "modular_model_index.json", "mimeType": "x", "size": "2"},
+        {"id": "f3t", "name": "transformer", "mimeType": FOLDER},
+    ],
+    "f3t": [{"id": "f3w", "name": "model.safetensors", "mimeType": "x", "size": "20"}],
+    "ups": [{"id": "ups-f3", "name": "flux3", "mimeType": FOLDER}],
+    "ups-f3": [{"id": "pup", "name": "flux-3-image-klein-pup", "mimeType": FOLDER}],
+    "pup": [
+        {"id": "pc", "name": "config.json", "mimeType": "application/json", "size": "1"},
+        {"id": "pw", "name": "model.safetensors", "mimeType": "x", "size": "18"},
     ],
     "m-sdxl": [
         {
@@ -184,7 +198,13 @@ async def test_scan(auth: DriveAuth) -> None:
         "configs/sdxl/stable-diffusion-xl-base-1.0",
         "ip_adapters/sdxl/ip-adapter-plus_sdxl_vit-h.safetensors",
         "image_encoders/sdxl/clip-vit-h-14",
+        "models/flux3/flux-3-image-klein-base",
+        "upsamplers/flux3/flux-3-image-klein-pup",
     }
+    flux3 = assets["models/flux3/flux-3-image-klein-base"]
+    assert (flux3["kind"], flux3["family"], flux3["size"]) == ("model", "flux3", 22)
+    pup = assets["upsamplers/flux3/flux-3-image-klein-pup"]
+    assert (pup["kind"], pup["family"], pup["size"]) == ("upsampler", "flux3", 19)
     assert assets["preprocessors/dwpose"]["size"] == 300
     ipa = assets["ip_adapters/sdxl/ip-adapter-plus_sdxl_vit-h.safetensors"]
     assert (ipa["kind"], ipa["family"]) == ("ip_adapter", "sdxl")

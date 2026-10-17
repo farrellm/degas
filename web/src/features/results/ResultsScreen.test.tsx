@@ -117,6 +117,25 @@ describe('Results', () => {
     expect(screen.queryByRole('group', { name: 'Image prompts' })).not.toBeInTheDocument()
   })
 
+  it('shows the scene caption a result was made from, covered with its image', async () => {
+    const caption = 'Full-color photograph of a lighthouse in fog.'
+    const first = { ...RESULT, caption }
+    const second = { ...first, id: 'r2', item_index: 1, blob_sha: 'def', seed: 1235 }
+    mockApi({ 'GET /api/results': () => ({ results: [first, second], cursor: null }) })
+    const user = userEvent.setup()
+    renderApp()
+    await user.click(screen.getByRole('button', { name: 'Cover images' }))
+    await user.click(await screen.findByRole('button', { name: /Results/ }))
+    await user.click(await screen.findByRole('button', { name: 'Show image 1' }))
+    await user.click(screen.getByRole('button', { name: /Open image 1, seed 1234/ }))
+    const viewer = screen.getByRole('dialog', { name: 'Image' })
+    expect(within(viewer).getByText(`Caption: ${caption}`)).toBeInTheDocument()
+    await user.click(within(viewer).getByRole('button', { name: 'Next image' }))
+    expect(within(viewer).getByRole('button', { name: 'Show caption' })).toBeInTheDocument()
+    await user.click(within(viewer).getByRole('button', { name: 'Show image' }))
+    expect(within(viewer).queryByRole('button', { name: 'Show caption' })).not.toBeInTheDocument()
+  })
+
   it('keeps a result, marking its tile and group', async () => {
     let kept = false
     const now = Date.now()

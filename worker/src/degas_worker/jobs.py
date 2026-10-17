@@ -149,6 +149,8 @@ class OutputStore:
             "media_type": output.media_type,
             "file": f"{output.item}.{output.ext}",
         }
+        if output.caption is not None:
+            meta["caption"] = output.caption
         (d / f"{output.item}.json").write_text(json.dumps(meta))
 
     def pending(self) -> list[dict[str, Any]]:
@@ -253,14 +255,15 @@ class JobManager:
             runner = self._runner_for(record.spec["family"])
             for output in runner.run(record.spec, record.seeds, ctx):
                 self.outputs.put(record.id, output)
-                record.emit(
-                    {
-                        "t": "output",
-                        "item": output.item,
-                        "seed": output.seed,
-                        "media_type": output.media_type,
-                    }
-                )
+                event: Event = {
+                    "t": "output",
+                    "item": output.item,
+                    "seed": output.seed,
+                    "media_type": output.media_type,
+                }
+                if output.caption is not None:
+                    event["caption"] = output.caption
+                record.emit(event)
             record.emit({"t": "done"})
         except JobCancelled:
             record.emit({"t": "cancelled"})

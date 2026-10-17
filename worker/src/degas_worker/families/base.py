@@ -19,6 +19,7 @@ class Output:
     data: bytes
     media_type: str
     ext: str
+    caption: str | None = None  # the prompt the model was given, when a family rewrote it
 
 
 class RunContext(Protocol):

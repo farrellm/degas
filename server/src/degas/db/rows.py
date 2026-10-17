@@ -91,6 +91,7 @@ class SavedConfig(TypedDict):
     image_prompts: NotRequired[list[ImagePromptUnit]]
     runtime: NotRequired[JobRuntime]
     segments: NotRequired[list["SavedConfig"]]  # a stitched video: the clips it chains
+    caption: NotRequired[str]  # the prompt the model was given, when the family rewrote it
 
 
 class ResultRow(TypedDict):
@@ -106,6 +107,7 @@ class ResultRow(TypedDict):
     created_at: str
     expires_at: str | None  # set when its session ends
     segments: list[SavedConfig] | None
+    caption: str | None  # the prompt the model was given (FLUX 3's upsampled scene caption)
     library_id: str | None  # the library item that keeps it, if any
 
 

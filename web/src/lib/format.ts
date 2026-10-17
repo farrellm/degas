@@ -23,6 +23,7 @@ export function formatDuration(seconds: number): string {
 
 const PHASES: Record<string, string> = {
   load: 'Loading model',
+  upsample: 'Writing caption',
   denoise: 'Denoising',
   decode: 'Decoding',
   encode: 'Encoding',

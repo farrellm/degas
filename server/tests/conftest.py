@@ -276,6 +276,18 @@ class FakeQwen:
         pass
 
 
+class FakeFlux3(FakeQwen):
+    """FakeQwen that also records the upsampler a job names, and returns a caption with each
+    image when it has one."""
+
+    def run(self, spec: dict[str, Any], seeds: list[int], ctx: RunContext) -> Iterator[Output]:
+        upsampler = spec.get("upsampler")
+        caption = f"A full scene caption of {spec['params']['prompt']}" if upsampler else None
+        for output in super().run(spec, seeds, ctx):
+            yield Output(output.item, output.seed, output.data, "image/png", "png", caption)
+        self.calls[-1]["upsampler"] = upsampler["path"] if upsampler else None
+
+
 class FakeSam:
     """Selects a rectangle around each included point; a description selects the left half."""
 
@@ -353,6 +365,7 @@ class Harness:
         self.qwen = FakeQwen()
         self.flux = FakeQwen()
         self.klein = FakeQwen()
+        self.flux3 = FakeFlux3()
         self.sam = FakeSam()
         self.trace = FakeTrace()
         self.worker_paths = Paths(home=tmp_path / "vm", models=tmp_path / "vm-models")
@@ -378,6 +391,7 @@ class Harness:
                 "qwen21": lambda: self.qwen,
                 "flux1": lambda: self.flux,
                 "klein": lambda: self.klein,
+                "flux3": lambda: self.flux3,
             },
             rclone=str(rclone),
             exit_process=exit_process,
@@ -583,6 +597,20 @@ KLEIN = {
     "drive_file_id": "k9",
     "size": 35,
 }
+FLUX3 = {
+    "path": "models/flux3/flux-3-image-klein-base",
+    "family": "flux3",
+    "kind": "model",
+    "drive_file_id": "f3",
+    "size": 20,
+}
+FLUX3_PUP = {
+    "path": "upsamplers/flux3/flux-3-image-klein-pup",
+    "family": "flux3",
+    "kind": "upsampler",
+    "drive_file_id": "f3p",
+    "size": 19,
+}
 LTX25 = {
     "path": "models/ltx2/ltx25/LTX-2.5-Diffusers",
     "family": "ltx2",
@@ -616,6 +644,8 @@ def client(harness: Harness) -> Iterator[TestClient]:
                 FLUX1,
                 FLUX1_BASE,
                 KLEIN,
+                FLUX3,
+                FLUX3_PUP,
                 INPAINT_MODEL,
                 SAM,
                 DEPTH,

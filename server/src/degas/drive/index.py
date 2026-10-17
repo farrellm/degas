@@ -26,6 +26,7 @@ KINDS = {
     "vae": "vae",
     "configs": "config",
     "preprocessors": "preprocessor",
+    "upsamplers": "upsampler",
 }
 WEIGHT_SUFFIXES = (".safetensors", ".ckpt", ".pt", ".pth", ".bin", ".gguf")
 SIDECAR_SUFFIXES = (".yaml", ".yml")
@@ -108,15 +109,16 @@ class DriveIndexer:
         self, folder_id: str, parts: list[str], kind: str, out: list[dict[str, Any]]
     ) -> None:
         children = await self._children(folder_id)
-        # A diffusers-format directory is a single asset (a Wan model, or a pipeline's configs
-        # under `configs/`), and so is a diffusers ControlNet or VAE or a CLIP image encoder
-        # (`config.json` and its weights), and every folder directly under `preprocessors/`
-        # (SAM 3 and Depth Anything are transformers folders; DWPose is two ONNX files).
+        # A diffusers-format directory is a single asset (a Wan model, a modular pipeline like
+        # FLUX 3, or a pipeline's configs under `configs/`), and so is a diffusers ControlNet or
+        # VAE, a CLIP image encoder or a prompt upsampler (`config.json` and its weights), and
+        # every folder directly under `preprocessors/` (SAM 3 and Depth Anything are
+        # transformers folders; DWPose is two ONNX files).
         names = {c["name"] for c in children}
         if (
-            (len(parts) >= 3 and "model_index.json" in names)
+            (len(parts) >= 3 and names & {"model_index.json", "modular_model_index.json"})
             or (
-                kind in ("controlnet", "vae", "image_encoder")
+                kind in ("controlnet", "vae", "image_encoder", "upsampler")
                 and len(parts) >= 3
                 and "config.json" in names
             )

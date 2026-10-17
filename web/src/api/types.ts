@@ -294,6 +294,8 @@ export interface SavedConfig extends Spec {
   degas_version: number
   /** A stitched video: the configs of its clips, oldest first. */
   segments?: SavedConfig[]
+  /** The prompt the model was given, when the family rewrote it (FLUX 3's scene caption). */
+  caption?: string
   runtime?: { gpu: string | null; duration_s?: number; diffusers?: string; torch?: string }
 }
 
@@ -334,6 +336,8 @@ export interface Result {
   duration: number | null
   /** A stitched video extension: the configs of the clips it chains. */
   segments: SavedConfig[] | null
+  /** The prompt the model was given, when the family rewrote it (FLUX 3's scene caption). */
+  caption: string | null
   created_at: string
   expires_at: string | null
   /** The library item keeping this result, if it was kept. */

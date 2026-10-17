@@ -52,10 +52,17 @@ def step_callback(
     return on_step
 
 
-def png_output(item: int, seed: int, image: Image.Image) -> Output:
+def png_output(item: int, seed: int, image: Image.Image, caption: str | None = None) -> Output:
     buf = io.BytesIO()
     image.save(buf, format="PNG")
-    return Output(item=item, seed=seed, data=buf.getvalue(), media_type="image/png", ext="png")
+    return Output(
+        item=item,
+        seed=seed,
+        data=buf.getvalue(),
+        media_type="image/png",
+        ext="png",
+        caption=caption,
+    )
 
 
 def fetch_loras(spec: Spec, ctx: RunContext) -> list[LoraFile]:

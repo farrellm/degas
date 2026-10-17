@@ -151,6 +151,7 @@ def spec_assets(spec: Spec) -> list[NeededAsset]:
         need(prompt["adapter"], "ip_adapter", shared=True)
     need(spec.get("image_encoder"), "image_encoder")
     need(spec.get("face_detector"), "preprocessor")
+    need(spec.get("upsampler"), "upsampler")
     return assets
 
 

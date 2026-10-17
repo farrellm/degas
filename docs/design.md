@@ -275,6 +275,17 @@ class FamilyRunner:
 - **LoRAs:** single files, in `loras/klein/`, loaded by the pipeline's `Flux2LoraLoaderMixin`.
 - **Not in v1:** `inpaint` (it could work like Qwen's, as an edit pasted back through the mask); the 4B and undistilled base models.
 
+**FLUX 3 Image (`flux3`)**
+
+- **Model.** FLUX 3 Image Klein (October 2026, FLUX Kommunity License): a 5.6B flow transformer with Qwen3-VL-4B-Instruct as its text encoder and the FLUX.2 VAE. diffusers runs it as a modular pipeline (`Flux3AutoBlocks`, `Flux3ModularPipeline`), which only diffusers `main` has (§11).
+- **Checkpoint.** Klein Base, the undistilled checkpoint (50 steps, CFG 3.5): `black-forest-labs/flux-3-image-klein-base` under `models/flux3/flux-3-image-klein-base/`, with only `modular_model_index.json`, `transformer/`, `text_encoder/` and `vae/` (about 20 GB, bf16). The root `model.safetensors`, `ae.safetensors` and `variants/` hold BFL's own format of the same weights and aren't copied. The index makes the folder one asset by its `modular_model_index.json`. That file names its components by Hub repo, so the runner loads each one from its subfolder into a pipeline built from the blocks.
+- **Prompt upsampler.** BFL says the model needs a full scene caption and not a short prompt. `black-forest-labs/flux-3-image-klein-pup` (a 9B Qwen3.5 VLM, 18.8 GB, Apache 2.0) writes one from the prompt, and for an edit from its images too. It lives in `upsamplers/flux3/flux-3-image-klein-pup/`, an asset of the new `upsampler` kind (a `config.json` folder). The descriptor adds it to the spec as `upsampler`, so a missing upsampler is refused at submit, and it's prefetched like any other asset. The runner leaves out diffusers' own upsampler block and calls its `upsample_prompt` and `prepare_references` itself (BFL's system prompts, greedy decoding, up to 3584 tokens), so it keeps the caption. The caption is the same for every seed, so it's written once per job (progress phase `upsample`). Each output carries it as `caption`, which goes into the result row, the saved config (§6.4) and the viewer's wall label. *Upsample prompt* off sends the prompt as written, with no upsampler asset and no caption.
+- **Variant `klein-base`**, modes `t2i` and `edit`, minimum GPU L4. With the upsampler, the models come to about 39 GB. If they fit under the usual offload share, they all stay on the GPU (an 80 GB A100 or an H100). Otherwise they're chained through accelerate's offload hooks in the order they run (upsampler, text encoder, transformer, VAE), so each comes onto the GPU when it runs and sends the one before it back. The modular pipeline has no `enable_model_cpu_offload`, so the runner keeps these hooks itself, and takes them off while it loads a LoRA.
+- **Edit.** The source is image 1 and `inputs.refs` adds up to 9 more (the model reads 10). The pipeline keeps each condition image at its own size, so the runner scales any above 1 megapixel down to it (`Variant.ref_max_pixels`). Images with alpha are flattened onto white.
+- **Parameters:** prompt, negative prompt, width and height (multiples of 16, up to 4 MP, default 1024²), steps (default 50), CFG (default 3.5, as `ClassifierFreeGuidance`), *Upsample prompt* (on by default) and seed. There's no step callback, so the runner wraps the scheduler's `step` to report progress and to cancel.
+- **LoRAs:** single files, in `loras/flux3/`, loaded by `Flux3LoraLoaderMixin`, which converts BFL-format keys.
+- **Not in v1:** the distilled Klein checkpoint (16 steps, no CFG; a second variant with `Flux3DistilledAutoBlocks`), layout boxes (the upsampler's `*_bbox` modes), the fp8 and NVFP4 transformers, and `inpaint`.
+
 **LTX-2 (`ltx2`)**
 
 - **Model.** Lightricks' LTX-2.3 (March 2026) and LTX-2.5 (August 2026): a 22B audio-video DiT that makes a clip and its sound together. LTX-2.3's text encoder is Gemma 3 12B and LTX-2.5's is Gemma 4 12B. Both load in diffusers as `LTX2Pipeline`. That needs diffusers `main` and transformers 5.10.1 or later (for Gemma 4), which the bootstrap installs when the image's are older (§11).
@@ -314,6 +325,7 @@ MyDrive/degas/
     qwen21/        Qwen-Image-2.1/ (the official diffusers folder)
     flux1/         *.safetensors (single-file transformers, e.g. flux1-dev-fp8)
     klein/         FLUX.2-klein-9B/ (the official diffusers folder)
+    flux3/         flux-3-image-klein-base/ (the modular diffusers folder, without variants/ or BFL's root files)
     ltx2/          <variant>/…   (diffusers folders: ltx25/, ltx23-distilled/, ltx23/; latent_upsampler/ inside for Upscale)
   loras/
     sdxl/          *.safetensors (+ *.yaml, preview *.jpg/png)
@@ -321,6 +333,7 @@ MyDrive/degas/
     qwen21/        *.safetensors
     flux1/         *.safetensors
     klein/         *.safetensors
+    flux3/         *.safetensors
     ltx2/          *.safetensors (sidecar `variants` from Civitai: ltx23 + ltx23-distilled, or ltx25)
   controlnets/
     sdxl/          *.safetensors or diffusers dirs
@@ -334,6 +347,8 @@ MyDrive/degas/
                    insightface/ (det_10g.onnx and w600k_r50.onnx from buffalo_l, for FaceID)
   vae/
     sdxl/          sdxl-vae-fp16-fix/ (the fp16-fix VAE, diffusers folder)
+  upsamplers/
+    flux3/         flux-3-image-klein-pup/ (BFL's prompt upsampler, a transformers folder)
   configs/
     sdxl/          stable-diffusion-xl-base-1.0/, stable-diffusion-xl-1.0-inpainting-0.1/
                    (the repos' configs and tokenizers, no weights)
@@ -692,6 +707,8 @@ Phases are numbered from 0.
     - `i2v-a14b` `flf2v`, 81 frames, 30 steps: 43 minutes including the cold copy of the 126 GB folder. It also ends on the last frame (mean difference about 4).
     - Regressions: `i2v` on `i2v-a14b` (49 frames, 20 steps, 12 minutes) and `t2v` on `ti2v-5b` (49 frames, 30 steps) both made sensible clips. Extending an FLF2V clip offers `wan21-i2v-14b` in `i2v` mode, with the first Wan 2.1 I2V folder in the index (480P here).
 
+16. **FLUX 3.** 🚧 Built; live test in progress. The `flux3` family (§4.3): FLUX 3 Image Klein Base for `t2i` and `edit` with up to 10 images, with BFL's prompt upsampler in front of it. Its scene caption is kept with each result (`results.caption`, the saved config's `caption`) and shown in the viewer's wall label under the prompt. The Drive index takes `upsamplers/<family>/` folders and folders with a `modular_model_index.json`. The diffusers pin moved to `d42ebf9c` on `main`, which has FLUX 3 and its upsampler block.
+
 ## 11. Risks and open questions
 
 | Risk | Impact | Mitigation |
@@ -708,7 +725,7 @@ Phases are numbered from 0.
 | diffusers API churn for newer Wan and ControlNet classes | Upgrades break the worker | Pin versions in `requirements-worker.txt`; record versions in each saved config |
 | fp8 layerwise casting is newer diffusers code, used here with model CPU offload and PEFT LoRAs | FLUX.1 fails to load a LoRA, or runs slowly, on an L4 | `_adapters_in_bf16` keeps adapters out of fp8; the live test covers offload and a LoRA; on an A100 and up, a bf16 folder model skips fp8 entirely |
 | diffusers' IP-Adapter layers and PEFT LoRAs on the same attention modules; `unload_ip_adapter` resets every processor | A LoRA or a regional ControlNet misbehaves after image prompts are added or removed | The live test adds and removes each with the other loaded; the runner remakes derived pipelines whenever the adapter set changes |
-| Qwen-Image 2.1 and LTX-2.5 need diffusers `main` (not in 0.40.0), and LTX-2 needs transformers 5.10.1+ (Gemma 4) | The pinned commit and the newer transformers also run every other family, and could break them | Install each only when the image's lacks what's needed (`QwenImage21Pipeline`, `LTX2Pipeline` and `LTX2DurationHead`; `Gemma4UnifiedForConditionalGeneration`); re-test every family on them; move to the first releases that have them |
+| Qwen-Image 2.1, LTX-2.5 and FLUX 3 need diffusers `main` (not in 0.41.0), and LTX-2 needs transformers 5.10.1+ (Gemma 4) | The pinned commit and the newer transformers also run every other family, and could break them | Install each only when the image's lacks what's needed (`QwenImage21Pipeline`, `LTX2Pipeline` and `LTX2DurationHead`, FLUX 3's `upsample_prompt`; `Gemma4UnifiedForConditionalGeneration`); re-test every family on them; move to the first releases that have them |
 
 ## 12. Future work
 

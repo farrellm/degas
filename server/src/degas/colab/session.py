@@ -40,16 +40,18 @@ WORKER_MATCH = "degas_worker.app:"  # finds the worker in `ps`, however it was s
 STARTED_MARKER = "@@degas-worker-started"
 PORT_WAIT_S = 90  # how long a new worker waits for the old one's port
 RCLONE_URL = "https://downloads.rclone.org/rclone-current-linux-amd64.zip"
-# Qwen-Image 2.1's pipeline (huggingface/diffusers#14804) and LTX-2.5's (its duration head and
-# Gemma 4 text encoder) aren't in a diffusers release yet (design §11). A commit on main with both.
+# Qwen-Image 2.1's pipeline (huggingface/diffusers#14804), LTX-2.5's (its duration head and
+# Gemma 4 text encoder) and FLUX 3's modular pipeline and prompt upsampler (#15046, #15058)
+# aren't in a diffusers release yet (design §11). A commit on main with all of them.
 DIFFUSERS_PIN = (
     "diffusers @ git+https://github.com/huggingface/diffusers"
-    "@c2798cc7859f258c6cfc5b2460e82b6cac71f235"
+    "@d42ebf9c6e0b46103b74283f5324357a67acaa04"
 )
 # What the pin needs that an older diffusers lacks.
 DIFFUSERS_CHECK = (
     "from diffusers import QwenImage21Pipeline, LTX2Pipeline;"
-    " from diffusers.pipelines.ltx2 import LTX2DurationHead"
+    " from diffusers.pipelines.ltx2 import LTX2DurationHead;"
+    " from diffusers.modular_pipelines.flux3.prompt_upsampler import upsample_prompt"
 )
 # diffusers' LTX-2 pipelines import Gemma 4's text encoder, added in transformers 5.10.1.
 TRANSFORMERS_MIN = "5.10.1"

@@ -240,12 +240,15 @@ class Database:
         height: int | None,
         duration: float | None = None,
         segments: list[SavedConfig] | None = None,
+        caption: str | None = None,
     ) -> ResultRow:
-        """`segments`: for a stitched video, the configs of the clips it chains (design §6.4)."""
+        """`segments`: for a stitched video, the configs of the clips it chains (design §6.4).
+        `caption`: the prompt the model was given, when the family rewrote the person's."""
         id_ = new_id()
         self.conn.execute(
             "INSERT INTO results (id, job_id, item_index, blob_sha, media_type, seed, width,"
-            " height, duration, segments, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " height, duration, segments, caption, created_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 id_,
                 job_id,
@@ -257,6 +260,7 @@ class Database:
                 height,
                 duration,
                 json.dumps(segments) if segments is not None else None,
+                caption,
                 now(),
             ),
         )

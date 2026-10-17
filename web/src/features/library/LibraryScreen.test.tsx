@@ -72,6 +72,22 @@ describe('Library', () => {
     expect(saved).toEqual([{ prompt: 'a harbour at dusk', negative_prompt: '', family: 'sdxl' }])
   })
 
+  it('shows the scene caption a kept image was made from', async () => {
+    const item = {
+      ...LIBRARY_ITEM,
+      config: { ...LIBRARY_ITEM.config, caption: 'Full-color photograph of a harbour at dusk.' },
+    }
+    mockApi({ 'GET /api/library': () => ({ items: [item], cursor: null }) })
+    const user = userEvent.setup()
+    renderApp()
+    await user.click(await screen.findByRole('button', { name: 'Library' }))
+    await user.click(await screen.findByRole('button', { name: 'Open a harbour at dusk' }))
+    const viewer = screen.getByRole('dialog', { name: 'Image' })
+    expect(
+      within(viewer).getByText('Caption: Full-color photograph of a harbour at dusk.'),
+    ).toBeInTheDocument()
+  })
+
   it('shows the image prompts a kept image was made with', async () => {
     const item = {
       ...LIBRARY_ITEM,

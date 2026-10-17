@@ -69,6 +69,17 @@
   font-size: 0.9375rem;
 }
 
+/* The scene caption the model was given (FLUX 3): long, so set smaller under the prompt, in
+   roman, since it's the upsampler's words and not yours. */
+.wall-label .caption {
+  margin-top: 8px;
+  color: var(--ink-muted);
+  font-family: var(--serif);
+  font-size: 0.9375rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
 /* Image prompts: the pictures that worked like the prompt, each unit with its model and how
    it was used. The text sits beside one or two pictures and under three or four. */
 .image-prompts {

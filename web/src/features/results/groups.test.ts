@@ -37,6 +37,7 @@ const result = (id: string, jobId: string, extra: Partial<Result> = {}): Result 
   height: 1024,
   duration: null,
   segments: null,
+  caption: null,
   created_at: '2026-09-27T12:00:00Z',
   expires_at: null,
   library_id: null,

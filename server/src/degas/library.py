@@ -37,6 +37,8 @@ def saved_config(job: JobRow, result: ResultRow) -> SavedConfig:
         config["runtime"] = runtime
     if segments := result.get("segments"):
         config["segments"] = segments
+    if caption := result.get("caption"):
+        config["caption"] = caption
     return config
 
 
