@@ -5,6 +5,7 @@ pipeline and runner, with one transformer in place of the A14B's two experts. Th
 a last frame (diffusers conditions it on the first frame only).
 """
 
+from dataclasses import replace
 from typing import Any
 
 from degas.families.base import (
@@ -53,6 +54,13 @@ SIZE_A14B = SizeConstraints(
     min_pixels=480 * 480,
     max_pixels=1280 * 720,
     presets=((1280, 720), (720, 1280), (832, 480), (480, 832), (960, 960)),
+)
+# The first-and-last-frame variants add smaller sizes for quick drafts, below the 480p the
+# models were trained on.
+SIZE_FLF2V = replace(
+    SIZE_A14B,
+    min_pixels=256 * 256,
+    presets=(*SIZE_A14B.presets, (640, 368), (368, 640), (512, 288), (288, 512), (512, 512)),
 )
 
 # Defaults from the Wan 2.2 and 2.1 model cards.
@@ -118,7 +126,9 @@ class Wan22:
     )
 
     def size_constraints(self, variant: str) -> SizeConstraints:
-        return SIZE_5B if variant == "ti2v-5b" else SIZE_A14B
+        if variant == "ti2v-5b":
+            return SIZE_5B
+        return SIZE_FLF2V if variant in ("i2v-a14b", WAN21_FLF2V) else SIZE_A14B
 
     def param_schema(self, variant: str, mode: str) -> JsonSchema:
         find_variant(self, variant, mode)

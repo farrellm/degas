@@ -340,6 +340,11 @@ def test_wan_first_and_last_frame() -> None:
         50,
         5.5,
     )
+    # The first-and-last-frame variants alone have sizes below 480p.
+    draft = {**flf2v, "params": {**flf2v["params"], "width": 512, "height": 288}}
+    assert Wan22().validate(draft)["params"]["width"] == 512
+    assert (512, 288) in Wan22().size_constraints("i2v-a14b").presets
+    assert (512, 288) not in Wan22().size_constraints("t2v-a14b").presets
     with pytest.raises(SpecError, match="Choose the last frame"):
         Wan22().validate({**flf2v, "inputs": {"source": source}})
     # It needs two pictures, and the 5B ignores a last frame.
