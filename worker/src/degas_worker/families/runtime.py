@@ -3,7 +3,7 @@
 import contextlib
 import gc
 import io
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
 
@@ -111,3 +111,25 @@ def sync_loras(
         applied[path] = name
     if activate and plan.names:
         pipe.set_adapters(plan.names, adapter_weights=plan.weights)
+
+
+@contextlib.contextmanager
+def scheduler_progress(scheduler: Any, ctx: RunContext, item: int, steps: int) -> Iterator[None]:
+    """Report each denoising step of `item` and stop a cancelled job, through the scheduler's
+    `step`, for pipelines that take no step callback."""
+    step = scheduler.step
+    done = 0
+
+    def counted(*args: Any, **kwargs: Any) -> Any:
+        nonlocal done
+        ctx.check_cancelled()
+        out = step(*args, **kwargs)
+        done = min(done + 1, steps)
+        ctx.progress(item, "denoise" if done < steps else "decode", done, steps)
+        return out
+
+    scheduler.step = counted
+    try:
+        yield
+    finally:
+        del scheduler.step  # back to the class's method

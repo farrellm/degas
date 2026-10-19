@@ -8,7 +8,6 @@ keeps the caption, and its components load from the Drive folder's subfolders, s
 folder's `modular_model_index.json` names them by Hub repo.
 """
 
-import contextlib
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -37,6 +36,7 @@ from degas_worker.families.runtime import (
     fetch_loras,
     free_gpu_memory,
     png_output,
+    scheduler_progress,
     seeded,
     sync_loras,
 )
@@ -107,7 +107,7 @@ class Flux3Runner:
         for item, seed in enumerate(seeds):
             ctx.check_cancelled()
             ctx.progress(item, "denoise", 0, steps)
-            with _step_progress(self.pipe.scheduler, ctx, item, steps):
+            with scheduler_progress(self.pipe.scheduler, ctx, item, steps):
                 image = self.pipe(**kwargs, generator=seeded(seed), output="images")[0]
             ctx.progress(item, "encode", steps, steps)
             yield png_output(item, seed, image, caption)
@@ -224,25 +224,3 @@ def _shrink(image: Image.Image) -> Image.Image:
     return image.resize(
         (max(16, round(w * scale)), max(16, round(h * scale))), Image.Resampling.LANCZOS
     )
-
-
-@contextlib.contextmanager
-def _step_progress(scheduler: Any, ctx: RunContext, item: int, steps: int) -> Iterator[None]:
-    """Report each denoising step of `item` and stop a cancelled job, through the scheduler's
-    `step` (modular pipelines take no step callback)."""
-    step = scheduler.step
-    done = 0
-
-    def counted(*args: Any, **kwargs: Any) -> Any:
-        nonlocal done
-        ctx.check_cancelled()
-        out = step(*args, **kwargs)
-        done = min(done + 1, steps)
-        ctx.progress(item, "denoise" if done < steps else "decode", done, steps)
-        return out
-
-    scheduler.step = counted
-    try:
-        yield
-    finally:
-        del scheduler.step  # back to the class's method

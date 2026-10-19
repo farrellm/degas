@@ -314,6 +314,13 @@ Built. FLUX 3 Image is an image family found under the Model button. Its form co
 - **Writing caption.** While the upsampler works, the sketch tile reads *Writing caption* and its hatching pulses, as it does for loading.
 - **On the wall label.** Under the prompt (and its negative), *Caption:* and the caption in full, in roman Newsreader at the negative prompt's size and colour: the italic title stays your words, and the caption is the model's. It's covered with the prompt in discretion mode (*Show caption*). Kept images keep it. *Remix* loads the prompt you wrote, not the caption.
 
+### Phase 17: MOSS-Image
+
+Built. MOSS-Image is an image family found under the Model button, with two variants, *MOSS-Image Base* and *MOSS-Image SFT*. Each one lists only the models in its own folder. The form comes from the schema. It has no LoRA, reference or control rows.
+
+- **CFG** is a slider on the main form, default 3. Its description says to raise it for short prompts.
+- **Shift** and **Skip layer** are under More settings. *Skip layer* is a select: *Block 22* (the default), *Block 24*, *Block 26* or *Off*.
+
 ## 5. Component inventory
 
 | Component | Status | Notes |

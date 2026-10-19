@@ -29,6 +29,12 @@ def _flux3() -> FamilyRunner:
     return Flux3Runner()
 
 
+def _moss() -> FamilyRunner:
+    from degas_worker.families.moss import MossRunner  # noqa: PLC0415 - imports diffusers lazily
+
+    return MossRunner()
+
+
 def _ltx2() -> FamilyRunner:
     from degas_worker.families.ltx2 import Ltx2Runner  # noqa: PLC0415 - imports diffusers lazily
 
@@ -52,6 +58,7 @@ RUNNERS: dict[str, Callable[[], FamilyRunner]] = {
     "flux1": _flux1,
     "klein": _klein,
     "flux3": _flux3,
+    "moss": _moss,
     "qwen21": _qwen21,
     "wan22": _wan22,
     "ltx2": _ltx2,

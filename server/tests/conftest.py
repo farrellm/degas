@@ -250,7 +250,8 @@ class FakeLtx:
 class FakeQwen:
     """Records the sizes of the condition images (source first, then references) and mask.
 
-    Also stands in for FLUX.1 and FLUX.2 [klein], recording the assets each job names."""
+    Also stands in for FLUX.1, FLUX.2 [klein] and MOSS-Image, recording the assets each job
+    names."""
 
     def __init__(self) -> None:
         self.calls: list[dict[str, Any]] = []
@@ -366,6 +367,7 @@ class Harness:
         self.flux = FakeQwen()
         self.klein = FakeQwen()
         self.flux3 = FakeFlux3()
+        self.moss = FakeQwen()
         self.sam = FakeSam()
         self.trace = FakeTrace()
         self.worker_paths = Paths(home=tmp_path / "vm", models=tmp_path / "vm-models")
@@ -392,6 +394,7 @@ class Harness:
                 "flux1": lambda: self.flux,
                 "klein": lambda: self.klein,
                 "flux3": lambda: self.flux3,
+                "moss": lambda: self.moss,
             },
             rclone=str(rclone),
             exit_process=exit_process,
@@ -611,6 +614,20 @@ FLUX3_PUP = {
     "drive_file_id": "f3p",
     "size": 19,
 }
+MOSS_BASE = {
+    "path": "models/moss/MOSS-Image-Base",
+    "family": "moss",
+    "kind": "model",
+    "drive_file_id": "mb",
+    "size": 27,
+}
+MOSS_SFT = {
+    "path": "models/moss/MOSS-Image-SFT",
+    "family": "moss",
+    "kind": "model",
+    "drive_file_id": "ms",
+    "size": 27,
+}
 LTX25 = {
     "path": "models/ltx2/ltx25/LTX-2.5-Diffusers",
     "family": "ltx2",
@@ -646,6 +663,8 @@ def client(harness: Harness) -> Iterator[TestClient]:
                 KLEIN,
                 FLUX3,
                 FLUX3_PUP,
+                MOSS_BASE,
+                MOSS_SFT,
                 INPAINT_MODEL,
                 SAM,
                 DEPTH,
