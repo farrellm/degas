@@ -732,7 +732,14 @@ Phases are numbered from 0.
     - Regressions on the new pin: SDXL, FLUX.1 (fp8), Qwen-Image 2.1, klein, Wan 2.2 TI2V 5B (`t2v`) and LTX-2.5 (`t2v`) each ran one job.
     - Still to do: the offload path (a 40 GB A100 or an L4) and a FLUX 3 LoRA (none in Drive yet).
 
-17. **MOSS-Image.** 🚧 Built; the live test is still to do. The `moss` family (§4.3): MOSS-Image Base and SFT for `t2i`, a diffusers custom pipeline loaded with `trust_remote_code`. Shift and the negative branch's skipped block are under More settings. FLUX 3's scheduler-step progress moved to `runtime.scheduler_progress` so both families share it.
+17. **MOSS-Image.** ✅ Built and tested on an A100. The `moss` family (§4.3): MOSS-Image Base and SFT for `t2i`, a diffusers custom pipeline loaded with `trust_remote_code`. Shift and the negative branch's skipped block are under More settings. FLUX 3's scheduler-step progress moved to `runtime.scheduler_progress` so both families share it.
+
+    Live test on an A100 40 GB, normal memory (2026-10-19, diffusers 0.41.0.dev0, transformers 5.18.0, torch 2.11.0), on the real server. The five MOSS images are kept in the library under the tag `moss-test`.
+    - The 27 GB pipeline is under the offload share of a 40 GB card, so it stayed on the GPU (about 30 GB in use). The custom pipeline loaded from the Drive folder with no errors, only diffusers' `torch_dtype` deprecation warning. The first Base job took 2 min 36 s, including the cold copy and the load. The first SFT job took 1 min 37 s, including its own copy and the reload. After that, about 1 s a step at 1024² (two transformer passes a step): a two-image batch took 81 s, and a 1456² job 98 s.
+    - `t2i` on Base and SFT at seed 42 (a bookshop window with a chalkboard reading "MOSS BOOKS — OPEN LATE"): both spelled the sign right, and the two models made clearly different pictures. SFT with *Skip layer* off (seeds 7 and 8) also spelled it right, with a slightly more photographic look. A short prompt on Base at 1456² with CFG 5 and shift 3 gave a clean red fox in snow.
+    - Step progress and cancelling at step 10 work (the job stopped within a second).
+    - Regression: a FLUX 3 `t2i` job (upsampling off) on the moved progress helper ran after MOSS and made a good knitted lighthouse. It's kept under `flux3-test`.
+    - Still to do: the offload path (an L4).
 
 ## 11. Risks and open questions
 
