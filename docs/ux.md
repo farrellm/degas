@@ -316,9 +316,9 @@ Built. FLUX 3 Image is an image family found under the Model button. Its form co
 
 ### Phase 17: MOSS-Image
 
-Built. MOSS-Image is an image family found under the Model button, with two variants, *MOSS-Image Base* and *MOSS-Image SFT*. Each one lists only the models in its own folder. The form comes from the schema. It has no LoRA, reference or control rows.
+Built. MOSS-Image is an image family found under the Model button, with three variants, *MOSS-Image Base*, *MOSS-Image SFT* and *Kromoss*. Each one lists only the models in its own folder. The form comes from the schema. The LoRAs row works as it does for other families (up to 4); it has no reference or control rows.
 
-- **CFG** is a slider on the main form, default 3. Its description says to raise it for short prompts.
+- **CFG** is a slider on the main form, default 3. Its description says to raise it for short prompts, and that the 8-step turbo LoRA wants CFG 1 with 8 steps. The form doesn't change Steps or CFG when that LoRA is added.
 - **Shift** and **Skip layer** are under More settings. *Skip layer* is a select: *Block 22* (the default), *Block 24*, *Block 26* or *Off*.
 
 ## 5. Component inventory

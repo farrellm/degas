@@ -4,6 +4,7 @@ Kept free of torch and diffusers so it can be tested without a GPU.
 """
 
 import hashlib
+from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any, cast
 
@@ -121,3 +122,26 @@ def qwen21_lora_state(state: dict[str, Any]) -> dict[str, Any]:
             halves = (value[:half], value[half:])
         out[f"{module}.gate_layer.{rest}"], out[f"{module}.proj.{rest}"] = halves
     return {f"diffusion_model.{key}": value for key, value in out.items()}
+
+
+def kohya_modules(
+    keys: Iterable[str], prefix: str = "diffusion_model."
+) -> dict[str, tuple[str, str, str | None]]:
+    """Each module a kohya-style file adapts, with its down, up and (if any) alpha keys.
+
+    For runners that apply a LoRA themselves, as forward hooks (MOSS-Image: its custom pipeline
+    has no LoRA loader). Module names drop `prefix`.
+    """
+    names = set(keys)
+    down_suffix = ".lora_down.weight"
+    modules: dict[str, tuple[str, str, str | None]] = {}
+    for down in sorted(k for k in names if k.endswith(down_suffix)):
+        stem = down.removesuffix(down_suffix)
+        up = f"{stem}.lora_up.weight"
+        if up not in names:
+            raise ValueError(f"{down} has no {up}")
+        alpha = f"{stem}.alpha"
+        modules[stem.removeprefix(prefix)] = (down, up, alpha if alpha in names else None)
+    if not modules:
+        raise ValueError("No kohya lora_down/lora_up weights")
+    return modules

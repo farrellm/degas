@@ -81,7 +81,7 @@ def test_assets(client: TestClient) -> None:
         "models/sdxl/inpaint/sdxl-inpaint.safetensors",
         "models/sdxl/studio.safetensors",
     ]
-    (lora,) = client.get("/api/assets?kind=lora").json()
+    (lora,) = client.get("/api/assets?family=sdxl&kind=lora").json()
     assert lora["sidecar"]["trigger_words"] == ["filmgrain"]
 
 

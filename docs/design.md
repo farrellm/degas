@@ -289,16 +289,17 @@ class FamilyRunner:
 **MOSS-Image (`moss`)**
 
 - **Model.** MOSS-Image (OpenMOSS, Apache 2.0): a 5B DiT with Qwen3.5 (`Qwen3_5Model`) as its text encoder and the FLUX.2 VAE. It's a diffusers custom pipeline: the folder's `pipeline_moss_image.py` (copied into `transformer/` and `scheduler/` too) defines `MOSSImagePipeline`, `MOSSImageTransformer` and `MOSSImageScheduler`. The runner loads it with `custom_pipeline` pointing at that file and `trust_remote_code`. The text encoder and transformer load in bf16 and the VAE in fp32.
-- **Checkpoints.** `OpenMOSS-Team/MOSS-Image-Base` and `OpenMOSS-Team/MOSS-Image-SFT` (fine-tuned from Base) share the architecture and recipe. Each is a diffusers folder of about 27 GB, under `models/moss/MOSS-Image-Base/` and `models/moss/MOSS-Image-SFT/`, without the repos' `assets/`. The index makes each folder one asset by its `model_index.json`.
-- **Variants `base` and `sft`**, mode `t2i` only, minimum GPU L4. Each variant's `model_dir` is its folder. `place` keeps the pipeline on an 80 GB A100 or an H100, and offloads it with `enable_model_cpu_offload` (text encoder, transformer, VAE) on an L4 or a 40 GB A100. Switching variants reloads.
+- **Checkpoints.** `OpenMOSS-Team/MOSS-Image-Base`, `OpenMOSS-Team/MOSS-Image-SFT` (fine-tuned from Base) and `lodestones/Kromoss` (a full fine-tune of Base at 1024 px that fixes its blurriness) share the architecture and recipe. Each is a diffusers folder of about 27 GB, under `models/moss/MOSS-Image-Base/`, `MOSS-Image-SFT/` and `Kromoss/`, without the repos' `assets/`. Only the transformer differs: Kromoss's text encoder, tokenizer, VAE, configs and pipeline file are byte-identical to SFT's (the same hashes), so on Drive they were copied from the SFT folder. Its repo's ComfyUI single files (`diffusion_models/`, `text_encoders/`, `vae/flux2-vae_small.safetensors`) are left out. The index makes each folder one asset by its `model_index.json`.
+- **Variants `base`, `sft` and `kromoss`**, mode `t2i` only, minimum GPU L4. Each variant's `model_dir` is its folder. `place` keeps the pipeline on an 80 GB A100 or an H100, and offloads it with `enable_model_cpu_offload` (text encoder, transformer, VAE) on an L4 or a 40 GB A100. Switching variants reloads.
 - **Parameters:**
   - Prompt and negative prompt (empty by default; the description gives OpenMOSS's suggested tags).
   - Width and height: multiples of 16, up to 4 MP, default 1024². The presets include the 1456² square OpenMOSS shows.
   - Steps (default 50) and CFG (default 3).
   - Under More settings: *Shift* (default 5, set by building the scheduler from its config with that shift for each job) and *Skip layer*. The skip layer is the block the negative branch skips (`uncond_skip_layers`): 22 by default, 24, 26 or off.
   - Seed.
+- **LoRAs.** Up to 4 single kohya files under `loras/moss/` (`diffusion_model.<module>.lora_down/lora_up/alpha`). The custom transformer has no LoRA loader, so the runner applies each one unmerged, as forward hooks on the linears it names. Its matrices stay in fp32 on the GPU, and each hook adds `weight · alpha/rank · (x @ downᵀ) @ upᵀ` to the module's output. Kromoss's README warns against merging: the delta is close to bf16's rounding step. A module that's missing or the wrong shape fails the job (diffusers would skip it with only a log line). The hooks read the weight at each call, so changing a weight reloads nothing. Only new files are loaded, and dropped ones are unhooked. Kromoss ships `8-steps-dmd-lora.safetensors`, an 8-step turbo (DMD distillation of Base, rank 128, 1.2 GB fp32). It runs with 8 steps and CFG 1, and at CFG 1 the pipeline runs no negative branch. The CFG description says so.
 - **Progress.** The pipeline takes no step callback, so the runner wraps the scheduler's `step` (`runtime.scheduler_progress`, shared with FLUX 3) to report progress and to cancel.
-- **Not in v1:** layout JSON prompts, LoRAs (the custom transformer has no LoRA loader), and SLG on the positive branch (`slg_layers`).
+- **Not in v1:** layout JSON prompts and SLG on the positive branch (`slg_layers`).
 
 **LTX-2 (`ltx2`)**
 
@@ -340,7 +341,7 @@ MyDrive/degas/
     flux1/         *.safetensors (single-file transformers, e.g. flux1-dev-fp8)
     klein/         FLUX.2-klein-9B/ (the official diffusers folder)
     flux3/         flux-3-image-klein-base/ (the modular diffusers folder, without variants/ or BFL's root files)
-    moss/          MOSS-Image-Base/, MOSS-Image-SFT/ (the repos' diffusers folders, without assets/)
+    moss/          MOSS-Image-Base/, MOSS-Image-SFT/, Kromoss/ (the repos' diffusers folders, without assets/)
     ltx2/          <variant>/…   (diffusers folders: ltx25/, ltx23-distilled/, ltx23/; latent_upsampler/ inside for Upscale)
   loras/
     sdxl/          *.safetensors (+ *.yaml, preview *.jpg/png)
@@ -348,6 +349,7 @@ MyDrive/degas/
     qwen21/        *.safetensors
     flux1/         *.safetensors
     klein/         *.safetensors
+    moss/          *.safetensors (kohya; Kromoss's 8-steps-dmd-lora)
     flux3/         *.safetensors
     ltx2/          *.safetensors (sidecar `variants` from Civitai: ltx23 + ltx23-distilled, or ltx25)
   controlnets/
@@ -740,6 +742,8 @@ Phases are numbered from 0.
     - Step progress and cancelling at step 10 work (the job stopped within a second).
     - Regression: a FLUX 3 `t2i` job (upsampling off) on the moved progress helper ran after MOSS and made a good knitted lighthouse. It's kept under `flux3-test`.
     - Still to do: the offload path (an L4).
+
+    Added later: the `kromoss` variant (lodestones' fine-tune of Base) and LoRAs, applied as forward hooks, with Kromoss's 8-step turbo LoRA in `loras/moss/`.
 
 ## 11. Risks and open questions
 

@@ -628,6 +628,20 @@ MOSS_SFT = {
     "drive_file_id": "ms",
     "size": 27,
 }
+MOSS_KROMOSS = {
+    "path": "models/moss/Kromoss",
+    "family": "moss",
+    "kind": "model",
+    "drive_file_id": "mk",
+    "size": 27,
+}
+MOSS_TURBO = {
+    "path": "loras/moss/8-steps-dmd-lora.safetensors",
+    "family": "moss",
+    "kind": "lora",
+    "drive_file_id": "mt",
+    "size": 12,
+}
 LTX25 = {
     "path": "models/ltx2/ltx25/LTX-2.5-Diffusers",
     "family": "ltx2",
@@ -665,6 +679,8 @@ def client(harness: Harness) -> Iterator[TestClient]:
                 FLUX3_PUP,
                 MOSS_BASE,
                 MOSS_SFT,
+                MOSS_KROMOSS,
+                MOSS_TURBO,
                 INPAINT_MODEL,
                 SAM,
                 DEPTH,

@@ -1,9 +1,10 @@
-"""MOSS-Image descriptor: text-to-image from the Base or SFT checkpoint (design §4.3).
+"""MOSS-Image descriptor: text-to-image from the Base, SFT or Kromoss checkpoint (design §4.3).
 
 OpenMOSS's 5B DiT with a Qwen3.5 text encoder and the FLUX.2 VAE, as the repos' diffusers
-folders (a custom pipeline). Base and SFT share the architecture and the recipe: 50 steps,
-CFG 3, shift 5, and the negative branch run with block 22 skipped. Each variant reads its own
-folder under `models/moss/`. No LoRAs or layout prompts in v1.
+folders (a custom pipeline). Base, SFT and Kromoss (lodestones' fine-tune of Base) share the
+architecture and the recipe: 50 steps, CFG 3, shift 5, and the negative branch run with block
+22 skipped. Each variant reads its own folder under `models/moss/`. LoRAs are kohya files
+under `loras/moss/`, such as Kromoss's 8-step turbo (8 steps, CFG 1). No layout prompts.
 """
 
 from typing import Any
@@ -26,10 +27,16 @@ from degas.families.schema import (
     size_props,
     steps_prop,
 )
-from degas.families.validation import snap_size, validate_model, validate_params
+from degas.families.validation import (
+    snap_size,
+    validate_model,
+    validate_params,
+    validate_single_loras,
+)
 from degas_worker.spec import Spec
 
 MODELS = "models/moss"
+MAX_LORAS = 4
 NEGATIVE = "nsfw, worst quality, bad anatomy, watermark, jpeg artifact"
 SKIP_LAYERS = {
     "22": "Block 22",
@@ -79,6 +86,13 @@ class Moss:
             modes=("t2i",),
             model_dir=f"{MODELS}/MOSS-Image-SFT",
         ),
+        Variant(
+            id="kromoss",
+            label="Kromoss",
+            min_gpu="L4",
+            modes=("t2i",),
+            model_dir=f"{MODELS}/Kromoss",
+        ),
     )
 
     def size_constraints(self, variant: str) -> SizeConstraints:
@@ -94,7 +108,8 @@ class Moss:
             "cfg": {
                 "type": "number",
                 "title": "CFG",
-                "description": "How closely it follows the prompt. Raise it for short prompts.",
+                "description": "How closely it follows the prompt. Raise it for short prompts. "
+                "The 8-step turbo LoRA wants 1, with 8 steps.",
                 "default": 3.0,
                 "minimum": 1,
                 "maximum": 10,
@@ -136,14 +151,12 @@ class Moss:
         snap_size(params, SIZE, self.label)
         if spec.get("control"):
             raise SpecError(f"{self.label} doesn't take control units")
-        if spec.get("loras"):
-            raise SpecError(f"{self.label} doesn't take LoRAs")
         return {
             "family": self.id,
             "variant": variant,
             "mode": mode,
             "model": model,
-            "loras": [],
+            "loras": validate_single_loras(spec.get("loras"), MAX_LORAS),
             "params": params,
             "inputs": {},
             "control": [],

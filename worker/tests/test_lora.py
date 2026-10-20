@@ -1,9 +1,12 @@
 from typing import Any
 
+import pytest
+
 from degas_worker.families.lora import (
     adapter_name,
     expert_loras,
     fold_alphas,
+    kohya_modules,
     peft_lora_names,
     plan_loras,
     qwen21_lora_state,
@@ -154,3 +157,31 @@ def test_qwen21_lora_fused_gate_is_split_between_its_two_layers() -> None:
         f"{mlp}.proj.lora_B.weight": [[3.0], [4.0]],
         f"{mlp}.out.lora_A.weight": [[7.0]],
     }
+
+
+def test_kohya_modules_name_each_module_with_its_keys() -> None:
+    q = "diffusion_model.layers.0.proj.q"
+    o = "diffusion_model.layers.0.proj.o"
+    keys = [
+        f"{q}.lora_down.weight",
+        f"{q}.lora_up.weight",
+        f"{q}.alpha",
+        f"{o}.lora_down.weight",
+        f"{o}.lora_up.weight",
+    ]
+    assert kohya_modules(keys) == {
+        "layers.0.proj.o": (f"{o}.lora_down.weight", f"{o}.lora_up.weight", None),
+        "layers.0.proj.q": (f"{q}.lora_down.weight", f"{q}.lora_up.weight", f"{q}.alpha"),
+    }
+
+
+@pytest.mark.parametrize(
+    ("keys", "message"),
+    [
+        (["diffusion_model.layers.0.proj.q.lora_down.weight"], "has no"),
+        (["diffusion_model.layers.0.proj.q.lora_A.weight"], "No kohya"),
+    ],
+)
+def test_kohya_modules_reject_other_files(keys: list[str], message: str) -> None:
+    with pytest.raises(ValueError, match=message):
+        kohya_modules(keys)
