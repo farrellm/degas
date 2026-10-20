@@ -745,6 +745,12 @@ Phases are numbered from 0.
 
     Added later: the `kromoss` variant (lodestones' fine-tune of Base) and LoRAs, applied as forward hooks, with Kromoss's 8-step turbo LoRA in `loras/moss/`.
 
+    Live test of Kromoss and the turbo LoRA on an A100 40 GB, normal memory (2026-10-20, diffusers 0.41.0.dev0, transformers 5.20.1, torch 2.11.0), on the real server. The five images are kept under the tag `moss-test`, titled by job. All used the bookshop prompt at 1024², seed 42.
+    - Kromoss at 50 steps and CFG 3 took 4 min 5 s, including the session start, the cold copy and the load. It spelled the sign right and was sharp.
+    - Kromoss + turbo LoRA at 8 steps and CFG 1 took 18 s, including hooking in the 1.2 GB LoRA. The same job at weight 0.5 took 6 s with no reload, and gave a close variant. Both spelled the sign right with no loss of sharpness. No errors in the worker log, and about 32 GB in use on the GPU.
+    - Kromoss again with no LoRA (39 s) gave a byte-identical PNG to the first job, so removing the hooks restores the model exactly.
+    - Base + turbo LoRA (1 min 55 s, including Base's cold copy and the reload, which drops and re-hooks the LoRA) spelled the sign right, in a different composition.
+
 ## 11. Risks and open questions
 
 | Risk | Impact | Mitigation |
