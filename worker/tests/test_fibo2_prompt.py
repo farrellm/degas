@@ -49,15 +49,15 @@ def test_the_caption_keeps_known_fields_without_empty_values() -> None:
     )
 
 
-def test_an_edit_caption_keeps_its_instruction_and_unpacks_nested_json() -> None:
+def test_an_edit_caption_takes_the_reworded_instruction_and_unpacks_nested_json() -> None:
     answer = json.dumps(
         {
-            "edit_instruction": "Make the jacket red.",
+            "reworded_prompt": "Make the jacket red.",
             "short_description": "Ünïcode jacket",
             "lighting": json.dumps({"conditions": "soft"}),
         }
     )
-    caption = json.loads(parse_caption(answer + " End of texture answer.", edit=True))
+    caption = json.loads(parse_caption(answer + " End of texture answer.", "red jacket"))
     assert caption == {
         "short_description": "Ünïcode jacket",
         "lighting": {"conditions": "soft"},
@@ -66,7 +66,12 @@ def test_an_edit_caption_keeps_its_instruction_and_unpacks_nested_json() -> None
     assert "edit_instruction" not in json.loads(parse_caption(answer))
 
 
-@pytest.mark.parametrize("answer", ["not json", "[1, 2]"])
+def test_an_edit_caption_without_a_rewording_keeps_the_instruction() -> None:
+    caption = json.loads(parse_caption('{"short_description": "x", "reworded_prompt": ""}', "y"))
+    assert caption == {"short_description": "x", "edit_instruction": "y"}
+
+
+@pytest.mark.parametrize("answer", ["not json", "[1, 2]", '{"objects": ["a", "a", "a'])
 def test_an_answer_that_isnt_a_json_object_fails(answer: str) -> None:
     with pytest.raises(ValueError, match="prompt VLM"):
         parse_caption(answer)

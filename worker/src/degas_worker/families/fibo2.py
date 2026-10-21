@@ -6,6 +6,7 @@ FIBO-vlm for `t2i`, FIBO-edit-vlm for an edit of one image, which sees the image
 written once per job, sampled with the job's first seed, and returned with each image.
 """
 
+import logging
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -30,6 +31,8 @@ from degas_worker.families.offload import OFFLOAD_ABOVE, module_bytes
 from degas_worker.families.runtime import free_gpu_memory, png_output, seeded, step_callback
 from degas_worker.spec import Spec
 
+log = logging.getLogger(__name__)
+
 # The order the models run in, for offloading one at a time.
 MODELS = ("text_encoder", "transformer", "vae")
 # The fonts the pipeline draws the caption's texts with, in the order training used them
@@ -39,7 +42,10 @@ FONTS = ("Aileron-Regular.otf", "DejaVuSans.ttf")
 T2I_VLM = (256 * 28 * 28, 1024 * 28 * 28, 0.2)
 EDIT_VLM = (4 * 28 * 28, 1280 * 28 * 28, 0.4)
 VLM_TOP_P = 0.9
-VLM_MAX_TOKENS = 4096
+# Bria allows 4096, but a caption takes about 500-1000 tokens. FIBO-edit-vlm can fall into a
+# loop (listing the books on a shelf, over and over), and at the worker's rate of about
+# 8 tokens a second under offload, 4096 tokens took 9 minutes.
+VLM_MAX_TOKENS = 2048
 
 
 class Fibo2Runner:
@@ -104,8 +110,10 @@ class Fibo2Runner:
             ctx.progress(item, "encode", steps, steps)
             yield png_output(item, seed, image, caption)
 
-    def _caption(self, prompt: str, image: Image.Image | None, seed: int) -> str:
-        """The VLM's JSON caption for this request: of a new image, or of an edit of `image`."""
+    def _caption(self, prompt: str, image: Image.Image | None, seed: int) -> str | None:
+        """The VLM's JSON caption for this request: of a new image, or of an edit of `image`.
+        None if its answer isn't one (it ran out of tokens in a loop): the prompt is then sent
+        as written, which Fibo 2.0 was also trained on."""
         if self.offloaded:
             # Make room: the pipeline's models go back to the CPU. The VLM goes back when the
             # text encoder, next in the hook chain, runs.
@@ -143,7 +151,16 @@ class Fibo2Runner:
         answer: str = tokenizer.decode(
             ids[0, batch["input_ids"].shape[-1] :], skip_special_tokens=True
         )
-        return parse_caption(answer, edit=image is not None)
+        try:
+            return parse_caption(answer, prompt if image is not None else None)
+        except ValueError:
+            log.warning(
+                "No caption from %s, sending the prompt as written: %r…%r",
+                self.vlm_path,
+                answer[:200],
+                answer[-200:],
+            )
+            return None
 
     def _load(self, path: Path, vlm_path: Path | None) -> None:
         if self.pipe is not None and self.model_path != path:

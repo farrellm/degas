@@ -15,7 +15,7 @@ from PIL import Image
 
 # Where the VLMs' answers end.
 STOP = ("<|im_end|>", "<|end_of_text|>")
-# The structured caption's fields, in Bria's order; an edit's answer adds its instruction.
+# The structured caption's fields, in Bria's order.
 FIELDS = (
     "short_description",
     "objects",
@@ -28,7 +28,6 @@ FIELDS = (
     "context",
     "artistic_style",
 )
-EDIT_FIELDS = (*FIELDS, "edit_instruction")
 
 # Bria's negative caption for text-to-image (the model card): away from soft, featureless,
 # artifact-laden images. An edit uses the pipeline's default, the empty caption.
@@ -87,9 +86,13 @@ def edit_messages(image: Image.Image, instruction: str) -> list[dict[str, Any]]:
     ]
 
 
-def parse_caption(answer: str, *, edit: bool = False) -> str:
+def parse_caption(answer: str, instruction: str | None = None) -> str:
     """The caption in a VLM's answer, as compact JSON: its known fields with the empty values
-    (None, "", [], {}, NaN) dropped at every level. Raises ValueError if it isn't JSON."""
+    (None, "", [], {}, NaN) dropped at every level. For an edit, pass the `instruction` asked
+    for: FIBO-edit-vlm writes its rewording as `reworded_prompt` (Fibo Edit 1's name), which
+    becomes the `edit_instruction` Fibo 2.0 reads, or the instruction itself if it wrote none.
+    Raises ValueError if the answer isn't a JSON object, as when the VLM fell into a loop
+    and ran out of tokens."""
     for stop in STOP:
         answer = answer.split(stop, 1)[0]
     answer = answer.replace(" End of texture answer.", "").strip()
@@ -99,8 +102,9 @@ def parse_caption(answer: str, *, edit: bool = False) -> str:
         raise ValueError(f"The prompt VLM didn't answer with JSON: {answer[:200]!r}") from e
     if not isinstance(record, dict):
         raise ValueError(f"The prompt VLM didn't answer with a JSON object: {answer[:200]!r}")
+    edit = instruction is not None
     caption: dict[str, Any] = {}
-    for name in EDIT_FIELDS if edit else FIELDS:
+    for name in FIELDS:
         value = record.get(name)
         if edit and isinstance(value, str):
             # The edit VLM sometimes writes a nested field as a JSON string.
@@ -109,6 +113,11 @@ def parse_caption(answer: str, *, edit: bool = False) -> str:
         value = _prune(value)
         if not _empty(value):
             caption[name] = value
+    if instruction is not None:
+        reworded = record.get("edit_instruction") or record.get("reworded_prompt")
+        caption["edit_instruction"] = (
+            reworded.strip() if isinstance(reworded, str) and reworded.strip() else instruction
+        )
     return json.dumps(caption, ensure_ascii=False, separators=(",", ":"))
 
 
