@@ -321,6 +321,14 @@ Built. MOSS-Image is an image family found under the Model button, with three va
 - **CFG** is a slider on the main form, default 3. Its description says to raise it for short prompts, and that the 8-step turbo LoRA wants CFG 1 with 8 steps. The form doesn't change Steps or CFG when that LoRA is added.
 - **Shift** and **Skip layer** are under More settings. *Skip layer* is a select: *Block 22* (the default), *Block 24*, *Block 26* or *Off*.
 
+### Phase 18: Fibo 2.0
+
+Built. Fibo 2.0 is an image family found under the Model button, with one variant, *Fibo 2.0 Dev*, doing *From text* and *Edit*. The form comes from the schema, with no new widgets.
+
+- **Upsample prompt** works as it does for FLUX 3, on by default, but Bria's model writes a structured JSON caption, which the wall label shows as it is. Its description says that an edit with more than one image always sends the prompt as written (Bria's edit model reads only one image).
+- **Edit.** The Images row takes up to 4 images after the source. The prompt refers to them as `<image_1>`, `<image_2>` and so on, or by number.
+- There's no negative prompt and no LoRAs row: Fibo uses Bria's own negative, and the pipeline loads no LoRAs. CFG is a slider, default 5, and Steps default to 50.
+
 ## 5. Component inventory
 
 | Component | Status | Notes |

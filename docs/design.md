@@ -301,6 +301,17 @@ class FamilyRunner:
 - **Progress.** The pipeline takes no step callback, so the runner wraps the scheduler's `step` (`runtime.scheduler_progress`, shared with FLUX 3) to report progress and to cancel.
 - **Not in v1:** layout JSON prompts and SLG on the positive branch (`slg_layers`).
 
+**Fibo 2.0 (`fibo2`)**
+
+- **Model.** Fibo 2.0 (Bria, October 2026, CC BY-NC 4.0): an 8B single-stream flow DiT (44 blocks) with Qwen3-VL-4B-Instruct as its text encoder and the FLUX.2 VAE. A Perceiver condenses the text encoder's hidden states into gist tokens. One model generates and edits: with images, `BriaFibo2Pipeline` (diffusers `main`, #14991, §11) edits them.
+- **Checkpoint.** Dev, the full undistilled model (50 steps, CFG 5): the gated diffusers folder `briaai/Fibo-2.0-dev` under `models/fibo2/Fibo-2.0-dev/`, with `model_index.json`, `processor/`, `scheduler/`, `text_encoder/`, `transformer/`, `vae/` and `fonts/` (about 25.5 GB, bf16), without `assets/` or `fine_tuning/`. The pipeline draws each text a caption asks for (`text_render`) as a small image for the text encoder, in the repo's fonts (Aileron, then DejaVu Sans), which the runner passes as `fonts`. Comfy-Org's repackaging (`Comfy-Org/Fibo-2.0`) is in ComfyUI's key layout, which diffusers can't load. Edit Turbo, the 4-step distilled editing checkpoint, isn't used.
+- **Prompt-to-JSON VLMs.** Fibo 2.0 is trained on structured JSON captions (short description, objects, background, lighting, aesthetics, photographic characteristics, style, text) and works poorly with free text, although a short plain description and a plain edit instruction are trained forms too. Bria's own prompt writer, `bria-vgl`, runs on Gemini, so Degas uses Bria's local VLMs instead, both Qwen3-VL-4B fine-tunes (8.9 GB, CC BY-NC 4.0) and `upsampler` assets: `briaai/FIBO-vlm` in `upsamplers/fibo2/FIBO-vlm/` writes the caption of a new image (`<generate>`), and `briaai/FIBO-edit-vlm` in `upsamplers/fibo2/FIBO-edit-vlm/` sees the source and writes an `edit_instruction` with the result's caption (`<edit>`). The runner ports the requests and the answer's clean-up from Bria's modular blocks (torch-free in `fibo2_prompt.py`): Bria's sampling (top-p 0.9, temperature 0.2, or 0.4 for edits), seeded with the job's first seed and run once per job (progress phase `upsample`). The JSON is kept as the result's caption, as FLUX 3's is. FIBO-edit-vlm reads one image, so an edit with references sends the instruction as written, with no VLM. *Upsample prompt* off sends the prompt as written.
+- **Variant `dev`**, modes `t2i` and `edit`, minimum GPU L4. With a VLM, the models come to about 35 GB. They stay on the GPU if they fit under the offload share, and are otherwise chained through accelerate's offload hooks (VLM, text encoder, transformer, VAE), as FLUX 3's are. One VLM is loaded at a time, and a job that needs the other swaps it.
+- **Edit.** The source is image 1 and `inputs.refs` adds up to 4 more (the pipeline reads 5), named `<image_1>`, `<image_2>` and so on in the instruction. The pipeline crops each to its trained size of about 1 megapixel. The runner first scales any larger one down to 1 megapixel (`Variant.ref_max_pixels`), and flattens alpha onto white.
+- **Parameters:** prompt, width and height (multiples of 16, up to 4 MP, default 1024²; the presets include Bria's 1248×832 and 1424×800), steps (default 50), CFG (default 5), *Upsample prompt* (on) and seed. There's no negative prompt: text-to-image uses Bria's negative caption (soft, featureless, artifact-laden), and an edit the pipeline's default, the empty caption. At CFG 1 neither runs. Progress and cancelling use the pipeline's step callback.
+- **No LoRAs.** The pipeline has no LoRA loader, so a spec with LoRAs is refused.
+- **Not in v1:** masked edits (`inpaint`: the pipeline takes a `mask` and greys the region out), Edit Turbo, and *Inspire* (a caption written from a reference image).
+
 **LTX-2 (`ltx2`)**
 
 - **Model.** Lightricks' LTX-2.3 (March 2026) and LTX-2.5 (August 2026): a 22B audio-video DiT that makes a clip and its sound together. LTX-2.3's text encoder is Gemma 3 12B and LTX-2.5's is Gemma 4 12B. Both load in diffusers as `LTX2Pipeline`. That needs diffusers `main` and transformers 5.10.1 or later (for Gemma 4), which the bootstrap installs when the image's are older (§11).
@@ -342,6 +353,7 @@ MyDrive/degas/
     klein/         FLUX.2-klein-9B/ (the official diffusers folder)
     flux3/         flux-3-image-klein-base/ (the modular diffusers folder, without variants/ or BFL's root files)
     moss/          MOSS-Image-Base/, MOSS-Image-SFT/, Kromoss/ (the repos' diffusers folders, without assets/)
+    fibo2/         Fibo-2.0-dev/ (the diffusers folder with fonts/, without assets/ or fine_tuning/)
     ltx2/          <variant>/…   (diffusers folders: ltx25/, ltx23-distilled/, ltx23/; latent_upsampler/ inside for Upscale)
   loras/
     sdxl/          *.safetensors (+ *.yaml, preview *.jpg/png)
@@ -366,6 +378,7 @@ MyDrive/degas/
     sdxl/          sdxl-vae-fp16-fix/ (the fp16-fix VAE, diffusers folder)
   upsamplers/
     flux3/         flux-3-image-klein-pup/ (BFL's prompt upsampler, a transformers folder)
+    fibo2/         FIBO-vlm/, FIBO-edit-vlm/ (Bria's prompt-to-JSON VLMs, transformers folders)
   configs/
     sdxl/          stable-diffusion-xl-base-1.0/, stable-diffusion-xl-1.0-inpainting-0.1/
                    (the repos' configs and tokenizers, no weights)
@@ -751,6 +764,8 @@ Phases are numbered from 0.
     - Kromoss again with no LoRA (39 s) gave a byte-identical PNG to the first job, so removing the hooks restores the model exactly.
     - Base + turbo LoRA (1 min 55 s, including Base's cold copy and the reload, which drops and re-hooks the LoRA) spelled the sign right, in a different composition.
 
+18. **Fibo 2.0.** ✅ Built, not yet tested on a live GPU. The `fibo2` family (§4.3): Bria's Fibo 2.0 Dev for `t2i` and `edit` with up to 5 images, with Bria's prompt-to-JSON VLMs in front of it (FIBO-vlm for `t2i`, FIBO-edit-vlm for an edit of one image), whose JSON is kept as the caption. The diffusers pin moved to `de988b7e` on `main`, which adds `BriaFibo2Pipeline`. The upsampler's missing-asset message no longer names FLUX 3's. Live test to do, on an A100: the cold copy and load, and the time per step; `t2i` with and without *Upsample prompt* (a prompt with sign text); `t2i` at 1424×800; an edit of one image through FIBO-edit-vlm, and one with references; progress, the *Writing caption* phase and cancelling; and SDXL, FLUX 3, MOSS and klein jobs again on the new pin.
+
 ## 11. Risks and open questions
 
 | Risk | Impact | Mitigation |
@@ -767,7 +782,7 @@ Phases are numbered from 0.
 | diffusers API churn for newer Wan and ControlNet classes | Upgrades break the worker | Pin versions in `requirements-worker.txt`; record versions in each saved config |
 | fp8 layerwise casting is newer diffusers code, used here with model CPU offload and PEFT LoRAs | FLUX.1 fails to load a LoRA, or runs slowly, on an L4 | `_adapters_in_bf16` keeps adapters out of fp8; the live test covers offload and a LoRA; on an A100 and up, a bf16 folder model skips fp8 entirely |
 | diffusers' IP-Adapter layers and PEFT LoRAs on the same attention modules; `unload_ip_adapter` resets every processor | A LoRA or a regional ControlNet misbehaves after image prompts are added or removed | The live test adds and removes each with the other loaded; the runner remakes derived pipelines whenever the adapter set changes |
-| Qwen-Image 2.1, LTX-2.5 and FLUX 3 need diffusers `main` (not in 0.41.0), and LTX-2 needs transformers 5.10.1+ (Gemma 4) | The pinned commit and the newer transformers also run every other family, and could break them | Install each only when the image's lacks what's needed (`QwenImage21Pipeline`, `LTX2Pipeline` and `LTX2DurationHead`, FLUX 3's `upsample_prompt`; `Gemma4UnifiedForConditionalGeneration`); re-test every family on them; move to the first releases that have them |
+| Qwen-Image 2.1, LTX-2.5, FLUX 3 and Fibo 2.0 need diffusers `main` (not in 0.41.0), and LTX-2 needs transformers 5.10.1+ (Gemma 4) | The pinned commit and the newer transformers also run every other family, and could break them | Install each only when the image's lacks what's needed (`QwenImage21Pipeline`, `LTX2Pipeline` and `LTX2DurationHead`, FLUX 3's `upsample_prompt`; `Gemma4UnifiedForConditionalGeneration`); re-test every family on them; move to the first releases that have them |
 
 ## 12. Future work
 

@@ -41,15 +41,16 @@ STARTED_MARKER = "@@degas-worker-started"
 PORT_WAIT_S = 90  # how long a new worker waits for the old one's port
 RCLONE_URL = "https://downloads.rclone.org/rclone-current-linux-amd64.zip"
 # Qwen-Image 2.1's pipeline (huggingface/diffusers#14804), LTX-2.5's (its duration head and
-# Gemma 4 text encoder) and FLUX 3's modular pipeline and prompt upsampler (#15046, #15058)
-# aren't in a diffusers release yet (design §11). A commit on main with all of them.
+# Gemma 4 text encoder), FLUX 3's modular pipeline and prompt upsampler (#15046, #15058) and
+# Fibo 2.0's (#14991) aren't in a diffusers release yet (design §11). A commit on main with
+# all of them.
 DIFFUSERS_PIN = (
     "diffusers @ git+https://github.com/huggingface/diffusers"
-    "@d42ebf9c6e0b46103b74283f5324357a67acaa04"
+    "@de988b7ee77c393a63865d265d19e267ef9c7bf5"
 )
 # What the pin needs that an older diffusers lacks.
 DIFFUSERS_CHECK = (
-    "from diffusers import QwenImage21Pipeline, LTX2Pipeline;"
+    "from diffusers import QwenImage21Pipeline, LTX2Pipeline, BriaFibo2Pipeline;"
     " from diffusers.pipelines.ltx2 import LTX2DurationHead;"
     " from diffusers.modular_pipelines.flux3.prompt_upsampler import upsample_prompt"
 )

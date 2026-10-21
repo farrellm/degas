@@ -19,8 +19,8 @@ MISSING = {
     "degas/{path}/, then rescan.",
     "face_detector": "FaceID needs InsightFace in Drive: det_10g.onnx and w600k_r50.onnx "
     "from buffalo_l in degas/{path}/. Then rescan.",
-    "upsampler": "The prompt upsampler isn't in Drive. Put flux-3-image-klein-pup in "
-    "degas/{path}/, then rescan, or turn off Upsample prompt.",
+    "upsampler": "The prompt upsampler isn't in Drive. Put it in degas/{path}/, then "
+    "rescan, or turn off Upsample prompt.",
 }
 
 # What the person chose, by the name the form gives it.

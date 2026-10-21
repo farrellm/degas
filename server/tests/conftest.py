@@ -368,6 +368,7 @@ class Harness:
         self.klein = FakeQwen()
         self.flux3 = FakeFlux3()
         self.moss = FakeQwen()
+        self.fibo2 = FakeFlux3()
         self.sam = FakeSam()
         self.trace = FakeTrace()
         self.worker_paths = Paths(home=tmp_path / "vm", models=tmp_path / "vm-models")
@@ -395,6 +396,7 @@ class Harness:
                 "klein": lambda: self.klein,
                 "flux3": lambda: self.flux3,
                 "moss": lambda: self.moss,
+                "fibo2": lambda: self.fibo2,
             },
             rclone=str(rclone),
             exit_process=exit_process,
@@ -614,6 +616,27 @@ FLUX3_PUP = {
     "drive_file_id": "f3p",
     "size": 19,
 }
+FIBO2 = {
+    "path": "models/fibo2/Fibo-2.0-dev",
+    "family": "fibo2",
+    "kind": "model",
+    "drive_file_id": "fb2",
+    "size": 25,
+}
+FIBO2_VLM = {
+    "path": "upsamplers/fibo2/FIBO-vlm",
+    "family": "fibo2",
+    "kind": "upsampler",
+    "drive_file_id": "fb2v",
+    "size": 9,
+}
+FIBO2_EDIT_VLM = {
+    "path": "upsamplers/fibo2/FIBO-edit-vlm",
+    "family": "fibo2",
+    "kind": "upsampler",
+    "drive_file_id": "fb2e",
+    "size": 8,
+}
 MOSS_BASE = {
     "path": "models/moss/MOSS-Image-Base",
     "family": "moss",
@@ -677,6 +700,9 @@ def client(harness: Harness) -> Iterator[TestClient]:
                 KLEIN,
                 FLUX3,
                 FLUX3_PUP,
+                FIBO2,
+                FIBO2_VLM,
+                FIBO2_EDIT_VLM,
                 MOSS_BASE,
                 MOSS_SFT,
                 MOSS_KROMOSS,
