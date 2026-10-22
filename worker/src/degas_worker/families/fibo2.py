@@ -4,8 +4,9 @@
 One pipeline does all three: with images it edits them. The model reads structured JSON
 captions, so the prompt first goes through one of Bria's prompt-to-JSON VLMs (Qwen3-VL 4B
 fine-tunes): FIBO-vlm for `t2i`, and for `i2i` (Bria's Inspire), where it sees the source and
-the pipeline doesn't; FIBO-edit-vlm for an edit of one image, which sees the image. Its JSON
-is written once per job, sampled with the job's first seed, and returned with each image.
+the pipeline doesn't, then rewrites its caption as the prompt asks; FIBO-edit-vlm for an edit
+of one image, which sees the image. Its JSON is written once per job, sampled with the job's
+first seed, and returned with each image.
 """
 
 import logging
@@ -26,6 +27,7 @@ from degas_worker.families.fibo2_prompt import (
     edit_messages,
     inspire_messages,
     parse_caption,
+    refine_messages,
     t2i_messages,
 )
 from degas_worker.families.flux3 import _shrink
@@ -136,14 +138,27 @@ class Fibo2Runner:
             image.thumbnail((1024, 1024))
         if mode == "edit":
             assert image is not None
-            messages = edit_messages(image, prompt)
-            temperature = EDIT_VLM[2]
-        elif image is not None:
-            messages = inspire_messages(image, prompt)
-            temperature = T2I_VLM[2]
-        else:
-            messages = t2i_messages(prompt)
-            temperature = T2I_VLM[2]
+            return self._ask(edit_messages(image, prompt), image, EDIT_VLM[2], seed, prompt)
+        if image is None:
+            return self._ask(t2i_messages(prompt), None, T2I_VLM[2], seed)
+        # Inspire: FIBO-vlm's `<inspire>` reads no text, so the prompt's changes are made to
+        # its caption by a second, text-only request.
+        caption = self._ask(inspire_messages(image), image, T2I_VLM[2], seed)
+        if caption is None or not prompt.strip():
+            return caption
+        refined = self._ask(refine_messages(caption, prompt), None, T2I_VLM[2], seed)
+        return refined or caption
+
+    def _ask(
+        self,
+        messages: list[dict[str, Any]],
+        image: Image.Image | None,
+        temperature: float,
+        seed: int,
+        instruction: str | None = None,
+    ) -> str | None:
+        """The caption in the VLM's answer to `messages`, or None (with a warning) if there's
+        none. `instruction` is an edit's, as `parse_caption` takes it."""
         text = self.processor.apply_chat_template(
             messages, tokenize=False, add_generation_prompt=True
         )
@@ -168,14 +183,9 @@ class Fibo2Runner:
             ids[0, batch["input_ids"].shape[-1] :], skip_special_tokens=True
         )
         try:
-            return parse_caption(answer, prompt if mode == "edit" else None)
+            return parse_caption(answer, instruction)
         except ValueError:
-            log.warning(
-                "No caption from %s, sending the prompt as written: %r…%r",
-                self.vlm_path,
-                answer[:200],
-                answer[-200:],
-            )
+            log.warning("No caption from %s: %r…%r", self.vlm_path, answer[:200], answer[-200:])
             return None
 
     def _load(self, path: Path, vlm_path: Path | None) -> None:

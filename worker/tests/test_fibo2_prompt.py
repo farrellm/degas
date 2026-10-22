@@ -8,6 +8,7 @@ from degas_worker.families.fibo2_prompt import (
     edit_messages,
     inspire_messages,
     parse_caption,
+    refine_messages,
     t2i_messages,
 )
 
@@ -20,15 +21,24 @@ def test_t2i_asks_fibo_vlm_to_generate() -> None:
     }
 
 
-def test_inspire_shows_the_image_then_the_prompt_if_any() -> None:
+def test_inspire_shows_only_the_image() -> None:
     im = Image.new("RGB", (8, 8))
-    [message] = inspire_messages(im, "  ")
+    [message] = inspire_messages(im)
     assert message["content"] == [
         {"type": "image", "image": im},
         {"type": "text", "text": "<inspire>"},
     ]
-    [message] = inspire_messages(im, " the whale is blue\n")
-    assert message["content"][1] == {"type": "text", "text": "<inspire>\nthe whale is blue"}
+
+
+def test_refine_rewrites_a_caption_as_asked() -> None:
+    [message] = refine_messages('{"short_description":"a harbour"}\n', " make it snow\n")
+    assert message["content"] == [
+        {
+            "type": "text",
+            "text": '<refine>\nInput:\n{"short_description":"a harbour"}\n'
+            "Editing instructions:\nmake it snow",
+        }
+    ]
 
 
 def test_an_edit_shows_the_image_before_the_instruction() -> None:
