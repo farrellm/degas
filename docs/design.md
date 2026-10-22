@@ -779,6 +779,11 @@ Phases are numbered from 0.
     - Regressions on the new pin, each including its cold copy: SDXL (Juggernaut, 96 s), klein `t2i` (235 s), MOSS SFT (201 s), a FLUX 3 one-image edit (181 s; one reference is now padded rather than cropped upstream, and the sign stayed intact) and a FLUX 3 upsampled `t2i` (255 s, banner spelled right). All looked right.
     - Still to do: an L4, a masked edit, and a faster VLM (the worker's token rate).
 
+    *From image* (`i2i`, Bria's Inspire), live on an A100 40 GB (2026-10-22, same versions), on the real server; four more images under `fibo2-test`. Source: the harbour at sunrise (1424×800, seed 42).
+    - No prompt: FIBO-vlm's `<inspire>` caption described the harbour, and Fibo drew a new picture of it (same red and blue boats, mist and hills, a different composition). 294 s, with the session's cold start.
+    - With "the same scene in a snowstorm at night, the boats are bright red": FIBO-vlm ignored text after `<inspire>` (the caption, and so the picture, matched the unprompted one), and its `<refine>` didn't apply the instruction either (a probe beside the worker: as text it gave its input back unchanged, with the image it redescribed the source). FIBO-edit-vlm's `<edit>` caption carried the change (snowfall, night, a bright red boat in front), so a prompted Inspire now uses it: a snowy harbour, red boat in front, though more grey dusk than night, and only one boat red. 210 s.
+    - The same prompt as an `edit` (FIBO-edit-vlm, with the cold copy of it) kept the source's layout and added the snow, 266 s.
+
 ## 11. Risks and open questions
 
 | Risk | Impact | Mitigation |
