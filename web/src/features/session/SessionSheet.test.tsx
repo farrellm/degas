@@ -17,6 +17,34 @@ describe('Session', () => {
     expect(within(section).getByText(/6.9 GB of 150 GB used/)).toBeInTheDocument()
   })
 
+  it("shows the session's spend and the units left", async () => {
+    const checked = new Date().toISOString()
+    mockApi({
+      'GET /api/session': () => ({
+        ...RUNNING,
+        session: { ...RUNNING.session, allocated_at: checked, unit_rate: 1.62 },
+        units: { balance: 196.26, rate: 1.62, assignments: 1, checked_at: checked },
+      }),
+    })
+    const user = userEvent.setup()
+    renderApp()
+    await user.click(await screen.findByRole('button', { name: /L4 session ready/ }))
+    const section = screen.getByRole('region', { name: 'Current session' })
+    expect(within(section).getByText('spent this session, at 1.62 an hour')).toBeInTheDocument()
+    expect(
+      within(section).getByText(/compute units left, about 5 days at this rate/),
+    ).toBeInTheDocument()
+  })
+
+  it('leaves out compute units while Colab gives none', async () => {
+    mockApi({ 'GET /api/session': () => RUNNING })
+    const user = userEvent.setup()
+    renderApp()
+    await user.click(await screen.findByRole('button', { name: /L4 session ready/ }))
+    const section = screen.getByRole('region', { name: 'Current session' })
+    expect(within(section).queryByText(/units/)).not.toBeInTheDocument()
+  })
+
   it('starts a GPU session from the header', async () => {
     const started: unknown[] = []
     mockApi({

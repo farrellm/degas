@@ -11,7 +11,9 @@ CREATE TABLE IF NOT EXISTS sessions (
     started_at TEXT NOT NULL,
     ended_at TEXT,
     last_activity_at TEXT NOT NULL,
-    error TEXT
+    error TEXT,
+    allocated_at TEXT,
+    unit_rate REAL
 );
 CREATE TABLE IF NOT EXISTS jobs (
     id TEXT PRIMARY KEY,
@@ -110,6 +112,8 @@ MIGRATIONS = (
     ("results", "segments", "TEXT"),
     ("library_items", "duration", "REAL"),
     ("results", "caption", "TEXT"),
+    ("sessions", "allocated_at", "TEXT"),
+    ("sessions", "unit_rate", "REAL"),
 )
 
 # Stored SDXL params from before the noise schedule was its own control: a Karras sampler

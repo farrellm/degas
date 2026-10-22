@@ -1,0 +1,28 @@
+/* Compute units in the session sheet: the session's running spend, read like a taxi meter. */
+
+.units-spent {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sheet-section .units-spent .figure {
+  color: var(--ink-muted);
+  font-size: var(--step-0);
+  line-height: 1.1;
+}
+
+.units-spent .figure .readout {
+  color: var(--ink);
+  font-size: var(--step-2);
+  font-weight: 560;
+  letter-spacing: -0.01em;
+}
+
+.units-spent .figure .point {
+  font-variant-numeric: normal;
+}
+
+.units-left {
+  text-wrap: pretty;
+}

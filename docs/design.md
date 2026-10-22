@@ -96,6 +96,8 @@ Only one session can be active at a time in v1. Changing GPU type means stopping
 - If the VM is gone, `colab` reports `Session '…' not found` and exits with code 1. The session then moves to `error`.
 - Whether a kernel exec heartbeat is also needed is still unknown. The Phase 0 liveness test was inconclusive: the VM was still alive 15 minutes after the kernel went idle. The question is whether a VM whose kernel is idle, with only the SSH-launched worker active, gets reclaimed. If it does, the server also sends a trivial `colab exec` every few minutes while the session is active.
 
+**Compute units.** `colab usage` reports the account's balance, its rate in units an hour, and its active assignments. All three cover every VM on the account, including other projects', so the balance can't be charged to Degas. The server reads usage just before `colab new` and again after it. If one assignment was added, the difference in rate is that session's own rate (`sessions.unit_rate`, from `allocated_at`), and the sheet shows the session's spend as that rate times the time since allocation. If the rate can't be told apart, it's retried at each 5 min `colab status` check, and the sheet shows only the balance. Usage is also re-read when the session ends, and when `GET /session` finds the figure older than 5 min. The re-read runs in the background, and the new figure arrives as a `session` event.
+
 **Failure and restart recovery.**
 - If the VM is reclaimed or the worker dies, the session moves to `error` and `ended_at` is set. The running job is marked `error`. Queued jobs stay queued.
 - On server startup, the server compares its session row with `colab sessions`:

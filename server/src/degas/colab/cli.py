@@ -7,6 +7,7 @@ exits 0 for an unknown session), so results are judged from the output text.
 import asyncio
 import logging
 import re
+from dataclasses import dataclass
 from typing import Protocol
 
 from degas.errors import DegasError
@@ -20,6 +21,29 @@ class ColabError(DegasError):
     pass
 
 
+@dataclass(frozen=True)
+class Usage:
+    """The account's compute units (`colab usage`): every VM on it, not just Degas's."""
+
+    balance: float
+    rate: float  # units an hour
+    assignments: int  # VMs allocated
+
+
+_USAGE = {
+    "balance": re.compile(r"Current balance:\s*([\d.]+)"),
+    "rate": re.compile(r"Usage rate:\s*([\d.]+)"),
+    "assignments": re.compile(r"Active assignments:\s*(\d+)"),
+}
+
+
+def parse_usage(text: str) -> Usage:
+    found = {k: m.group(1) for k, rx in _USAGE.items() if (m := rx.search(text))}
+    if len(found) != len(_USAGE):
+        raise ColabError(f"Unexpected `colab usage` output: {text.strip()}")
+    return Usage(float(found["balance"]), float(found["rate"]), int(found["assignments"]))
+
+
 class Colab(Protocol):
     session: str
 
@@ -30,6 +54,8 @@ class Colab(Protocol):
     async def is_alive(self) -> bool: ...
 
     async def exec(self, code: str, timeout: float = 120) -> str: ...
+
+    async def usage(self) -> Usage: ...
 
     def proxy_command(self, identity: str) -> str: ...
 
@@ -89,6 +115,9 @@ class ColabCli:
 
     async def exec(self, code: str, timeout: float = 120) -> str:
         return await self._run("exec", "-s", self.session, stdin=code, timeout=timeout)
+
+    async def usage(self) -> Usage:
+        return parse_usage(await self._run("usage", timeout=60))
 
     def proxy_command(self, identity: str) -> str:
         return " ".join([*self._argv("ssh", "--proxy-mode", "-s", self.session, "-i", identity)])

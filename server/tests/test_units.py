@@ -5,7 +5,7 @@ import pytest
 
 from degas.blobs import BlobStore
 from degas.colab.bundle import build_bundle
-from degas.colab.cli import ColabCli, ColabError
+from degas.colab.cli import ColabCli, ColabError, Usage, parse_usage
 from degas.config import load_config
 from degas.db import Database
 from degas.families.base import SpecError, spec_assets
@@ -23,6 +23,8 @@ case "$1" in
           else echo "[colab] Session 'degas' not found."; fi ;;
   exec) cat; echo; echo done ;;
   stop) echo "[colab] Stopping session 'degas'..." ;;
+  usage) echo "Current balance: 198.67 compute units"
+         echo "Usage rate: 1.54/hr"; echo "Active assignments: 1" ;;
   *) echo "boom"; exit 3 ;;
 esac
 """
@@ -46,6 +48,15 @@ async def test_colab_exec_sends_code_on_stdin(colab: ColabCli) -> None:
     out = await colab.exec("print('hi')")
     assert "print('hi')" in out
     assert "done" in out
+
+
+async def test_colab_usage(colab: ColabCli) -> None:
+    assert await colab.usage() == Usage(balance=198.67, rate=1.54, assignments=1)
+
+
+def test_colab_usage_without_figures() -> None:
+    with pytest.raises(ColabError, match="Unexpected"):
+        parse_usage("[colab] A new version is available\n")
 
 
 async def test_colab_errors(colab: ColabCli) -> None:

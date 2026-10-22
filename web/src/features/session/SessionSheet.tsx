@@ -18,6 +18,7 @@ import { CacheSection } from './CacheSection'
 import { DriveSection } from './DriveSection'
 import { lastGpu, rememberGpu } from './gpuPreference'
 import { NotificationsSection } from './NotificationsSection'
+import { UnitsMeter, UnitsSummary } from './UnitsMeter'
 
 /** Whether the model in the Create draft is a Wan A14B variant. */
 function wantsHighMem(): boolean {
@@ -114,6 +115,7 @@ function SessionBody({ snap }: { snap: SessionSnapshot }) {
           {start.isPending ? 'Starting…' : `Start ${gpu} session`}
         </button>
         <p>Stops by itself after {snap.idle_timeout_min} minutes without jobs.</p>
+        <UnitsSummary snap={snap} now={now} />
         {error && <p role="alert">{error.message}</p>}
       </section>
     )
@@ -139,6 +141,7 @@ function SessionBody({ snap }: { snap: SessionSnapshot }) {
             </p>
           </div>
         )}
+        <UnitsMeter snap={snap} now={now} />
         {idle && s?.state === 'ready' && (
           <p>
             {s.gpu} stops in {idle} if no job runs.

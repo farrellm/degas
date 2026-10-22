@@ -120,6 +120,10 @@ export interface SessionSnapshot {
     ended_at: string | null
     last_activity_at: string
     error: string | null
+    /** When Colab allocated the VM: billing starts here. */
+    allocated_at: string | null
+    /** This VM's compute units an hour; null when it couldn't be told apart from others. */
+    unit_rate: number | null
   } | null
   step: string | null
   worker: {
@@ -138,7 +142,17 @@ export interface SessionSnapshot {
     error: string | null
     push_error: string | null
   }
+  /** The Colab account's compute units, every VM on it; null until Colab answers. */
+  units: Units | null
   gpus: string[]
+}
+
+export interface Units {
+  balance: number
+  /** Units an hour, across the account. */
+  rate: number
+  assignments: number
+  checked_at: string
 }
 
 export interface DriveStatus {

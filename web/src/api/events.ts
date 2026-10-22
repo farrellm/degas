@@ -41,6 +41,8 @@ const sessionEntries = {
       ended_at: v.nullable(v.string()),
       last_activity_at: v.string(),
       error: v.nullable(v.string()),
+      allocated_at: v.nullable(v.string()),
+      unit_rate: v.nullable(v.number()),
     }),
   ),
   step: v.nullable(v.string()),
@@ -63,6 +65,14 @@ const sessionEntries = {
     error: v.nullable(v.string()),
     push_error: v.nullable(v.string()),
   }),
+  units: v.nullable(
+    v.looseObject({
+      balance: v.number(),
+      rate: v.number(),
+      assignments: v.number(),
+      checked_at: v.string(),
+    }),
+  ),
   gpus: v.array(v.string()),
 }
 

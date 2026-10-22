@@ -12,6 +12,7 @@ router = APIRouter(tags=["session"])
 
 @router.get("/session")
 async def get_session(svc: Svc) -> dict[str, Any]:
+    svc.sessions.request_usage()
     return svc.sessions.snapshot()
 
 

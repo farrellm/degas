@@ -29,6 +29,8 @@ class SessionRow(TypedDict):
     ended_at: str | None
     last_activity_at: str
     error: str | None
+    allocated_at: str | None  # when Colab gave us the VM: billing starts here
+    unit_rate: float | None  # this VM's compute units an hour, if it could be told apart
 
 
 class SessionUpdate(TypedDict, total=False):
@@ -38,6 +40,8 @@ class SessionUpdate(TypedDict, total=False):
     ended_at: str | None
     last_activity_at: str
     error: str | None
+    allocated_at: str | None
+    unit_rate: float | None
 
 
 class JobRuntime(TypedDict, total=False):

@@ -69,6 +69,7 @@ function SESSION_BASE() {
     idle_deadline: null,
     idle_timeout_min: 15,
     drive: { configured: true, authorized: true, error: null, push_error: null },
+    units: null,
     gpus: ['T4', 'L4'],
   }
 }
@@ -113,6 +114,8 @@ export const RUNNING = {
     ended_at: null,
     last_activity_at: '2026-09-27T12:00:00Z',
     error: null,
+    allocated_at: null,
+    unit_rate: null,
   },
   worker: {
     gpu: 'NVIDIA L4',

@@ -30,6 +30,58 @@ async def test_idle_shutdown(harness: Any) -> None:
         await svc.stop()
 
 
+async def test_session_rate_is_what_its_vm_adds(harness: Any) -> None:
+    harness.colab.other_rate, harness.colab.other_vms = 1.54, 1  # another project's L4
+    svc = harness.build()
+    await svc.start()
+    try:
+        await svc.sessions.start("T4", high_mem=False)
+        await until(lambda: svc.sessions.state == "ready")
+        session = svc.sessions.session
+        assert session["unit_rate"] == 1.71
+        assert session["allocated_at"] >= session["started_at"]
+        units = svc.sessions.snapshot()["units"]
+        assert units["balance"] == 100.0
+        assert units["rate"] == 3.25
+        assert units["assignments"] == 2
+    finally:
+        await svc.stop()
+
+
+async def test_session_rate_unknown_when_another_vm_starts_too(harness: Any) -> None:
+    colab = harness.colab
+    new = colab.new
+
+    async def new_beside_another(gpu: str | None, high_mem: bool) -> None:
+        colab.other_vms, colab.other_rate = 1, 1.54  # another project's VM, meanwhile
+        await new(gpu, high_mem)
+
+    colab.new = new_beside_another
+    svc = harness.build()
+    await svc.start()
+    try:
+        await svc.sessions.start("T4", high_mem=False)
+        await until(lambda: svc.sessions.state == "ready")
+        await asyncio.sleep(0.3)  # a few usage checks
+        assert svc.sessions.session["unit_rate"] is None
+    finally:
+        await svc.stop()
+
+
+async def test_usage_failure_leaves_the_session_alone(harness: Any) -> None:
+    harness.colab.usage_fails = True
+    svc = harness.build()
+    await svc.start()
+    try:
+        await svc.sessions.start("T4", high_mem=False)
+        await until(lambda: svc.sessions.state == "ready")
+        await asyncio.sleep(0.3)
+        assert svc.sessions.state == "ready"
+        assert svc.sessions.snapshot()["units"] is None
+    finally:
+        await svc.stop()
+
+
 async def test_pending_jobs_prevent_idle_shutdown(harness: Any) -> None:
     config = harness.config.model_copy(update={"idle_timeout_min": 0.002})
     svc = harness.build(config)

@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any, Unpack
 
 from degas.colab.bundle import Bundle, build_bundle
-from degas.colab.cli import Colab, ColabError
+from degas.colab.cli import Colab, ColabError, Usage
 from degas.colab.tunnel import Tunnel, TunnelError
 from degas.colab.worker_client import WorkerClient, WorkerError
 from degas.config import Config
@@ -123,6 +123,9 @@ async def ensure_key(key: Path) -> None:
         raise SessionError(f"ssh-keygen failed: {out.decode(errors='replace').strip()}")
 
 
+USAGE_TTL = timedelta(minutes=5)  # a snapshot older than this asks Colab again
+
+
 class Intervals:
     """Liveness timings in seconds (overridable in tests)."""
 
@@ -163,6 +166,11 @@ class SessionManager:
         self.health: dict[str, Any] | None = None
         self.step: str | None = None
         self.drive_error: str | None = None
+        self.usage: Usage | None = None
+        self.usage_at: datetime | None = None
+        self._baseline: Usage | None = None  # the account just before `colab new`
+        self._usage_lock = asyncio.Lock()
+        self._usage_tasks: set[asyncio.Task[None]] = set()
         self._task: asyncio.Task[None] | None = None
         self._monitor: asyncio.Task[None] | None = None
         self._ready = asyncio.Event()
@@ -210,7 +218,18 @@ class SessionManager:
             "idle_deadline": deadline.isoformat(timespec="seconds") if deadline else None,
             "idle_timeout_min": self.config.idle_timeout_min,
             "drive": {**self.drive.status(), "push_error": self.drive_error},
+            "units": self._units(),
             "gpus": list(GPUS),
+        }
+
+    def _units(self) -> dict[str, Any] | None:
+        if self.usage is None or self.usage_at is None:
+            return None
+        return {
+            "balance": self.usage.balance,
+            "rate": self.usage.rate,
+            "assignments": self.usage.assignments,
+            "checked_at": self.usage_at.isoformat(timespec="seconds"),
         }
 
     def _publish(self) -> None:
@@ -277,6 +296,7 @@ class SessionManager:
             except ColabError as e:
                 log.warning("colab stop failed: %s", e)
             self._end("stopped", None)
+            self.request_usage(force=True)
 
     async def reset_worker(self) -> None:
         """Force reset: kill the worker process and start a fresh one (models reload)."""
@@ -313,6 +333,7 @@ class SessionManager:
         self._ready.clear()
         self.step = None
         self.health = None
+        self._baseline = None
         self._publish()
         for cb in self.on_end:
             cb()
@@ -326,6 +347,7 @@ class SessionManager:
             except ColabError as e:
                 log.warning("colab stop failed: %s", e)
         self._end("error", error)
+        self.request_usage(force=True)
 
     # -- bootstrap -------------------------------------------------------------------------
 
@@ -335,7 +357,10 @@ class SessionManager:
         assert self.session is not None
         try:
             if allocate:
+                self._baseline = await self._read_usage()
                 await self.colab.new(self.session["gpu"], self.session["high_mem"])
+                self._update(allocated_at=now())
+                await self.refresh_usage()
             if self.tunnel is None:
                 self._step("Connecting")
                 await self._connect()
@@ -505,6 +530,7 @@ class SessionManager:
                 last_status = t
                 if not await self._still_allocated():
                     return
+                await self.refresh_usage()
             if self.config.colab.exec_heartbeat and t - last_exec >= self.iv.exec_heartbeat:
                 last_exec = t
                 await self._guard(self.colab.exec("pass", timeout=60), "exec heartbeat")
@@ -589,6 +615,52 @@ class SessionManager:
             await self._fail(f"Lost the worker: {e}", stop_vm=True)
             return False
 
+    # -- compute units ---------------------------------------------------------------------
+
+    async def _read_usage(self) -> Usage | None:
+        try:
+            usage = await self.colab.usage()
+        except ColabError as e:
+            log.warning("colab usage failed: %s", e)
+            return None
+        self.usage, self.usage_at = usage, datetime.now(UTC)
+        return usage
+
+    async def refresh_usage(self) -> None:
+        """Read the account's units, and tell this VM's rate apart if not done yet."""
+        async with self._usage_lock:
+            usage = await self._read_usage()
+            if usage is not None:
+                self._attribute(usage)
+        self._publish()
+
+    def _attribute(self, usage: Usage) -> None:
+        """This VM's rate is what `colab new` added to the account's, if it added one VM.
+
+        Other projects' VMs share the account, so its balance can't be charged to Degas.
+        """
+        base = self._baseline
+        if (
+            base is None
+            or self.session is None
+            or not self.active
+            or self.session["unit_rate"] is not None
+            or usage.assignments != base.assignments + 1
+            or usage.rate <= base.rate
+        ):
+            return
+        self._update(unit_rate=round(usage.rate - base.rate, 2))
+        self._baseline = None
+
+    def request_usage(self, force: bool = False) -> None:
+        """Refresh in the background when stale; the session event carries the result."""
+        fresh = self.usage_at is not None and datetime.now(UTC) - self.usage_at < USAGE_TTL
+        if self._usage_tasks or (fresh and not force):
+            return
+        task = asyncio.create_task(self.refresh_usage())
+        self._usage_tasks.add(task)
+        task.add_done_callback(self._usage_tasks.discard)
+
     # -- server restart --------------------------------------------------------------------
 
     async def recover(self) -> None:
@@ -617,4 +689,7 @@ class SessionManager:
     async def aclose(self) -> None:
         """Server shutdown: leave the VM running; the next start reattaches to it."""
         await self._cancel_tasks()
+        for task in list(self._usage_tasks):
+            task.cancel()
+        await asyncio.gather(*self._usage_tasks, return_exceptions=True)
         await self._teardown()

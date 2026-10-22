@@ -15,6 +15,7 @@ from fastapi.testclient import TestClient
 from PIL import Image
 
 from degas.app import create_app
+from degas.colab.cli import ColabError, Usage
 from degas.colab.session import STARTED_MARKER, Intervals
 from degas.colab.tunnel import Tunnel
 from degas.colab.worker_client import WorkerClient
@@ -35,6 +36,12 @@ class FakeColab:
         self.alive = False
         self.calls: list[str] = []
         self.exec_output = f"{STARTED_MARKER} 123\n"
+        # The account's other VMs, and what ours adds once allocated.
+        self.balance = 100.0
+        self.other_rate = 0.0
+        self.other_vms = 0
+        self.vm_rate = 1.71
+        self.usage_fails = False
 
     async def new(self, gpu: str | None, high_mem: bool) -> None:
         self.calls.append(f"new {gpu} {high_mem}")
@@ -50,6 +57,12 @@ class FakeColab:
     async def exec(self, code: str, timeout: float = 120) -> str:
         self.calls.append("exec")
         return self.exec_output
+
+    async def usage(self) -> Usage:
+        if self.usage_fails:
+            raise ColabError("`colab usage` failed (exit 1): no credentials")
+        rate = self.other_rate + (self.vm_rate if self.alive else 0)
+        return Usage(self.balance, rate, self.other_vms + self.alive)
 
     def proxy_command(self, identity: str) -> str:
         return "true"
