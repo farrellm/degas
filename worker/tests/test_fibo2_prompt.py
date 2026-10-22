@@ -7,8 +7,8 @@ from degas_worker.families.fibo2_prompt import (
     NEGATIVE_T2I,
     edit_messages,
     inspire_messages,
+    inspired_caption,
     parse_caption,
-    refine_messages,
     t2i_messages,
 )
 
@@ -27,17 +27,6 @@ def test_inspire_shows_only_the_image() -> None:
     assert message["content"] == [
         {"type": "image", "image": im},
         {"type": "text", "text": "<inspire>"},
-    ]
-
-
-def test_refine_rewrites_a_caption_as_asked() -> None:
-    [message] = refine_messages('{"short_description":"a harbour"}\n', " make it snow\n")
-    assert message["content"] == [
-        {
-            "type": "text",
-            "text": '<refine>\nInput:\n{"short_description":"a harbour"}\n'
-            "Editing instructions:\nmake it snow",
-        }
     ]
 
 
@@ -103,3 +92,16 @@ def test_the_t2i_negative_is_compact_json() -> None:
     negative = json.loads(NEGATIVE_T2I)
     assert negative["aesthetics"]["artifacts"][0] == "oversaturated colours"
     assert " " not in NEGATIVE_T2I.split('"short_description"')[0]
+
+
+def test_an_inspired_caption_is_the_edit_result_without_its_instruction() -> None:
+    answer = json.dumps(
+        {
+            "reworded_prompt": "Make it snow.",
+            "short_description": "A harbour in a snowstorm.",
+            "lighting": json.dumps({"conditions": "night"}),
+        }
+    )
+    assert inspired_caption(answer) == (
+        '{"short_description":"A harbour in a snowstorm.","lighting":{"conditions":"night"}}'
+    )

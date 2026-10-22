@@ -77,19 +77,14 @@ def t2i_messages(prompt: str) -> list[dict[str, Any]]:
 
 def inspire_messages(image: Image.Image) -> list[dict[str, Any]]:
     """FIBO-vlm's request for a caption of a new image inspired by `image` (Bria's Inspire).
-    It reads no text: a prompt after the tag is ignored."""
+    It reads no text: a prompt after the tag is ignored, and so is an instruction in its
+    `<refine>` request, so a prompted Inspire takes `inspired_caption` of an edit instead."""
     return [
         {
             "role": "user",
             "content": [{"type": "image", "image": image}, {"type": "text", "text": "<inspire>"}],
         }
     ]
-
-
-def refine_messages(caption: str, instruction: str) -> list[dict[str, Any]]:
-    """FIBO-vlm's request to rewrite a structured `caption` as `instruction` asks."""
-    text = f"<refine>\nInput:\n{caption.strip()}\nEditing instructions:\n{instruction.strip()}"
-    return [{"role": "user", "content": [{"type": "text", "text": text}]}]
 
 
 def edit_messages(image: Image.Image, instruction: str) -> list[dict[str, Any]]:
@@ -135,6 +130,15 @@ def parse_caption(answer: str, instruction: str | None = None) -> str:
         caption["edit_instruction"] = (
             reworded.strip() if isinstance(reworded, str) and reworded.strip() else instruction
         )
+    return json.dumps(caption, ensure_ascii=False, separators=(",", ":"))
+
+
+def inspired_caption(answer: str) -> str:
+    """The caption of the result in FIBO-edit-vlm's answer, without its edit instruction:
+    for an Inspire, which draws it as a new image rather than editing the source. Raises
+    ValueError as `parse_caption` does."""
+    caption = json.loads(parse_caption(answer, ""))
+    del caption["edit_instruction"]
     return json.dumps(caption, ensure_ascii=False, separators=(",", ":"))
 
 

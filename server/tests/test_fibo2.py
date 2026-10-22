@@ -61,6 +61,13 @@ def test_from_an_image_fibo_vlm_takes_the_source_and_an_optional_prompt() -> Non
     assert "minLength" in Fibo2().param_schema("dev", "t2i")["properties"]["prompt"]
 
 
+def test_from_an_image_with_a_prompt_uses_the_edit_vlm() -> None:
+    spec = Fibo2().validate({**I2I, "params": {"prompt": "make it snow"}})
+    assert spec["upsampler"] == {"path": EDIT_UPSAMPLER, "size": None}
+    spec = Fibo2().validate({**I2I, "params": {"prompt": "  "}})
+    assert spec["upsampler"] == {"path": UPSAMPLER, "size": None}
+
+
 def test_from_an_image_takes_no_references() -> None:
     spec = Fibo2().validate({**I2I, "inputs": {"source": SHA, "refs": [SHA]}})
     assert "refs" not in spec["inputs"]

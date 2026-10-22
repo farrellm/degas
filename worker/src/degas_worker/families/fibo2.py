@@ -3,10 +3,11 @@
 
 One pipeline does all three: with images it edits them. The model reads structured JSON
 captions, so the prompt first goes through one of Bria's prompt-to-JSON VLMs (Qwen3-VL 4B
-fine-tunes): FIBO-vlm for `t2i`, and for `i2i` (Bria's Inspire), where it sees the source and
-the pipeline doesn't, then rewrites its caption as the prompt asks; FIBO-edit-vlm for an edit
-of one image, which sees the image. Its JSON is written once per job, sampled with the job's
-first seed, and returned with each image.
+fine-tunes): FIBO-vlm for `t2i`, and for `i2i` (Bria's Inspire), where it sees the source
+and the pipeline doesn't; FIBO-edit-vlm for an edit of one image, which sees the image, and
+for an `i2i` with a prompt, whose caption of the edit's result is drawn as a new image. Its
+JSON is written once per job, sampled with the job's first seed, and returned with each
+image.
 """
 
 import logging
@@ -26,8 +27,8 @@ from degas_worker.families.fibo2_prompt import (
     NEGATIVE_T2I,
     edit_messages,
     inspire_messages,
+    inspired_caption,
     parse_caption,
-    refine_messages,
     t2i_messages,
 )
 from degas_worker.families.flux3 import _shrink
@@ -141,13 +142,11 @@ class Fibo2Runner:
             return self._ask(edit_messages(image, prompt), image, EDIT_VLM[2], seed, prompt)
         if image is None:
             return self._ask(t2i_messages(prompt), None, T2I_VLM[2], seed)
-        # Inspire: FIBO-vlm's `<inspire>` reads no text, so the prompt's changes are made to
-        # its caption by a second, text-only request.
-        caption = self._ask(inspire_messages(image), image, T2I_VLM[2], seed)
-        if caption is None or not prompt.strip():
-            return caption
-        refined = self._ask(refine_messages(caption, prompt), None, T2I_VLM[2], seed)
-        return refined or caption
+        if not prompt.strip():
+            return self._ask(inspire_messages(image), image, T2I_VLM[2], seed)
+        # A prompted Inspire: FIBO-edit-vlm's caption of the edit's result, which the pipeline
+        # draws without the source.
+        return self._ask(edit_messages(image, prompt), image, EDIT_VLM[2], seed, inspired=True)
 
     def _ask(
         self,
@@ -156,9 +155,12 @@ class Fibo2Runner:
         temperature: float,
         seed: int,
         instruction: str | None = None,
+        *,
+        inspired: bool = False,
     ) -> str | None:
         """The caption in the VLM's answer to `messages`, or None (with a warning) if there's
-        none. `instruction` is an edit's, as `parse_caption` takes it."""
+        none. `instruction` is an edit's, as `parse_caption` takes it; `inspired` takes an
+        edit's result caption without its instruction."""
         text = self.processor.apply_chat_template(
             messages, tokenize=False, add_generation_prompt=True
         )
@@ -183,7 +185,7 @@ class Fibo2Runner:
             ids[0, batch["input_ids"].shape[-1] :], skip_special_tokens=True
         )
         try:
-            return parse_caption(answer, instruction)
+            return inspired_caption(answer) if inspired else parse_caption(answer, instruction)
         except ValueError:
             log.warning("No caption from %s: %r…%r", self.vlm_path, answer[:200], answer[-200:])
             return None

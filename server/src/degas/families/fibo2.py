@@ -7,9 +7,10 @@ captions, so by default the prompt goes through Bria's prompt-to-JSON VLM first:
 writes a caption for `t2i`, FIBO-edit-vlm an edit instruction and the result's caption for
 an edit of one image (`upsamplers/fibo2/`, transformers folders). FIBO-edit-vlm reads one
 image, so an edit with references sends the instruction as written, a form Fibo 2.0 was also
-trained on. `i2i` is Bria's Inspire: FIBO-vlm sees the source and writes a caption from it
-(changed as the optional prompt asks), and the pipeline draws that caption without the
-image. The JSON is kept with each result. The pipeline has no LoRA loader.
+trained on. `i2i` is Bria's Inspire: a VLM sees the source and writes a caption from it,
+FIBO-vlm as it is or FIBO-edit-vlm changed as the optional prompt asks, and the pipeline
+draws that caption without the image. The JSON is kept with each result. The pipeline has no
+LoRA loader.
 """
 
 from typing import Any
@@ -159,6 +160,9 @@ class Fibo2:
             "control": [],
         }
         if mode == "i2i" or (params["upsample"] and not inputs.get("refs")):
-            path = EDIT_UPSAMPLER if mode == "edit" else UPSAMPLER
+            # FIBO-vlm's `<inspire>` reads no text, so a prompted Inspire takes the caption
+            # of an edit's result.
+            prompted = mode == "i2i" and params["prompt"].strip()
+            path = EDIT_UPSAMPLER if mode == "edit" or prompted else UPSAMPLER
             out["upsampler"] = {"path": path, "size": None}
         return out
