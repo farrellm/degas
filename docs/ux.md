@@ -323,10 +323,11 @@ Built. MOSS-Image is an image family found under the Model button, with three va
 
 ### Phase 18: Fibo 2.0
 
-Built. Fibo 2.0 is an image family found under the Model button, with one variant, *Fibo 2.0 Dev*, doing *From text* and *Edit*. The form comes from the schema, with no new widgets.
+Built. Fibo 2.0 is an image family found under the Model button, with one variant, *Fibo 2.0 Dev*, doing *From text*, *From image* and *Edit*. The form comes from the schema, with no new widgets.
 
 - **Upsample prompt** works as it does for FLUX 3, on by default, but Bria's model writes a structured JSON caption, which the wall label shows as it is. Its description says that an edit with more than one image always sends the prompt as written (Bria's edit model reads only one image).
 - **Edit.** The Images row takes up to 4 images after the source. The prompt refers to them as `<image_1>`, `<image_2>` and so on, or by number.
+- **From image** is Bria's *Inspire*: the picture inspires a new one rather than being redrawn, so there's no *Denoise strength* and no *Upsample prompt*. The prompt is optional; its description gives an example change ("the same scene, the whale is blue"), and *Generate* is enabled with it empty. Create allows an empty prompt for any schema that doesn't list `prompt` as required.
 - There's no negative prompt and no LoRAs row: Fibo uses Bria's own negative, and the pipeline loads no LoRAs. CFG is a slider, default 5, and Steps default to 50.
 
 ## 5. Component inventory

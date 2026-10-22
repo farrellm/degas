@@ -75,6 +75,20 @@ def t2i_messages(prompt: str) -> list[dict[str, Any]]:
     ]
 
 
+def inspire_messages(image: Image.Image, prompt: str) -> list[dict[str, Any]]:
+    """FIBO-vlm's request for a caption of a new image inspired by `image` (Bria's Inspire),
+    changed as `prompt` asks if it isn't blank."""
+    text = "<inspire>"
+    if prompt.strip():
+        text += f"\n{prompt.strip()}"
+    return [
+        {
+            "role": "user",
+            "content": [{"type": "image", "image": image}, {"type": "text", "text": text}],
+        }
+    ]
+
+
 def edit_messages(image: Image.Image, instruction: str) -> list[dict[str, Any]]:
     """FIBO-edit-vlm's request for an edit of `image`."""
     text = f"<edit>\nEditing instructions:\n{instruction.strip()}"

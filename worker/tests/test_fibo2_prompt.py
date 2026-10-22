@@ -6,6 +6,7 @@ from PIL import Image
 from degas_worker.families.fibo2_prompt import (
     NEGATIVE_T2I,
     edit_messages,
+    inspire_messages,
     parse_caption,
     t2i_messages,
 )
@@ -17,6 +18,17 @@ def test_t2i_asks_fibo_vlm_to_generate() -> None:
         "role": "user",
         "content": [{"type": "text", "text": "<generate>\na fox in snow"}],
     }
+
+
+def test_inspire_shows_the_image_then_the_prompt_if_any() -> None:
+    im = Image.new("RGB", (8, 8))
+    [message] = inspire_messages(im, "  ")
+    assert message["content"] == [
+        {"type": "image", "image": im},
+        {"type": "text", "text": "<inspire>"},
+    ]
+    [message] = inspire_messages(im, " the whale is blue\n")
+    assert message["content"][1] == {"type": "text", "text": "<inspire>\nthe whale is blue"}
 
 
 def test_an_edit_shows_the_image_before_the_instruction() -> None:

@@ -1,4 +1,5 @@
-"""Fibo 2.0 descriptor: text-to-image, and editing from up to 5 images (design §4.3).
+"""Fibo 2.0 descriptor: text-to-image, from an image, and editing from up to 5 images
+(design §4.3).
 
 Bria's Dev checkpoint, the full undistilled model (50 steps, CFG 5), as its diffusers folder
 with the repo's `fonts/`. One model both generates and edits. It's trained on structured JSON
@@ -6,7 +7,9 @@ captions, so by default the prompt goes through Bria's prompt-to-JSON VLM first:
 writes a caption for `t2i`, FIBO-edit-vlm an edit instruction and the result's caption for
 an edit of one image (`upsamplers/fibo2/`, transformers folders). FIBO-edit-vlm reads one
 image, so an edit with references sends the instruction as written, a form Fibo 2.0 was also
-trained on. The JSON is kept with each result. The pipeline has no LoRA loader.
+trained on. `i2i` is Bria's Inspire: FIBO-vlm sees the source and writes a caption from it
+(changed as the optional prompt asks), and the pipeline draws that caption without the
+image. The JSON is kept with each result. The pipeline has no LoRA loader.
 """
 
 from typing import Any
@@ -75,7 +78,7 @@ class Fibo2:
             id="dev",
             label="Fibo 2.0 Dev",
             min_gpu="L4",
-            modes=("t2i", "edit"),
+            modes=("t2i", "i2i", "edit"),
             max_refs=MAX_REFS,
             ref_max_pixels=REF_MAX_PIXELS,
         ),
@@ -86,8 +89,17 @@ class Fibo2:
 
     def param_schema(self, variant: str, mode: str) -> JsonSchema:
         find_variant(self, variant, mode)
+        prompt = prompt_prop()
+        if mode == "i2i":
+            del prompt["minLength"]
+            prompt = {
+                **prompt,
+                "description": 'Optional: what to change, e.g. "the same scene, the whale is '
+                "blue\". Empty takes the picture's idea as it is.",
+                "default": "",
+            }
         props: dict[str, JsonSchema] = {
-            "prompt": prompt_prop(),
+            "prompt": prompt,
             **size_props((1024, 1024), minimum=512, maximum=2048, multiple_of=16),
             "steps": steps_prop(50, 100),
             "cfg": {
@@ -110,7 +122,11 @@ class Fibo2:
             },
             "seed": seed_prop(),
         }
-        return params_schema(props)
+        if mode != "i2i":
+            return params_schema(props)
+        # The VLM is the only way the source reaches the model.
+        del props["upsample"]
+        return {**params_schema(props), "required": []}
 
     def extend_variant(self, variant: str) -> str | None:
         return None  # images
@@ -128,7 +144,7 @@ class Fibo2:
             raise SpecError(f"{self.label} doesn't take LoRAs")
         raw = spec.get("inputs")
         inputs = validate_inputs(raw, mode)
-        if mode != "t2i":
+        if mode == "edit":
             refs = validate_refs((raw or {}).get("refs"), MAX_REFS)
             if refs:
                 inputs["refs"] = refs
@@ -142,7 +158,7 @@ class Fibo2:
             "inputs": inputs,
             "control": [],
         }
-        if params["upsample"] and not inputs.get("refs"):
-            path = UPSAMPLER if mode == "t2i" else EDIT_UPSAMPLER
+        if mode == "i2i" or (params["upsample"] and not inputs.get("refs")):
+            path = EDIT_UPSAMPLER if mode == "edit" else UPSAMPLER
             out["upsampler"] = {"path": path, "size": None}
         return out

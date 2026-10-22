@@ -1,5 +1,5 @@
-"""Phase 18: Fibo 2.0 (text-to-image, and edit with references), with Bria's prompt-to-JSON
-VLMs and the caption they write."""
+"""Phase 18: Fibo 2.0 (text-to-image, from an image, and edit with references), with Bria's
+prompt-to-JSON VLMs and the caption they write."""
 
 from typing import Any
 
@@ -21,6 +21,7 @@ T2I: dict[str, Any] = {
     "params": {"prompt": "a man walking his dog"},
 }
 EDIT: dict[str, Any] = {**T2I, "mode": "edit", "inputs": {"source": SHA}}
+I2I: dict[str, Any] = {**T2I, "mode": "i2i", "params": {}, "inputs": {"source": SHA}}
 
 
 def test_fibo2_defaults_to_the_dev_recipe_and_the_vlm() -> None:
@@ -45,6 +46,28 @@ def test_an_edit_with_references_sends_the_instruction_as_written() -> None:
     assert "upsampler" not in spec
     variant = describe(Fibo2())["variants"][0]
     assert (variant["max_refs"], variant["ref_max_pixels"]) == (4, 1024 * 1024)
+
+
+def test_from_an_image_fibo_vlm_takes_the_source_and_an_optional_prompt() -> None:
+    spec = Fibo2().validate(I2I)
+    assert spec["params"]["prompt"] == ""
+    assert "upsample" not in spec["params"]
+    assert spec["upsampler"] == {"path": UPSAMPLER, "size": None}
+    assert spec["inputs"] == {"source": SHA, "fit": "crop"}
+    schema = Fibo2().param_schema("dev", "i2i")
+    assert "minLength" not in schema["properties"]["prompt"]
+    assert schema["required"] == []
+    assert "upsample" not in schema["properties"]
+    assert "minLength" in Fibo2().param_schema("dev", "t2i")["properties"]["prompt"]
+
+
+def test_from_an_image_takes_no_references() -> None:
+    spec = Fibo2().validate({**I2I, "inputs": {"source": SHA, "refs": [SHA]}})
+    assert "refs" not in spec["inputs"]
+    with pytest.raises(SpecError, match="Unknown parameters"):
+        Fibo2().validate({**I2I, "params": {"upsample": False}})
+    with pytest.raises(SpecError, match="Choose a source image"):
+        Fibo2().validate({**I2I, "inputs": {}})
 
 
 def test_without_upsampling_no_vlm_is_needed() -> None:
@@ -105,3 +128,15 @@ def test_a_fibo2_edit_of_one_image_uses_the_edit_vlm(client: TestClient, harness
     src = upload(client, image(1024, 1024))
     run(client, {**EDIT, "inputs": {"source": f"sha256:{src['sha256']}"}})
     assert harness.fibo2.calls[-1]["upsampler"] == EDIT_UPSAMPLER
+
+
+def test_a_fibo2_job_from_an_image_has_fibo_vlm_see_it(
+    client: TestClient, harness: Harness
+) -> None:
+    src = upload(client, image(640, 480))
+    done = run(client, {**I2I, "inputs": {"source": f"sha256:{src['sha256']}"}})
+    call = harness.fibo2.calls[-1]
+    assert (call["mode"], call["upsampler"]) == ("i2i", UPSAMPLER)
+    assert len(call["images"]) == 1
+    [result] = results(client, done["id"])
+    assert result["caption"] is not None

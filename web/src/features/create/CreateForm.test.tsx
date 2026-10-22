@@ -264,6 +264,12 @@ describe('Create', () => {
     expect(screen.getByRole('button', { name: 'Generate 2 images' })).toBeEnabled()
   })
 
+  it('allows an empty prompt when the schema makes it optional', async () => {
+    mockApi({ 'GET /api/families/sdxl/schema': () => ({ ...SCHEMA, required: [] }) })
+    renderApp()
+    expect(await screen.findByRole('button', { name: 'Generate' })).toBeEnabled()
+  })
+
   it('saves the current prompt and swaps in a saved one', async () => {
     const saved: unknown[] = []
     mockApi({

@@ -1,9 +1,11 @@
-"""Fibo 2.0 runner: text-to-image, and editing from up to 5 images (design §4.3).
+"""Fibo 2.0 runner: text-to-image, from an image, and editing from up to 5 images
+(design §4.3).
 
-One pipeline does both: with images it edits them. The model reads structured JSON captions,
-so the prompt first goes through one of Bria's prompt-to-JSON VLMs (Qwen3-VL 4B fine-tunes):
-FIBO-vlm for `t2i`, FIBO-edit-vlm for an edit of one image, which sees the image. Its JSON is
-written once per job, sampled with the job's first seed, and returned with each image.
+One pipeline does all three: with images it edits them. The model reads structured JSON
+captions, so the prompt first goes through one of Bria's prompt-to-JSON VLMs (Qwen3-VL 4B
+fine-tunes): FIBO-vlm for `t2i`, and for `i2i` (Bria's Inspire), where it sees the source and
+the pipeline doesn't; FIBO-edit-vlm for an edit of one image, which sees the image. Its JSON
+is written once per job, sampled with the job's first seed, and returned with each image.
 """
 
 import logging
@@ -22,6 +24,7 @@ from degas_worker.families.base import Output, RunContext
 from degas_worker.families.fibo2_prompt import (
     NEGATIVE_T2I,
     edit_messages,
+    inspire_messages,
     parse_caption,
     t2i_messages,
 )
@@ -62,7 +65,7 @@ class Fibo2Runner:
 
     def run(self, spec: Spec, seeds: list[int], ctx: RunContext) -> Iterator[Output]:
         mode = spec.get("mode")
-        if mode not in ("t2i", "edit"):
+        if mode not in ("t2i", "i2i", "edit"):
             raise ValueError(f"Fibo 2.0 can't do {mode!r}")
         model = spec["model"]
         path = ctx.fetch_asset(model["path"], model.get("size"))
@@ -70,9 +73,14 @@ class Fibo2Runner:
         vlm_path = ctx.fetch_asset(upsampler["path"], upsampler.get("size")) if upsampler else None
         inputs = spec.get("inputs") or {}
         images: list[Image.Image] = []
+        source: Image.Image | None = None
         if mode == "edit":
             refs = [inputs["source"], *inputs.get("refs", [])]
             images = [_shrink(_open(ctx.blob(ref))) for ref in refs]
+            source = images[0]
+        elif mode == "i2i":
+            # Only the VLM sees it.
+            source = _open(ctx.blob(inputs["source"]))
         ctx.check_cancelled()
         ctx.progress(0, "load", 0, 1)
         self._load(path, vlm_path)
@@ -83,7 +91,10 @@ class Fibo2Runner:
         caption: str | None = None
         if vlm_path is not None:
             ctx.progress(0, "upsample", 0, 1)
-            caption = self._caption(prompt, images[0] if images else None, seeds[0])
+            caption = self._caption(prompt, mode, source, seeds[0])
+            if caption is None and mode == "i2i":
+                # The prompt alone (maybe empty) would leave out the picture.
+                raise ValueError("FIBO-vlm wrote no caption of the source image")
             ctx.check_cancelled()
         steps = int(params["steps"])
         cfg = float(params["cfg"])
@@ -110,24 +121,29 @@ class Fibo2Runner:
             ctx.progress(item, "encode", steps, steps)
             yield png_output(item, seed, image, caption)
 
-    def _caption(self, prompt: str, image: Image.Image | None, seed: int) -> str | None:
-        """The VLM's JSON caption for this request: of a new image, or of an edit of `image`.
-        None if its answer isn't one (it ran out of tokens in a loop): the prompt is then sent
-        as written, which Fibo 2.0 was also trained on."""
+    def _caption(self, prompt: str, mode: str, image: Image.Image | None, seed: int) -> str | None:
+        """The VLM's JSON caption for this request: of a new image (inspired by `image` for
+        `i2i`), or of an edit of `image`. None if its answer isn't one (it ran out of tokens in
+        a loop): the prompt is then sent as written, which Fibo 2.0 was also trained on."""
         if self.offloaded:
             # Make room: the pipeline's models go back to the CPU. The VLM goes back when the
             # text encoder, next in the hook chain, runs.
             for hook in self.hooks:
                 hook.offload()
             self.vlm.to("cuda")
-        if image is None:
-            messages = t2i_messages(prompt)
-            temperature = T2I_VLM[2]
-        else:
+        if image is not None:
             image = image.copy()
             image.thumbnail((1024, 1024))
+        if mode == "edit":
+            assert image is not None
             messages = edit_messages(image, prompt)
             temperature = EDIT_VLM[2]
+        elif image is not None:
+            messages = inspire_messages(image, prompt)
+            temperature = T2I_VLM[2]
+        else:
+            messages = t2i_messages(prompt)
+            temperature = T2I_VLM[2]
         text = self.processor.apply_chat_template(
             messages, tokenize=False, add_generation_prompt=True
         )
@@ -152,7 +168,7 @@ class Fibo2Runner:
             ids[0, batch["input_ids"].shape[-1] :], skip_special_tokens=True
         )
         try:
-            return parse_caption(answer, prompt if image is not None else None)
+            return parse_caption(answer, prompt if mode == "edit" else None)
         except ValueError:
             log.warning(
                 "No caption from %s, sending the prompt as written: %r…%r",

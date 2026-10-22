@@ -204,7 +204,7 @@ export function useCreateForm(familyId: string, onFamily: (id: string) => void) 
     blocked:
       !model ||
       modelMissing ||
-      String(params.prompt ?? '').trim() === '' ||
+      (!!schema.data?.required?.includes('prompt') && String(params.prompt ?? '').trim() === '') ||
       (needsSource && !sourceUsable) ||
       (mode === 'inpaint' && !maskFits) ||
       (mode === 'flf2v' && (!end || lastFrame.gone)) ||
