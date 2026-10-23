@@ -6,10 +6,10 @@ import pytest
 from fastapi.testclient import TestClient
 
 from degas.families.base import SpecError
-from degas.families.qwen21 import Qwen21
+from degas.families.qwen21 import HERETIC_UPSAMPLER, Qwen21
 from degas.library import input_blobs
 
-from .conftest import QWEN, Harness
+from .conftest import QWEN, Harness, services
 from .test_inpaint import mask_png, put_mask
 from .test_video import image, results, run, upload
 
@@ -47,6 +47,27 @@ def test_inpaint_has_no_prompt_upsampling() -> None:
     props = Qwen21().param_schema("base", "inpaint")["properties"]
     assert "upsample" not in props
     assert "upsample_style" not in props
+    assert "uncensored" not in props
+
+
+def test_the_uncensored_upsampler_writes_only_when_upsampling() -> None:
+    assert Qwen21().validate(SPEC)["params"]["uncensored"] is False
+    spec = Qwen21().validate({**SPEC, "params": {"prompt": "x", "uncensored": True}})
+    assert "upsampler" not in spec
+    params = {"prompt": "x", "upsample": True, "uncensored": True}
+    spec = Qwen21().validate({**SPEC, "mode": "edit", "inputs": {"source": SHA}, "params": params})
+    assert spec["upsampler"] == {"path": HERETIC_UPSAMPLER, "size": None}
+
+
+def test_an_uncensored_upsample_job_names_the_heretic(client: TestClient, harness: Harness) -> None:
+    params = {"prompt": "x", "upsample": True, "uncensored": True}
+    done = run(client, {**SPEC, "params": params})
+    assert harness.qwen.calls[-1]["upsampler"] == HERETIC_UPSAMPLER
+    assert done["spec"]["upsampler"]["size"] == 17
+    services(client).db.replace_assets([QWEN])
+    resp = client.post("/api/jobs", json={"spec": {**SPEC, "params": params}})
+    assert resp.status_code == 400
+    assert f"degas/{HERETIC_UPSAMPLER}/" in resp.json()["detail"]
 
 
 def test_sizes_snap_to_32() -> None:

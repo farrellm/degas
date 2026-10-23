@@ -38,6 +38,10 @@ MAX_REFS = 9
 SCHEDULES = {"default": "Default", "beta": "Beta"}
 # The system prompts the text encoder rewrites the prompt with (degas_worker/.../qwen21_prompt.py).
 UPSAMPLE_STYLES = {"kokon": "Kokon", "degas": "Degas"}
+# Qwen3-VL 8B Heretic (DreamFast/Qwen3-VL-8B-Heretic-1.3.0, a transformers folder): the text
+# encoder's base model with its refusals ablated, which *Uncensored upsampler* writes with.
+# Fibo 2.0's AusBoss style uses it too.
+HERETIC_UPSAMPLER = "upsamplers/qwen21/Qwen3-VL-8B-Heretic"
 
 # Qwen's 2K table, then the same shapes at about 1 megapixel. The VAE shrinks 16x and the
 # transformer doesn't patch, but the pipeline rounds sizes down to 32.
@@ -115,6 +119,14 @@ class Qwen21:
                 description="Whose instructions the encoder rewrites the prompt by.",
                 advanced=True,
             ),
+            "uncensored": {
+                "type": "boolean",
+                "title": "Uncensored upsampler",
+                "description": "Qwen3-VL 8B Heretic, with its refusals taken out, rewrites the "
+                "prompt instead of the text encoder. It's loaded beside the model.",
+                "default": False,
+                "x-advanced": True,
+            },
             "seed": seed_prop(),
             "schedule": choice_prop("Schedule", SCHEDULES, "default", advanced=True),
             "degrid": {
@@ -127,7 +139,7 @@ class Qwen21:
         }
         if mode == "inpaint":
             # The encoder wouldn't see the mask.
-            del props["upsample"], props["upsample_style"]
+            del props["upsample"], props["upsample_style"], props["uncensored"]
             props["mask_blur"] = {
                 "type": "integer",
                 "title": "Mask blur",
@@ -157,7 +169,7 @@ class Qwen21:
             refs = validate_refs((raw or {}).get("refs"), MAX_REFS)
             if refs:
                 inputs["refs"] = refs
-        return {
+        out: Spec = {
             "family": self.id,
             "variant": variant,
             "mode": mode,
@@ -167,3 +179,6 @@ class Qwen21:
             "inputs": inputs,
             "control": [],
         }
+        if params.get("upsample") and params.get("uncensored"):
+            out["upsampler"] = {"path": HERETIC_UPSAMPLER, "size": None}
+        return out

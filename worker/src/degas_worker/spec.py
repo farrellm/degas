@@ -103,3 +103,4 @@ class Spec(TypedDict):
     image_encoder: NotRequired[AssetRef]
     face_detector: NotRequired[AssetRef]
     upsampler: NotRequired[AssetRef]
+    text_encoder: NotRequired[AssetRef]

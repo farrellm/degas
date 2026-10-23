@@ -272,8 +272,9 @@ class FakeQwen:
     def run(self, spec: dict[str, Any], seeds: list[int], ctx: RunContext) -> Iterator[Output]:
         inputs = spec.get("inputs") or {}
         staged: dict[str, Any] = {"mode": spec["mode"], "images": []}
-        if spec.get("config"):
-            staged["config"] = spec["config"]["path"]
+        for extra in ("config", "upsampler", "text_encoder"):
+            if spec.get(extra):
+                staged[extra] = spec[extra]["path"]
         for ref in [inputs.get("source"), *(inputs.get("refs") or [])]:
             if ref:
                 with Image.open(ctx.blob(ref)) as im:
@@ -650,6 +651,20 @@ FIBO2_EDIT_VLM = {
     "drive_file_id": "fb2e",
     "size": 8,
 }
+FIBO2_HERETIC = {
+    "path": "text_encoders/fibo2/Qwen3-VL-4B-Heretic",
+    "family": "fibo2",
+    "kind": "text_encoder",
+    "drive_file_id": "fb2h",
+    "size": 9,
+}
+QWEN_HERETIC = {
+    "path": "upsamplers/qwen21/Qwen3-VL-8B-Heretic",
+    "family": "qwen21",
+    "kind": "upsampler",
+    "drive_file_id": "q21h",
+    "size": 17,
+}
 MOSS_BASE = {
     "path": "models/moss/MOSS-Image-Base",
     "family": "moss",
@@ -716,6 +731,8 @@ def client(harness: Harness) -> Iterator[TestClient]:
                 FIBO2,
                 FIBO2_VLM,
                 FIBO2_EDIT_VLM,
+                FIBO2_HERETIC,
+                QWEN_HERETIC,
                 MOSS_BASE,
                 MOSS_SFT,
                 MOSS_KROMOSS,

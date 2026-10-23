@@ -21,6 +21,11 @@ MISSING = {
     "from buffalo_l in degas/{path}/. Then rescan.",
     "upsampler": "The prompt upsampler isn't in Drive. Put it in degas/{path}/, then "
     "rescan, or turn off Upsample prompt.",
+    "text_encoder": "The uncensored text encoder isn't in Drive. Put it in degas/{path}/, then "
+    "rescan, or turn off Uncensored.",
+    # Another family's model, whose text encoder writes the prompt.
+    "writer": "This upsample style writes the prompt with the text encoder of degas/{path}/, "
+    "which isn't in Drive. Put it there, then rescan, or pick another style.",
 }
 
 # What the person chose, by the name the form gives it.
@@ -37,9 +42,12 @@ def resolve_assets(db: Database, family: str, spec: Spec) -> None:
     sizes: dict[str, int | None] = {}
     for need in spec_assets(spec):
         asset = db.get_asset(need["path"])
-        owner = None if need["kind"] == "preprocessor" else family  # preprocessors are shared
+        # Preprocessors are shared, and an upsampler may be another family's.
+        owner = None if need["kind"] == "preprocessor" else need.get("family", family)
         if asset is None or asset["kind"] != need["kind"] or asset["family"] != owner:
             key = "face_detector" if need["kind"] == "preprocessor" else need["kind"]
+            if need["kind"] == "model" and need["path"] != spec["model"]["path"]:
+                key = "writer"
             if key in MISSING:
                 raise SpecError(MISSING[key].format(path=need["path"]))
             raise SpecError(f"{CHOSEN[need['kind']]} {need['path']} is not in the Drive index")
@@ -58,6 +66,7 @@ def resolve_assets(db: Database, family: str, spec: Spec) -> None:
         spec.get("image_encoder"),
         spec.get("face_detector"),
         spec.get("upsampler"),
+        spec.get("text_encoder"),
     )
     for extra in added:
         if extra:

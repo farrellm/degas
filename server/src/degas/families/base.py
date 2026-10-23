@@ -1,7 +1,7 @@
 """Family descriptors: what a model family offers and how its job specs are validated."""
 
 from dataclasses import asdict, dataclass, field
-from typing import Any, Literal, Protocol, cast
+from typing import Any, Literal, NotRequired, Protocol, cast
 
 from degas.errors import DegasError
 from degas_worker.spec import AssetRef, Lora, PairedLora, Spec
@@ -125,6 +125,8 @@ def find_variant(family: FamilyDescriptor, variant: str, mode: str) -> Variant:
 
 class NeededAsset(AssetRef):
     kind: str  # as the Drive index names it: model, lora, controlnet …
+    # The family it belongs to, when not the job's: another family's prompt upsampler.
+    family: NotRequired[str]
 
 
 def spec_assets(spec: Spec) -> list[NeededAsset]:
@@ -151,7 +153,15 @@ def spec_assets(spec: Spec) -> list[NeededAsset]:
         need(prompt["adapter"], "ip_adapter", shared=True)
     need(spec.get("image_encoder"), "image_encoder")
     need(spec.get("face_detector"), "preprocessor")
-    need(spec.get("upsampler"), "upsampler")
+    need(spec.get("text_encoder"), "text_encoder")
+    upsampler = spec.get("upsampler")
+    if upsampler:
+        # It may be another family's: its upsampler, or a model whose text encoder writes the
+        # prompt (Fibo 2.0's AusBoss style, with Qwen-Image 2.1's).
+        top, owner = upsampler["path"].split("/")[:2]
+        need(upsampler, "model" if top == "models" else "upsampler")
+        if owner != spec["family"]:
+            assets[-1]["family"] = owner
     return assets
 
 

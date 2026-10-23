@@ -6,7 +6,9 @@ source through the blurred mask. The model is the official diffusers folder, in 
 
 *Upsample prompt* first has the text encoder, Qwen3-VL 8B, rewrite the prompt (seeing an edit's
 images) as Kokon does (`qwen21_prompt.py`). It's sampled once per job, with the first seed, and
-the rewritten prompt is returned with each image as its caption.
+the rewritten prompt is returned with each image as its caption. A job may name another writer
+(Qwen3-VL 8B Heretic, the encoder's base model with its refusals ablated), which is kept on the
+CPU beside the pipeline and comes to the GPU only to write.
 """
 
 import logging
@@ -19,7 +21,7 @@ import torch
 from diffusers import FlowMatchEulerDiscreteScheduler, QwenImage21Pipeline
 from PIL import Image
 from safetensors.torch import load_file
-from transformers import LogitsProcessor
+from transformers import LogitsProcessor, Qwen3VLForConditionalGeneration
 
 from degas_worker import masks
 from degas_worker.degrid import degrid
@@ -62,6 +64,9 @@ class Qwen21Runner:
         self.offloaded = False
         self.adapters: dict[str, str] = {}  # LoRA asset path → loaded adapter name
         self._scheduler_config: Any = None
+        # The upsampler a job named in place of the text encoder, on the CPU.
+        self.writer: Any = None
+        self.writer_path: Path | None = None
 
     def run(self, spec: Spec, seeds: list[int], ctx: RunContext) -> Iterator[Output]:
         mode = spec.get("mode", "t2i")
@@ -90,7 +95,11 @@ class Qwen21Runner:
         if params.get("upsample") and mode != "inpaint":
             ctx.progress(0, "upsample", 0, 1)
             caption = self._upsample(
-                prompt, images, params.get("upsample_style", "kokon"), seeds[0]
+                prompt,
+                images,
+                params.get("upsample_style", "kokon"),
+                seeds[0],
+                self._fetch_writer(spec, ctx),
             )
             ctx.check_cancelled()
 
@@ -135,10 +144,17 @@ class Qwen21Runner:
             yield png_output(item, seed, image, caption)
 
     def _upsample(
-        self, prompt: str, images: list[Image.Image], style: str, seed: int
+        self,
+        prompt: str,
+        images: list[Image.Image],
+        style: str,
+        seed: int,
+        writer_path: Path | None = None,
     ) -> str | None:
         """The text encoder's rewrite of the prompt (an edit instruction when there are images),
-        or None (with a warning) if it wrote nothing usable: the prompt then goes as written."""
+        or None (with a warning) if it wrote nothing usable: the prompt then goes as written.
+        With `writer_path`, that model writes it instead, with the pipeline's processor (the
+        same Qwen3-VL 8B tokenizer, template and image processor)."""
         shown = []
         for im in images:
             im = im.convert("RGB")  # noqa: PLW2901
@@ -150,28 +166,38 @@ class Qwen21Runner:
             tokenize=False,
             add_generation_prompt=True,
         )
-        encoder = self.pipe.text_encoder
-        if self.offloaded:
-            # Its offload hook would move it only for each forward pass, after `generate` has
-            # put its tensors on the CPU. The transformer's hook sends it back.
+        if writer_path is not None:
+            encoder = self._writer(writer_path)
             encoder.to("cuda")
+        else:
+            encoder = self.pipe.text_encoder
+            if self.offloaded:
+                # Its offload hook would move it only for each forward pass, after `generate`
+                # has put its tensors on the CPU. The transformer's hook sends it back.
+                encoder.to("cuda")
         batch = processor(text=[text], images=shown or None, padding=True, return_tensors="pt").to(
             encoder.device
         )
         start = batch["input_ids"].shape[-1]
         tokenizer = processor.tokenizer
         torch.manual_seed(seed)
-        with torch.inference_mode():
-            ids = encoder.generate(
-                **batch,
-                max_new_tokens=qwen21_prompt.MAX_NEW_TOKENS,
-                do_sample=True,
-                temperature=qwen21_prompt.TEMPERATURE,
-                top_p=qwen21_prompt.TOP_P,
-                top_k=qwen21_prompt.TOP_K,
-                logits_processor=[_PresencePenalty(start, qwen21_prompt.PRESENCE_PENALTY)],
-                pad_token_id=tokenizer.pad_token_id or tokenizer.eos_token_id,
-            )
+        try:
+            with torch.inference_mode():
+                ids = encoder.generate(
+                    **batch,
+                    max_new_tokens=qwen21_prompt.MAX_NEW_TOKENS,
+                    do_sample=True,
+                    temperature=qwen21_prompt.TEMPERATURE,
+                    top_p=qwen21_prompt.TOP_P,
+                    top_k=qwen21_prompt.TOP_K,
+                    logits_processor=[_PresencePenalty(start, qwen21_prompt.PRESENCE_PENALTY)],
+                    pad_token_id=tokenizer.pad_token_id or tokenizer.eos_token_id,
+                )
+        finally:
+            if writer_path is not None:
+                # Make room for the pipeline.
+                encoder.to("cpu")
+                free_gpu_memory()
         answer: str = tokenizer.decode(ids[0, start:], skip_special_tokens=True)
         caption = qwen21_prompt.clean(answer)
         if caption is None:
@@ -200,6 +226,20 @@ class Qwen21Runner:
         self.model_path = path
         self.adapters = {}
         self._scheduler_config = pipe.scheduler.config
+
+    @staticmethod
+    def _fetch_writer(spec: Spec, ctx: RunContext) -> Path | None:
+        writer = spec.get("upsampler")
+        return ctx.fetch_asset(writer["path"], writer.get("size")) if writer else None
+
+    def _writer(self, path: Path) -> Any:
+        if self.writer_path != path:
+            self.writer = None
+            self.writer = Qwen3VLForConditionalGeneration.from_pretrained(
+                path, dtype=torch.bfloat16, local_files_only=True
+            ).eval()
+            self.writer_path = path
+        return self.writer
 
     def _load_lora(self, file: Path, name: str) -> None:
         self.pipe.load_lora_weights(qwen21_lora_state(load_file(file)), adapter_name=name)
@@ -230,6 +270,8 @@ class Qwen21Runner:
         return bool(need <= total * GPU_BUDGET)
 
     def unload(self) -> None:
+        self.writer = None
+        self.writer_path = None
         if self.pipe is None:
             return
         self.pipe = None

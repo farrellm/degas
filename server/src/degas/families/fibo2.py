@@ -11,6 +11,11 @@ trained on. `i2i` is Bria's Inspire: a VLM sees the source and writes a caption 
 FIBO-vlm as it is or FIBO-edit-vlm changed as the optional prompt asks, and the pipeline
 draws that caption without the image. The JSON is kept with each result. The pipeline has no
 LoRA loader.
+
+The `ausboss` upsample style writes the caption as AusBoss's ComfyUI workflow does instead: a
+plain Qwen3-VL 8B (Qwen-Image 2.1's text encoder) asked for Bria's JSON keys. *Uncensored*
+loads Qwen3-VL 4B Heretic (`text_encoders/fibo2/`) as Fibo's text encoder, its base model with
+the refusals ablated, and writes the `ausboss` caption with Qwen3-VL 8B Heretic.
 """
 
 from typing import Any
@@ -24,7 +29,9 @@ from degas.families.base import (
     Variant,
     find_variant,
 )
+from degas.families.qwen21 import HERETIC_UPSAMPLER
 from degas.families.schema import (
+    choice_prop,
     params_schema,
     prompt_prop,
     seed_prop,
@@ -47,6 +54,14 @@ MAX_REFS = 4
 REF_MAX_PIXELS = 1024 * 1024
 UPSAMPLER = "upsamplers/fibo2/FIBO-vlm"
 EDIT_UPSAMPLER = "upsamplers/fibo2/FIBO-edit-vlm"
+# Who writes the caption (degas_worker/families/fibo2.py): Bria's VLMs, or a plain Qwen3-VL 8B
+# with AusBoss's prompts (Qwen-Image 2.1's text encoder, or its Heretic with *Uncensored*).
+UPSAMPLE_STYLES = {"bria": "Bria", "ausboss": "AusBoss"}
+AUSBOSS_UPSAMPLER = "models/qwen21/Qwen-Image-2.1"
+AUSBOSS_HERETIC = HERETIC_UPSAMPLER
+# Qwen3-VL 4B Heretic (DreamFast/Qwen3-VL-4b-Heretic, a transformers folder): Fibo's text
+# encoder, the stock Qwen3-VL 4B Instruct, with its refusals ablated.
+TEXT_ENCODER = "text_encoders/fibo2/Qwen3-VL-4B-Heretic"
 
 # About 1 megapixel, the area Fibo 2.0 was trained at, at the sizes Bria shows (1424x800 is
 # its 16:9), then a larger square. The FLUX.2 VAE shrinks 8x and the transformer packs 2x2
@@ -121,12 +136,28 @@ class Fibo2:
                 "it as written.",
                 "default": True,
             },
+            "upsample_style": choice_prop(
+                "Upsample style",
+                UPSAMPLE_STYLES,
+                "bria",
+                description="Who writes the caption: Bria's own VLMs, or Qwen3-VL 8B with "
+                "AusBoss's instructions (it needs Qwen-Image 2.1 in Drive).",
+                advanced=True,
+            ),
+            "uncensored": {
+                "type": "boolean",
+                "title": "Uncensored",
+                "description": "Qwen3-VL Heretic, with its refusals taken out, as the text "
+                "encoder, and with the AusBoss style as the caption writer too.",
+                "default": False,
+                "x-advanced": True,
+            },
             "seed": seed_prop(),
         }
         if mode != "i2i":
             return params_schema(props)
-        # The VLM is the only way the source reaches the model.
-        del props["upsample"]
+        # The VLM is the only way the source reaches the model, and AusBoss has no Inspire.
+        del props["upsample"], props["upsample_style"]
         return {**params_schema(props), "required": []}
 
     def extend_variant(self, variant: str) -> str | None:
@@ -159,10 +190,15 @@ class Fibo2:
             "inputs": inputs,
             "control": [],
         }
+        if params["uncensored"]:
+            out["text_encoder"] = {"path": TEXT_ENCODER, "size": None}
         if mode == "i2i" or (params["upsample"] and not inputs.get("refs")):
-            # FIBO-vlm's `<inspire>` reads no text, so a prompted Inspire takes the caption
-            # of an edit's result.
-            prompted = mode == "i2i" and params["prompt"].strip()
-            path = EDIT_UPSAMPLER if mode == "edit" or prompted else UPSAMPLER
+            if params.get("upsample_style") == "ausboss":
+                path = AUSBOSS_HERETIC if params["uncensored"] else AUSBOSS_UPSAMPLER
+            else:
+                # FIBO-vlm's `<inspire>` reads no text, so a prompted Inspire takes the caption
+                # of an edit's result.
+                prompted = mode == "i2i" and params["prompt"].strip()
+                path = EDIT_UPSAMPLER if mode == "edit" or prompted else UPSAMPLER
             out["upsampler"] = {"path": path, "size": None}
         return out

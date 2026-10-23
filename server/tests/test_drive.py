@@ -27,6 +27,7 @@ TREE: dict[str, list[dict[str, Any]]] = {
         {"id": "ipa", "name": "ip_adapters", "mimeType": FOLDER},
         {"id": "enc", "name": "image_encoders", "mimeType": FOLDER},
         {"id": "ups", "name": "upsamplers", "mimeType": FOLDER},
+        {"id": "tes", "name": "text_encoders", "mimeType": FOLDER},
         {"id": "junk", "name": "notes.txt", "mimeType": "text/plain"},
     ],
     "models": [
@@ -45,6 +46,13 @@ TREE: dict[str, list[dict[str, Any]]] = {
     "pup": [
         {"id": "pc", "name": "config.json", "mimeType": "application/json", "size": "1"},
         {"id": "pw", "name": "model.safetensors", "mimeType": "x", "size": "18"},
+    ],
+    "tes": [{"id": "tes-fb", "name": "fibo2", "mimeType": FOLDER}],
+    "tes-fb": [{"id": "her", "name": "Qwen3-VL-4B-Heretic", "mimeType": FOLDER}],
+    "her": [
+        {"id": "hc", "name": "config.json", "mimeType": "application/json", "size": "1"},
+        {"id": "hw", "name": "model-00001-of-00002.safetensors", "mimeType": "x", "size": "5"},
+        {"id": "hx", "name": "model-00002-of-00002.safetensors", "mimeType": "x", "size": "4"},
     ],
     "m-sdxl": [
         {
@@ -200,11 +208,14 @@ async def test_scan(auth: DriveAuth) -> None:
         "image_encoders/sdxl/clip-vit-h-14",
         "models/flux3/flux-3-image-klein-base",
         "upsamplers/flux3/flux-3-image-klein-pup",
+        "text_encoders/fibo2/Qwen3-VL-4B-Heretic",
     }
     flux3 = assets["models/flux3/flux-3-image-klein-base"]
     assert (flux3["kind"], flux3["family"], flux3["size"]) == ("model", "flux3", 22)
     pup = assets["upsamplers/flux3/flux-3-image-klein-pup"]
     assert (pup["kind"], pup["family"], pup["size"]) == ("upsampler", "flux3", 19)
+    heretic = assets["text_encoders/fibo2/Qwen3-VL-4B-Heretic"]
+    assert (heretic["kind"], heretic["family"], heretic["size"]) == ("text_encoder", "fibo2", 10)
     assert assets["preprocessors/dwpose"]["size"] == 300
     ipa = assets["ip_adapters/sdxl/ip-adapter-plus_sdxl_vit-h.safetensors"]
     assert (ipa["kind"], ipa["family"]) == ("ip_adapter", "sdxl")
