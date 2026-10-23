@@ -248,6 +248,7 @@ The plan:
 - **Inpaint** reads as it does for SDXL (Source, Mask), plus the Images row. There's no *Denoise strength*, because the model redraws the whole picture and the mask decides what is kept.
 - **Size.** The presets come in two tiers, 1K and 2K. 2048² is selected by default. The GPU warning under Model already covers a T4 session.
 - **Nothing is rose that isn't changing:** reference thumbnails are ordinary image thumbnails, not hatched.
+- **Upsample prompt** (added later, in *From text* and *Edit*) works as it does for FLUX 3 (Phase 16), but it's **off** by default, as in Kokon. The text encoder writes the rewrite, so no other model loads. *Upsample style* (*Kokon* or *Degas*, the system prompt it writes with) is under More settings.
 
 ### Phase 9: Discretion
 

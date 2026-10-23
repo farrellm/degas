@@ -36,6 +36,8 @@ MAX_REFS = 9
 
 # Keep in sync with the worker runner (degas_worker/families/qwen21.py).
 SCHEDULES = {"default": "Default", "beta": "Beta"}
+# The system prompts the text encoder rewrites the prompt with (degas_worker/.../qwen21_prompt.py).
+UPSAMPLE_STYLES = {"kokon": "Kokon", "degas": "Degas"}
 
 # Qwen's 2K table, then the same shapes at about 1 megapixel. The VAE shrinks 16x and the
 # transformer doesn't patch, but the pipeline rounds sizes down to 32.
@@ -98,6 +100,21 @@ class Qwen21:
                 "multipleOf": 0.5,
                 "x-widget": "slider",
             },
+            "upsample": {
+                "type": "boolean",
+                "title": "Upsample prompt",
+                "description": "Qwen's text encoder first expands the prompt into a full "
+                "description (for an edit, a precise instruction, from what it sees in the "
+                "images). Off sends the prompt as written.",
+                "default": False,
+            },
+            "upsample_style": choice_prop(
+                "Upsample style",
+                UPSAMPLE_STYLES,
+                "kokon",
+                description="Whose instructions the encoder rewrites the prompt by.",
+                advanced=True,
+            ),
             "seed": seed_prop(),
             "schedule": choice_prop("Schedule", SCHEDULES, "default", advanced=True),
             "degrid": {
@@ -109,6 +126,8 @@ class Qwen21:
             },
         }
         if mode == "inpaint":
+            # The encoder wouldn't see the mask.
+            del props["upsample"], props["upsample_style"]
             props["mask_blur"] = {
                 "type": "integer",
                 "title": "Mask blur",

@@ -32,6 +32,23 @@ def test_defaults_are_qwens() -> None:
     assert "mask_blur" not in params
 
 
+def test_prompt_upsampling_is_off_by_default_and_needs_no_asset() -> None:
+    spec = Qwen21().validate(SPEC)
+    assert (spec["params"]["upsample"], spec["params"]["upsample_style"]) == (False, "kokon")
+    params = {"prompt": "x", "upsample": True, "upsample_style": "degas"}
+    spec = Qwen21().validate({**SPEC, "mode": "edit", "inputs": {"source": SHA}, "params": params})
+    assert (spec["params"]["upsample"], spec["params"]["upsample_style"]) == (True, "degas")
+    assert "upsampler" not in spec
+    with pytest.raises(SpecError, match="upsample_style"):
+        Qwen21().validate({**SPEC, "params": {"prompt": "x", "upsample_style": "bria"}})
+
+
+def test_inpaint_has_no_prompt_upsampling() -> None:
+    props = Qwen21().param_schema("base", "inpaint")["properties"]
+    assert "upsample" not in props
+    assert "upsample_style" not in props
+
+
 def test_sizes_snap_to_32() -> None:
     spec = Qwen21().validate({**SPEC, "params": {"prompt": "x", "width": 1000, "height": 1400}})
     assert (spec["params"]["width"], spec["params"]["height"]) == (992, 1376)

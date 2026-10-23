@@ -3,8 +3,13 @@
 One `QwenImage21Pipeline` does all three: an edit passes the source and its references as the
 pipeline's condition images, and an inpaint is an edit whose result is pasted back onto the
 source through the blurred mask. The model is the official diffusers folder, in bf16.
+
+*Upsample prompt* first has the text encoder, Qwen3-VL 8B, rewrite the prompt (seeing an edit's
+images) as Kokon does (`qwen21_prompt.py`). It's sampled once per job, with the first seed, and
+the rewritten prompt is returned with each image as its caption.
 """
 
+import logging
 import math
 from collections.abc import Iterator
 from pathlib import Path
@@ -14,9 +19,11 @@ import torch
 from diffusers import FlowMatchEulerDiscreteScheduler, QwenImage21Pipeline
 from PIL import Image
 from safetensors.torch import load_file
+from transformers import LogitsProcessor
 
 from degas_worker import masks
 from degas_worker.degrid import degrid
+from degas_worker.families import qwen21_prompt
 from degas_worker.families.base import Output, RunContext
 from degas_worker.families.lora import qwen21_lora_state
 from degas_worker.families.offload import loaded_bytes, module_bytes, place
@@ -29,6 +36,8 @@ from degas_worker.families.runtime import (
     sync_loras,
 )
 from degas_worker.spec import Spec
+
+log = logging.getLogger(__name__)
 
 # Keep in sync with the server descriptor (degas/families/qwen21.py).
 SCHEDULES: dict[str, dict[str, Any]] = {"default": {}, "beta": {"use_beta_sigmas": True}}
@@ -76,6 +85,15 @@ class Qwen21Runner:
         sync_loras(self.pipe, self.adapters, loras, self._load_lora)
         ctx.progress(0, "load", 1, 1)
 
+        prompt = params["prompt"]
+        caption: str | None = None
+        if params.get("upsample") and mode != "inpaint":
+            ctx.progress(0, "upsample", 0, 1)
+            caption = self._upsample(
+                prompt, images, params.get("upsample_style", "kokon"), seeds[0]
+            )
+            ctx.check_cancelled()
+
         extra = SCHEDULES.get(params.get("schedule", "default"))
         if extra is None:
             raise ValueError(f"Unknown schedule {params['schedule']!r}")
@@ -86,7 +104,7 @@ class Qwen21Runner:
         width, height = int(params["width"]), int(params["height"])
         cfg = float(params["cfg"])
         kwargs: dict[str, Any] = {
-            "prompt": params["prompt"],
+            "prompt": caption or prompt,
             "width": width,
             "height": height,
             "num_inference_steps": steps,
@@ -114,7 +132,51 @@ class Qwen21Runner:
                 image = degrid(image)
             if keep is not None:
                 image = masks.composite(images[0], image, keep)
-            yield png_output(item, seed, image)
+            yield png_output(item, seed, image, caption)
+
+    def _upsample(
+        self, prompt: str, images: list[Image.Image], style: str, seed: int
+    ) -> str | None:
+        """The text encoder's rewrite of the prompt (an edit instruction when there are images),
+        or None (with a warning) if it wrote nothing usable: the prompt then goes as written."""
+        shown = []
+        for im in images:
+            im = im.convert("RGB")  # noqa: PLW2901
+            im.thumbnail((qwen21_prompt.IMAGE_MAX_SIDE, qwen21_prompt.IMAGE_MAX_SIDE))
+            shown.append(im)
+        processor = self.pipe.processor
+        text = processor.apply_chat_template(
+            qwen21_prompt.messages(style, prompt, shown),
+            tokenize=False,
+            add_generation_prompt=True,
+        )
+        encoder = self.pipe.text_encoder
+        if self.offloaded:
+            # Its offload hook would move it only for each forward pass, after `generate` has
+            # put its tensors on the CPU. The transformer's hook sends it back.
+            encoder.to("cuda")
+        batch = processor(text=[text], images=shown or None, padding=True, return_tensors="pt").to(
+            encoder.device
+        )
+        start = batch["input_ids"].shape[-1]
+        tokenizer = processor.tokenizer
+        torch.manual_seed(seed)
+        with torch.inference_mode():
+            ids = encoder.generate(
+                **batch,
+                max_new_tokens=qwen21_prompt.MAX_NEW_TOKENS,
+                do_sample=True,
+                temperature=qwen21_prompt.TEMPERATURE,
+                top_p=qwen21_prompt.TOP_P,
+                top_k=qwen21_prompt.TOP_K,
+                logits_processor=[_PresencePenalty(start, qwen21_prompt.PRESENCE_PENALTY)],
+                pad_token_id=tokenizer.pad_token_id or tokenizer.eos_token_id,
+            )
+        answer: str = tokenizer.decode(ids[0, start:], skip_special_tokens=True)
+        caption = qwen21_prompt.clean(answer)
+        if caption is None:
+            log.warning("No upsampled prompt: %r", answer[:200])
+        return caption
 
     def _load(self, path: Path) -> None:
         if self.pipe is not None and self.model_path == path:
@@ -175,6 +237,22 @@ class Qwen21Runner:
         self.offloaded = False
         self.adapters = {}
         free_gpu_memory()
+
+
+class _PresencePenalty(LogitsProcessor):  # type: ignore[misc]
+    """Lowers the logit of every token already generated by `penalty` (vLLM's presence
+    penalty). transformers' `repetition_penalty` scales instead, and counts the prompt too."""
+
+    def __init__(self, start: int, penalty: float) -> None:
+        self.start = start
+        self.penalty = penalty
+
+    def __call__(self, input_ids: torch.Tensor, scores: torch.Tensor) -> torch.Tensor:
+        generated = input_ids[:, self.start :]
+        if generated.shape[-1] == 0:
+            return scores
+        seen = torch.zeros_like(scores, dtype=torch.bool).scatter_(1, generated, True)
+        return scores - seen.to(scores.dtype) * self.penalty
 
 
 def _open(path: Path) -> Image.Image:
