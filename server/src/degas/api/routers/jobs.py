@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException
 
 from degas.api.deps import Svc, family_or_400, job_or_404, swept
 from degas.api.schemas import MoveJob, SubmitJob
-from degas.submission import batch_seeds, resolve_assets
+from degas.submission import submit
 
 router = APIRouter(tags=["jobs"])
 
@@ -20,12 +20,7 @@ async def list_jobs(svc: Svc) -> Sequence[Mapping[str, Any]]:
 @router.post("/jobs", status_code=201)
 async def submit_job(svc: Svc, body: SubmitJob) -> Mapping[str, Any]:
     family = family_or_400(body.spec)
-    spec = family.validate(body.spec)
-    resolve_assets(svc.db, family.id, spec)
-    await svc.inputs.resolve(spec)
-    seed = spec["params"].pop("seed", -1)
-    seeds = batch_seeds(seed, body.batch_count, body.seed_mode, svc.rng)
-    job = svc.dispatcher.submit(spec, seeds)
+    job = await submit(svc, family, body.spec, body.batch_count, body.seed_mode)
     return svc.dispatcher.describe(job)
 
 

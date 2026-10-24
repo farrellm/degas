@@ -79,6 +79,16 @@ uv run degas civitai import 'https://huggingface.co/<user>/<repo>/blob/main/<fil
 
 A [CivArchive](https://civarchive.com) link (`civarchive.com` or `civitaiarchive.com`, `/models/<id>?modelVersionId=<v>`) imports a LoRA that Civitai took down, as a Civitai link would, from CivArchive's record of the version. The file comes from its first live mirror: Civitai if it's still there, otherwise one of the Hugging Face repos holding a copy. Each mirror is checked against the archived SHA-256, and a mirror that fails or has a different file is skipped for the next one.
 
+## Using it from an agent (MCP)
+
+The server is also an MCP server at `/mcp`, with `create_image` and `edit_image` (Qwen-Image 2.1, optionally with reference images that the prompt refers to by number: "the jacket from image 2"). A call starts an L4 session if none is running and waits for the image, which also lands in Results. For Claude Code:
+
+```sh
+claude mcp add --transport http degas https://<host>.ts.net:8448/mcp
+```
+
+A cold session takes several minutes before the first image, so raise the client's tool timeout if it has one (Claude Code: `MCP_TOOL_TIMEOUT`, in milliseconds).
+
 ## Development
 
 Requires [uv](https://docs.astral.sh/uv/), Node ≥ 24 (CI uses `web/.nvmrc`) and pnpm.

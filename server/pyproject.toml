@@ -15,6 +15,7 @@ dependencies = [
     "pywebpush>=2.5.0",
     "pyyaml>=6",
     "uvicorn[standard]>=0.54",
+    "mcp>=1.26",
 ]
 
 [tool.uv.sources]

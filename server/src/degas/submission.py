@@ -2,11 +2,14 @@
 Drive index, and one seed per image."""
 
 import random
-from typing import Literal
+from typing import TYPE_CHECKING, Any, Literal
 
-from degas.db import Database
-from degas.families.base import SpecError, lora_files, spec_assets
+from degas.db import Database, JobRow
+from degas.families.base import FamilyDescriptor, SpecError, lora_files, spec_assets
 from degas_worker.spec import Spec
+
+if TYPE_CHECKING:
+    from degas.services import Services
 
 SEED_MAX = 2**32
 
@@ -82,3 +85,19 @@ def batch_seeds(
     if mode == "random":
         return [base, *(rng.randrange(SEED_MAX) for _ in range(count - 1))]
     return [(base + i) % SEED_MAX for i in range(count)]
+
+
+async def submit(
+    svc: "Services",
+    family: FamilyDescriptor,
+    spec: dict[str, Any],
+    batch_count: int = 1,
+    seed_mode: Literal["increment", "random"] = "increment",
+) -> JobRow:
+    """Validate a submitted spec, check its assets, fit its inputs and queue it."""
+    valid = family.validate(spec)
+    resolve_assets(svc.db, family.id, valid)
+    await svc.inputs.resolve(valid)
+    seed = valid["params"].pop("seed", -1)
+    seeds = batch_seeds(seed, batch_count, seed_mode, svc.rng)
+    return svc.dispatcher.submit(valid, seeds)
