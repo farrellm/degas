@@ -769,6 +769,11 @@ Phases are numbered from 0.
     - Regressions on the new pin: SDXL, FLUX.1 (fp8), Qwen-Image 2.1, klein, Wan 2.2 TI2V 5B (`t2v`) and LTX-2.5 (`t2v`) each ran one job.
     - Still to do: the offload path (a 40 GB A100 or an L4) and a FLUX 3 LoRA (none in Drive yet).
 
+    Added later: *Uncensored* (§4.3), with Fibo 2.0's Qwen3-VL 4B Heretic as the text encoder. Live on an A100 40 GB, normal memory (2026-10-24, diffusers 0.42.0.dev0 at `de988b7e`, transformers 5.20.2, torch 2.11.0), on the real server; one image under `fibo2-heretic-test`.
+    - FLUX 3's `text_encoder/` against the Heretic: the same 713 tensors, and the same 62 `o_proj` / `down_proj` weights differ by the same amounts as Fibo's, so the two models' encoders are the same stock Qwen3-VL-4B-Instruct.
+    - The knitted lighthouse ("KNIT HARBOUR", seed 42, upsampled) with *Uncensored*: the same caption (the upsampler is unchanged) and almost the same picture, with the banner right and small changes in the knit. 311 s, with the cold copy of FLUX 3 and its upsampler and the offload chain on a 40 GB card.
+    - The same job without it, next: the encoder swapped back without reloading the transformer, and the image was byte-identical to the regression image from 2026-10-21. 119 s. No missing or unexpected keys in `worker.log`.
+
 17. **MOSS-Image.** ✅ Built and tested on an A100. The `moss` family (§4.3): MOSS-Image Base and SFT for `t2i`, a diffusers custom pipeline loaded with `trust_remote_code`. Shift and the negative branch's skipped block are under More settings. FLUX 3's scheduler-step progress moved to `runtime.scheduler_progress` so both families share it.
 
     Live test on an A100 40 GB, normal memory (2026-10-19, diffusers 0.41.0.dev0, transformers 5.18.0, torch 2.11.0), on the real server. The five MOSS images are kept in the library under the tag `moss-test`.
