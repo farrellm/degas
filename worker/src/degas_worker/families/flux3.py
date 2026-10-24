@@ -5,7 +5,9 @@ The model takes full scene captions, so the prompt first goes through BFL's prom
 for every seed (greedy decoding), so it's written once per job and returned with each image.
 diffusers runs FLUX 3 as a modular pipeline: its upsampler block is left out so the runner
 keeps the caption, and its components load from the Drive folder's subfolders, since the
-folder's `modular_model_index.json` names them by Hub repo.
+folder's `modular_model_index.json` names them by Hub repo. A job may name another text
+encoder (Qwen3-VL 4B Heretic), which takes the place of the folder's without reloading the
+rest; LoRAs, which load only into the transformer, stay.
 """
 
 from collections.abc import Iterator
@@ -55,6 +57,8 @@ class Flux3Runner:
         self.upsampler: Any = None
         self.processor: Any = None
         self.upsampler_path: Path | None = None
+        # The text encoder the job named in place of the folder's, if any.
+        self.te_path: Path | None = None
         self.adapters: dict[str, str] = {}  # LoRA asset path → loaded adapter name
         # Whether the models don't all fit on the GPU, and so are chained through offload hooks.
         self.offloaded = False
@@ -68,6 +72,8 @@ class Flux3Runner:
         path = ctx.fetch_asset(model["path"], model.get("size"))
         upsampler = spec.get("upsampler")
         pup_path = ctx.fetch_asset(upsampler["path"], upsampler.get("size")) if upsampler else None
+        encoder = spec.get("text_encoder")
+        te_path = ctx.fetch_asset(encoder["path"], encoder.get("size")) if encoder else None
         loras = fetch_loras(spec, ctx)
         inputs = spec.get("inputs") or {}
         images: list[Image.Image] = []
@@ -76,7 +82,7 @@ class Flux3Runner:
             images = [_shrink(_open(ctx.blob(ref))) for ref in refs]
         ctx.check_cancelled()
         ctx.progress(0, "load", 0, 1)
-        self._load(path, pup_path)
+        self._load(path, pup_path, te_path)
         # LoRA loading takes offload hooks off and puts them back only on a DiffusionPipeline.
         self._unhook()
         try:
@@ -129,7 +135,7 @@ class Flux3Runner:
             )
         return caption
 
-    def _load(self, path: Path, pup_path: Path | None) -> None:
+    def _load(self, path: Path, pup_path: Path | None, te_path: Path | None) -> None:
         if self.pipe is not None and self.model_path != path:
             self.unload()
         changed = False
@@ -141,9 +147,7 @@ class Flux3Runner:
             pipe.update_components(
                 transformer=Flux3Transformer2DModel.from_pretrained(path / "transformer", **kw),
                 vae=AutoencoderKLFlux2.from_pretrained(path / "vae", **kw),
-                text_encoder=Qwen3VLForConditionalGeneration.from_pretrained(
-                    path / "text_encoder", dtype=torch.bfloat16, local_files_only=True
-                ),
+                text_encoder=_encoder(te_path or path / "text_encoder"),
                 tokenizer=AutoProcessor.from_pretrained(
                     path / "text_encoder", local_files_only=True
                 ),
@@ -151,7 +155,15 @@ class Flux3Runner:
             pipe.set_progress_bar_config(disable=True)
             self.pipe = pipe
             self.model_path = path
+            self.te_path = te_path
             self.adapters = {}
+            changed = True
+        elif self.te_path != te_path:
+            # Swap only the text encoder: the transformer, with its LoRAs, stays loaded.
+            self._unhook()
+            self.pipe.update_components(text_encoder=_encoder(te_path or path / "text_encoder"))
+            self.te_path = te_path
+            free_gpu_memory()
             changed = True
         if pup_path is not None and self.upsampler_path != pup_path:
             self._unhook()
@@ -206,12 +218,20 @@ class Flux3Runner:
         self._unhook()
         self.pipe = None
         self.model_path = None
+        self.te_path = None
         self.adapters = {}
         self.upsampler = None
         self.processor = None
         self.upsampler_path = None
         self.offloaded = False
         free_gpu_memory()
+
+
+def _encoder(path: Path) -> Any:
+    """A Qwen3-VL text encoder from its transformers folder, in bf16, on the CPU."""
+    return Qwen3VLForConditionalGeneration.from_pretrained(
+        path, dtype=torch.bfloat16, local_files_only=True
+    )
 
 
 def _shrink(image: Image.Image) -> Image.Image:

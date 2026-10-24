@@ -125,7 +125,8 @@ def find_variant(family: FamilyDescriptor, variant: str, mode: str) -> Variant:
 
 class NeededAsset(AssetRef):
     kind: str  # as the Drive index names it: model, lora, controlnet …
-    # The family it belongs to, when not the job's: another family's prompt upsampler.
+    # The family it belongs to, when not the job's: another family's prompt upsampler or text
+    # encoder.
     family: NotRequired[str]
 
 
@@ -153,13 +154,17 @@ def spec_assets(spec: Spec) -> list[NeededAsset]:
         need(prompt["adapter"], "ip_adapter", shared=True)
     need(spec.get("image_encoder"), "image_encoder")
     need(spec.get("face_detector"), "preprocessor")
-    need(spec.get("text_encoder"), "text_encoder")
-    upsampler = spec.get("upsampler")
-    if upsampler:
-        # It may be another family's: its upsampler, or a model whose text encoder writes the
-        # prompt (Fibo 2.0's AusBoss style, with Qwen-Image 2.1's).
-        top, owner = upsampler["path"].split("/")[:2]
-        need(upsampler, "model" if top == "models" else "upsampler")
+    # These may be another family's: FLUX 3 shares Fibo 2.0's Heretic text encoder, and an
+    # upsampler may be a model whose text encoder writes the prompt (Fibo 2.0's AusBoss style,
+    # with Qwen-Image 2.1's).
+    for key, asset in (
+        ("text_encoder", spec.get("text_encoder")),
+        ("upsampler", spec.get("upsampler")),
+    ):
+        if not asset:
+            continue
+        top, owner = asset["path"].split("/")[:2]
+        need(asset, "model" if top == "models" else key)
         if owner != spec["family"]:
             assets[-1]["family"] = owner
     return assets

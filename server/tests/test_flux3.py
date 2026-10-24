@@ -7,9 +7,10 @@ import pytest
 from fastapi.testclient import TestClient
 
 from degas.families.base import SpecError, describe, spec_assets
+from degas.families.fibo2 import TEXT_ENCODER
 from degas.families.flux3 import UPSAMPLER, Flux3
 
-from .conftest import FLUX3, Harness, services
+from .conftest import FLUX3, FLUX3_PUP, Harness, services
 from .test_video import image, results, run, upload
 
 SHA = "sha256:" + "a" * 64
@@ -37,6 +38,19 @@ def test_without_upsampling_the_upsampler_is_not_needed() -> None:
     spec = Flux3().validate({**T2I, "params": {"prompt": "x", "upsample": False}})
     assert "upsampler" not in spec
     assert [a["kind"] for a in spec_assets(spec)] == ["model"]
+
+
+def test_uncensored_takes_fibos_heretic_text_encoder() -> None:
+    spec = Flux3().validate(T2I)
+    assert spec["params"]["uncensored"] is False
+    assert "text_encoder" not in spec
+    for base in (T2I, EDIT):
+        spec = Flux3().validate({**base, "params": {"prompt": "x", "uncensored": True}})
+        assert spec["text_encoder"] == {"path": TEXT_ENCODER, "size": None}
+        # Fibo 2.0's asset; the upsampler stays BFL's.
+        need = {"path": TEXT_ENCODER, "size": None, "kind": "text_encoder", "family": "fibo2"}
+        assert need in spec_assets(spec)
+        assert spec["upsampler"] == {"path": UPSAMPLER, "size": None}
 
 
 def test_a_flux3_edit_takes_up_to_nine_references() -> None:
@@ -104,3 +118,16 @@ def test_a_flux3_edit_sends_its_references(client: TestClient, harness: Harness)
     }
     run(client, spec)
     assert harness.flux3.calls[-1]["images"] == [(1024, 1024), (300, 500)]
+
+
+def test_an_uncensored_flux3_job_names_the_heretic(client: TestClient, harness: Harness) -> None:
+    done = run(client, {**T2I, "params": {"prompt": "x", "uncensored": True}})
+    assert harness.flux3.calls[-1]["text_encoder"] == TEXT_ENCODER
+    assert done["spec"]["text_encoder"]["size"] == 9
+    services(client).db.replace_assets([FLUX3, FLUX3_PUP])
+    resp = client.post(
+        "/api/jobs", json={"spec": {**T2I, "params": {"prompt": "x", "uncensored": True}}}
+    )
+    assert resp.status_code == 400
+    assert f"degas/{TEXT_ENCODER}/" in resp.json()["detail"]
+    assert "Uncensored" in resp.json()["detail"]

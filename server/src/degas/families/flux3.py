@@ -4,6 +4,8 @@ Klein Base, the undistilled checkpoint (50 steps, CFG 3.5), as BFL's diffusers f
 model expects a full scene caption, so by default the prompt goes through BFL's prompt
 upsampler (`upsamplers/flux3/flux-3-image-klein-pup/`, a transformers folder) first, and the
 caption it writes is kept with each result. An edit reads the source and up to 9 references.
+*Uncensored* swaps its text encoder, the stock Qwen3-VL 4B Instruct, for the Heretic one Fibo
+2.0 uses (`text_encoders/fibo2/`), with its refusals ablated.
 """
 
 from typing import Any
@@ -17,6 +19,7 @@ from degas.families.base import (
     Variant,
     find_variant,
 )
+from degas.families.fibo2 import TEXT_ENCODER
 from degas.families.schema import (
     negative_prompt_prop,
     params_schema,
@@ -107,6 +110,14 @@ class Flux3:
                 "the prompt as written.",
                 "default": True,
             },
+            "uncensored": {
+                "type": "boolean",
+                "title": "Uncensored",
+                "description": "Qwen3-VL Heretic, with its refusals taken out, as the text "
+                "encoder. The prompt upsampler is unchanged.",
+                "default": False,
+                "x-advanced": True,
+            },
             "seed": seed_prop(),
         }
         return params_schema(props)
@@ -141,4 +152,6 @@ class Flux3:
         }
         if params["upsample"]:
             out["upsampler"] = {"path": UPSAMPLER, "size": None}
+        if params["uncensored"]:
+            out["text_encoder"] = {"path": TEXT_ENCODER, "size": None}
         return out
