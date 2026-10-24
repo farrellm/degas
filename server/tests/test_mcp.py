@@ -67,7 +67,7 @@ def test_sizes() -> None:
 
 
 def test_create_without_images_is_text_to_image(client: TestClient) -> None:
-    result = call(client, "create_image", {"prompt": "a lighthouse in fog", "resolution": "1K"})
+    result = call(client, "create_image", {"prompt": "a lighthouse in fog"})
     preview, info = made(result)
     assert max(preview.size) <= generate.PREVIEW_SIDE
     # No session was running, so the tool started one on Qwen's smallest GPU.
@@ -76,7 +76,7 @@ def test_create_without_images_is_text_to_image(client: TestClient) -> None:
     assert session["gpu"] == "L4"
     spec = job_spec(client, info["job_id"])
     assert (spec["mode"], spec["model"]["path"]) == ("t2i", QWEN["path"])
-    assert (spec["params"]["width"], spec["params"]["height"]) == (1024, 1024)
+    assert (spec["params"]["width"], spec["params"]["height"]) == (2048, 2048)
     assert not spec.get("inputs")
     assert info["sha256"].startswith("sha256:")
     assert info["url"].endswith("/api/blobs/" + info["sha256"].removeprefix("sha256:"))
@@ -95,7 +95,8 @@ def test_create_with_references_edits_from_image_1(client: TestClient) -> None:
     _, info = made(call(client, "create_image", args))
     spec = job_spec(client, info["job_id"])
     assert spec["mode"] == "edit"
-    assert (spec["params"]["width"], spec["params"]["height"]) == (1792, 2400)
+    # With images, 1K unless asked: 2K runs out of memory on an L4.
+    assert (spec["params"]["width"], spec["params"]["height"]) == (864, 1152)
     assert spec["inputs"]["refs"] == [second]
     # Image 1 is padded to the shape asked for, not cropped.
     ops = spec["inputs"]["transforms"][spec["inputs"]["source"]]["ops"]
@@ -115,8 +116,11 @@ def test_edit_keeps_the_images_shape_and_numbers_references(client: TestClient) 
     _, info = made(call(client, "edit_image", args))
     spec = job_spec(client, info["job_id"])
     assert spec["mode"] == "edit"
-    assert (spec["params"]["width"], spec["params"]["height"]) == (2496, 1664)
+    assert (spec["params"]["width"], spec["params"]["height"]) == (1248, 832)
     assert spec["inputs"]["refs"] == [f"sha256:{hat}", first["sha256"]]
+    _, info = made(call(client, "edit_image", {**args, "resolution": "2K"}))
+    spec = job_spec(client, info["job_id"])
+    assert (spec["params"]["width"], spec["params"]["height"]) == (2496, 1664)
 
 
 def test_a_bad_image_is_a_tool_error(client: TestClient) -> None:

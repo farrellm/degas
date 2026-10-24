@@ -25,8 +25,8 @@ important first. An image is a `sha256:…` ref (from an earlier result), an htt
 INSTRUCTIONS = f"""Degas makes images with Qwen-Image 2.1 on a Colab GPU. `create_image` \
 makes a new image from a prompt, optionally drawing on reference images; `edit_image` changes \
 an image. A call starts a GPU session if none is running, which takes several minutes; later \
-calls take about a minute at 2K. Each result gives its `sha256` ref, to pass to `edit_image` \
-or as a reference. {IMAGES}"""
+calls take about a minute and a half without images, and about four minutes with them. Each \
+result gives its `sha256` ref, to pass to `edit_image` or as a reference. {IMAGES}"""
 
 CREATE = f"""Make a new image from a prompt with Qwen-Image 2.1.
 
@@ -62,7 +62,11 @@ References = Annotated[
     list[str], Field(description="Reference images, numbered from the first image", max_length=10)
 ]
 Resolution = Annotated[
-    generate.Resolution, Field(description="2K is about 4 megapixels, 1K about 1")
+    generate.Resolution | None,
+    Field(
+        description="2K is about 4 megapixels, 1K about 1. Default: 2K without images, 1K "
+        "with them (2K with images can run out of GPU memory)"
+    ),
 ]
 Seed = Annotated[int | None, Field(description="Fixes the noise, to repeat a result")]
 Upsample = Annotated[
@@ -83,17 +87,18 @@ def build_mcp(get_services: Callable[[], Services]) -> MCPServer:
         prompt: Prompt,
         reference_images: References = [],  # noqa: B006 - pydantic copies the default
         aspect_ratio: generate.Aspect = "1:1",
-        resolution: Resolution = "2K",
+        resolution: Resolution = None,
         seed: Seed = None,
         upsample_prompt: Upsample = False,
         negative_prompt: Annotated[str, Field(description="What to avoid")] = "",
     ) -> list[Any]:
         svc = get_services()
         try:
-            size = generate.preset_size(aspect_ratio, resolution)
             images = [
                 await generate.image_ref(svc, v, n) for n, v in enumerate(reference_images, 1)
             ]
+            resolution = resolution or generate.default_resolution(images)
+            size = generate.preset_size(aspect_ratio, resolution)
             # Nothing of image 1 is cut off: the output's shape is the one asked for.
             spec = generate.build_spec(
                 svc, prompt, images, size, "pad", seed, upsample_prompt, negative_prompt
@@ -113,7 +118,7 @@ def build_mcp(get_services: Callable[[], Services]) -> MCPServer:
         aspect_ratio: Annotated[
             generate.Aspect | None, Field(description="Default: image 1's shape")
         ] = None,
-        resolution: Resolution = "2K",
+        resolution: Resolution = None,
         seed: Seed = None,
         upsample_prompt: Upsample = False,
     ) -> list[Any]:
@@ -123,6 +128,7 @@ def build_mcp(get_services: Callable[[], Services]) -> MCPServer:
                 await generate.image_ref(svc, v, n)
                 for n, v in enumerate([image, *reference_images], 1)
             ]
+            resolution = resolution or generate.default_resolution(images)
             if aspect_ratio is None:
                 w, h = svc.blobs.image_size(unref(images[0])) or (1, 1)
                 size = generate.matching_size(w, h, resolution)

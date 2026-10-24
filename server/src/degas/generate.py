@@ -73,6 +73,12 @@ async def image_ref(svc: Services, value: str, n: int) -> str:
     return ref(info["sha256"])
 
 
+def default_resolution(images: list[str]) -> Resolution:
+    """2K, except with images: a 2K edit with references runs out of memory on an L4, the GPU
+    the tools start."""
+    return "1K" if images else "2K"
+
+
 def preset_size(aspect: str, resolution: Resolution) -> tuple[int, int]:
     try:
         return SIZES[resolution][aspect]
