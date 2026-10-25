@@ -124,6 +124,7 @@ async def ensure_key(key: Path) -> None:
 
 
 USAGE_TTL = timedelta(minutes=5)  # a snapshot older than this asks Colab again
+DRIVE_TOKEN_MARGIN = 10 * 60.0  # a pushed token outlives the next push by at least this
 
 
 class Intervals:
@@ -133,7 +134,7 @@ class Intervals:
     health = 30.0
     colab_status = 300.0
     exec_heartbeat = 300.0
-    drive_token = 45 * 60.0
+    drive_token = 45 * 60.0  # each push lasts this long plus `DRIVE_TOKEN_MARGIN`
     health_wait = 180.0  # worker start-up, including the first torch import
 
 
@@ -496,7 +497,11 @@ class SessionManager:
             return
         assert self.worker is not None
         try:
-            token = await self.drive.access_token(min_valid_s=20 * 60)
+            # The cached token may be half spent (e.g. by indexing), so ask for one that
+            # lasts until the next push, or rclone on the VM finds it expired.
+            token = await self.drive.access_token(
+                min_valid_s=self.iv.drive_token + DRIVE_TOKEN_MARGIN
+            )
             await self.worker.drive_token(token.token, token.expiry_rfc3339, self.config.drive.root)
             self.drive_error = None
         except (DriveError, WorkerError, OSError) as e:

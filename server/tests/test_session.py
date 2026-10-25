@@ -1,11 +1,13 @@
 import asyncio
 import socket
 import threading
+import time
 from collections.abc import Callable
 from typing import Any
 
 from degas.colab.session import BOOTSTRAP
 from degas.db import now
+from degas.drive.auth import AccessToken
 
 from .conftest import some
 
@@ -143,6 +145,36 @@ async def test_touch_resets_idle_deadline(harness: Any) -> None:
     assert svc.sessions.session["last_activity_at"] <= now()
     await svc.sessions.stop()
     await svc.stop()
+
+
+class HalfSpentDrive:
+    """A Drive whose cached token has 30 minutes left, as after indexing."""
+
+    authorized = True
+
+    def __init__(self) -> None:
+        self.cached = AccessToken("old", time.time() + 30 * 60)
+
+    def status(self) -> dict[str, Any]:
+        return {"configured": True, "authorized": True, "error": None}
+
+    async def access_token(self, min_valid_s: float = 300) -> AccessToken:
+        if self.cached.expires_at - time.time() <= min_valid_s:
+            self.cached = AccessToken("new", time.time() + 3600)
+        return self.cached
+
+
+async def test_pushed_drive_token_outlives_the_next_push(harness: Any) -> None:
+    svc = harness.build()
+    svc.sessions.drive = HalfSpentDrive()
+    await svc.start()
+    try:
+        await svc.sessions.start("T4", high_mem=False)
+        await until(lambda: svc.sessions.state == "ready")
+        assert svc.sessions.drive.cached.token == "new"
+        assert svc.sessions.drive_error is None
+    finally:
+        await svc.stop()
 
 
 def test_bootstrap_waits_for_the_old_workers_port() -> None:
