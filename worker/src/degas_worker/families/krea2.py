@@ -23,6 +23,7 @@ from typing import Any
 import torch
 from diffusers import Krea2Pipeline
 from PIL import Image
+from safetensors.torch import load_file
 from transformers import AutoProcessor
 
 from degas_worker.families.base import Output, RunContext
@@ -35,6 +36,7 @@ from degas_worker.families.krea2_edit import (
     placements,
     ref_boosts,
 )
+from degas_worker.families.lora import fold_alphas
 from degas_worker.families.offload import place as place_pipe
 from degas_worker.families.offload import reoffload
 from degas_worker.families.runtime import (
@@ -74,7 +76,7 @@ class Krea2Runner:
         ctx.check_cancelled()
         ctx.progress(0, "load", 0, 1)
         self._load(path)
-        sync_loras(self.pipe, self.adapters, loras)
+        sync_loras(self.pipe, self.adapters, loras, self._load_lora)
         ctx.progress(0, "load", 1, 1)
 
         params = spec["params"]
@@ -193,6 +195,11 @@ class Krea2Runner:
         self.processor = AutoProcessor.from_pretrained(path / "processor", local_files_only=True)
         self.model_path = path
         self.adapters = {}
+
+    def _load_lora(self, file: Path, name: str) -> None:
+        # Files in Krea's own names (conradlocke's edit LoRAs) carry an alpha per module, which
+        # diffusers' Krea 2 converter doesn't take: it refuses the file.
+        self.pipe.load_lora_weights(fold_alphas(load_file(file)), adapter_name=name)
 
     def unload(self) -> None:
         if self.pipe is None:
