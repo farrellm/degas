@@ -36,7 +36,7 @@ from degas_worker.families.krea2_edit import (
     placements,
     ref_boosts,
 )
-from degas_worker.families.lora import fold_alphas
+from degas_worker.families.lora import diffs_as_loras, fold_alphas
 from degas_worker.families.offload import place as place_pipe
 from degas_worker.families.offload import reoffload
 from degas_worker.families.runtime import (
@@ -197,9 +197,11 @@ class Krea2Runner:
         self.adapters = {}
 
     def _load_lora(self, file: Path, name: str) -> None:
-        # Files in Krea's own names (conradlocke's edit LoRAs) carry an alpha per module, which
-        # diffusers' Krea 2 converter doesn't take: it refuses the file.
-        self.pipe.load_lora_weights(fold_alphas(load_file(file)), adapter_name=name)
+        # diffusers' Krea 2 converter takes only lora_A/lora_B. Files in Krea's own names
+        # (conradlocke's edit LoRAs) add an alpha per module, and some (Krea2FilterBypass)
+        # are a weight difference for the text fusion's layer mix.
+        state = diffs_as_loras(load_file(file), lambda n, like: torch.eye(n, dtype=like.dtype))
+        self.pipe.load_lora_weights(fold_alphas(state), adapter_name=name)
 
     def unload(self) -> None:
         if self.pipe is None:

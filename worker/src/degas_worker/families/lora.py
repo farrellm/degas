@@ -4,7 +4,7 @@ Kept free of torch and diffusers so it can be tested without a GPU.
 """
 
 import hashlib
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import Any, cast
 
@@ -81,6 +81,26 @@ def fold_alphas(state: dict[str, Any]) -> dict[str, Any]:
         down = key.removesuffix("alpha") + "lora_A.weight"
         if down in out:
             out[down] = out[down] * (float(out.pop(key)) / out[down].shape[0])
+    return out
+
+
+def diffs_as_loras(state: dict[str, Any], eye: Callable[[int, Any], Any]) -> dict[str, Any]:
+    """Turn each `<module>.diff` (a weight difference, ComfyUI's format) into an exact LoRA.
+
+    A difference D (out x in) is `lora_B @ lora_A` with D on one side and the identity on the
+    other, at rank min(out, in), so it loads as an ordinary adapter and its weight scales D.
+    `eye(n, like)` makes an n x n identity like the tensor `like`. Other diffs (biases, 1-d) are
+    left for the loader to refuse.
+    """
+    out = dict(state)
+    for key in [k for k in out if k.endswith(".diff") and len(out[k].shape) == 2]:
+        diff = out.pop(key)
+        rows, cols = diff.shape
+        stem = key.removesuffix("diff")
+        if rows <= cols:
+            out[stem + "lora_A.weight"], out[stem + "lora_B.weight"] = diff, eye(rows, diff)
+        else:
+            out[stem + "lora_A.weight"], out[stem + "lora_B.weight"] = eye(cols, diff), diff
     return out
 
 

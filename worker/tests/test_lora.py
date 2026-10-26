@@ -4,6 +4,7 @@ import pytest
 
 from degas_worker.families.lora import (
     adapter_name,
+    diffs_as_loras,
     expert_loras,
     fold_alphas,
     kohya_modules,
@@ -87,6 +88,8 @@ class _Tensor:
 
     @property
     def shape(self) -> tuple[int, ...]:
+        if not isinstance(self.rows, list):
+            return ()
         return (len(self.rows), len(self.rows[0]))
 
     def __getitem__(self, rows: slice) -> "_Tensor":
@@ -113,6 +116,29 @@ def test_fold_alphas_scales_lora_a_and_drops_the_alpha() -> None:
     assert _rows(fold_alphas(state)) == {
         f"{block}.lora_A.weight": [[2.0, 4.0], [6.0, 8.0]],
         f"{block}.lora_B.weight": [[5.0, 6.0]],
+    }
+
+
+def _eye(n: int, like: Any) -> _Tensor:
+    return _Tensor([[1.0 if i == j else 0.0 for j in range(n)] for i in range(n)])
+
+
+def test_a_weight_difference_becomes_an_exact_lora() -> None:
+    # Krea2FilterBypass: the text fusion's 12-layer mix, a 1 x 12 Linear.
+    mix = "diffusion_model.txtfusion.projector"
+    wide = "diffusion_model.blocks.0.attn.wq"
+    state = {
+        f"{mix}.diff": _Tensor([[0.0, -0.5, -0.9]]),
+        f"{wide}.diff": _Tensor([[1.0], [2.0]]),  # out > in: the identity goes first
+        f"{wide}.bias.diff": _Tensor(0.0),
+    }
+    out = diffs_as_loras(state, _eye)
+    assert _rows(out) == {
+        f"{mix}.lora_A.weight": [[0.0, -0.5, -0.9]],
+        f"{mix}.lora_B.weight": [[1.0]],
+        f"{wide}.lora_A.weight": [[1.0]],
+        f"{wide}.lora_B.weight": [[1.0], [2.0]],
+        f"{wide}.bias.diff": 0.0,
     }
 
 
