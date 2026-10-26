@@ -147,6 +147,20 @@ def test_plan_family_from_the_card() -> None:
     assert p.preview_url is None
 
 
+@pytest.mark.parametrize(
+    ("name", "expected"),
+    [
+        ("ink_wash_krea2.safetensors", ("krea2", "Krea 2", None)),
+        ("ink_wash_krea-2-turbo.safetensors", ("krea2", "Krea 2 Turbo", ["turbo"])),
+        ("flux1-krea-dev_style.safetensors", ("flux1", "FLUX.1", None)),
+        ("ultrareal_krea2_klein9b_v5.safetensors", ("klein", "FLUX.2 klein 9B", None)),
+    ],
+)
+def test_plan_krea2_from_its_name(name: str, expected: tuple[Any, ...]) -> None:
+    p = plan(info(siblings=[lfs(name)]), "https://huggingface.co/someone/style")
+    assert (p.family, p.base_model, p.variants) == expected
+
+
 def test_plan_falls_back_to_the_hint() -> None:
     i = info(siblings=[lfs("my_style.safetensors")])
     with pytest.raises(PlanError, match="choose its family"):

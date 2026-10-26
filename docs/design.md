@@ -319,6 +319,21 @@ class FamilyRunner:
 - **No LoRAs.** The pipeline has no LoRA loader, so a spec with LoRAs is refused.
 - **Not in v1:** masked edits (`inpaint`: the pipeline takes a `mask` and greys the region out), and Edit Turbo.
 
+**Krea 2 (`krea2`)**
+
+- **Model.** Krea 2 (Krea AI, June 2026, Krea 2 Community License): a 12.9B single-stream MMDiT with Qwen3-VL-4B as its text encoder (twelve tapped layers, fused in the transformer) and the Qwen-Image VAE. diffusers' `Krea2Pipeline` (#14045), which the pin already has. It does text-to-image only: Krea ships no edit model.
+- **Checkpoints.** The gated diffusers folders `krea/Krea-2-Raw` and `krea/Krea-2-Turbo` under `models/krea2/Krea-2-Raw/` and `models/krea2/Krea-2-Turbo/` (about 36 GB each: transformer 26.3 GB, text encoder 8.9 GB, VAE 0.5 GB, bf16), without the root `raw.safetensors` / `turbo.safetensors` (the same transformer in Krea's own format) or `images/`. Turbo's `model_index.json` sets `is_distilled`, which gives it the fixed shift `mu = 1.15`. The repos ship only a tokenizer, so each folder has a `processor/` with the tokenizer and Qwen3-VL-4B-Instruct's `processor_config.json`, for the edit's image-grounded encode.
+- **Variants `raw` and `turbo`**, modes `t2i` and `edit`, minimum GPU A100: the transformer alone overflows an L4. The usual offload rule keeps them resident on an 80 GB A100 or an H100 and offloads on a 40 GB A100. Switching variants reloads.
+- **Parameters:** prompt, width and height (multiples of 16; Raw up to 1536², as Krea runs it up to 1K, and Turbo up to 2048²), steps and seed. Raw adds a negative prompt and CFG. Krea's `guidance_scale` is `cond + s · (cond − uncond)`, so the form's CFG is the usual one (1 = off) and the runner sends CFG − 1: Raw defaults to 28 steps and CFG 5.5 (diffusers' 4.5). Turbo runs 8 steps with no CFG and no negative prompt.
+- **Edit.** Two community LoRAs by conradlocke (`conradlocke/krea2-identity-edit`, V2, trained on Raw; free for personal use, and a licence from the author for commercial use), in `loras/krea2/`: *General edit* (`krea2_general_edit_v2`, instructions: remove, recolour, relight, restyle) and *Identity* (`krea2_identity_edit_v2`, the person from a photo in a new scene, pose or outfit). *Edit LoRA* picks one, and the descriptor adds it to the spec as `edit_lora` (refused at submit if it isn't in Drive). A LoRA row naming it sets its weight instead of the default 1. *General edit* reads the source alone. *Identity* reads the source, and optionally a second image, the person, with the source as the scene (`max_refs` 1). Raw edits default to 20 steps and CFG 3, conradlocke's settings for removals; Turbo's 8 steps suit most edits.
+- **How an edit runs.** The runner ports what comfyui-krea2edit (Apache-2.0, 2.x) does, which mirrors the trainer's `predict_velocity_edit`. The torch-free geometry and prompt are in `degas_worker/families/krea2_edit.py`.
+  - *Appearance.* Each image is VAE-encoded, normalized as the pipeline's latents are, and packed. Its clean tokens go before the noisy target's on every transformer call (`prepend_refs`, which replaces `forward` on the instance as `limit_to_areas` does), told apart only by the RoPE frame axis: images 1, 2, the target 0. All tokens share the step's timestep modulation, and only the target's come back.
+  - *Fit.* An image is fitted inside the output at its own aspect ratio, each side floored to 16. Within 8% of the output's ratio, it's centre-cropped to fill the output exactly instead, since a margin of a token or two fills with repeated edges. Its positions are centred on the target's grid at fractional offsets (*aligned*, how the LoRAs were trained). With Identity's two images the person is placed *beside*, to the right of the target, so the scene's layout holds while the person is restaged.
+  - *Boost.* The target's attention to an image's tokens is raised by `log(boost)` in the logits: 4 for General edit, 2 for Identity's person and 1 for its scene. The boost goes into each block's attention mask, which becomes an additive float mask.
+  - *Grounded encode.* The prompt is encoded by Qwen3-VL together with the images (each at most 768 px on the long side), with Krea's system prompt and the vision tokens before the prompt in the user turn, unpadded, and passed as `prompt_embeds`. With CFG, the negative is the empty prompt with the same images, which is what the LoRAs were trained with as the unconditional. Both are padded to one length afterwards, since the pipeline builds one set of position ids for both.
+- **LoRAs:** single files, in `loras/krea2/`, loaded by `Krea2LoraLoaderMixin`, which converts Krea's and ai-toolkit's key names. Civitai's `Krea 2` LoRAs are offered to both variants (Krea says LoRAs trained on Raw work on Turbo), and `Krea 2 Turbo` ones to Turbo.
+- **Not in v1:** the edit's knobs (boost, grounding size, placement), the reference masks (`ref_boost_mask`), Ostris's appended-reference LoRAs (`Krea2OstrisEdit`), the fp8 transformer on an L4, and `inpaint`.
+
 **LTX-2 (`ltx2`)**
 
 - **Model.** Lightricks' LTX-2.3 (March 2026) and LTX-2.5 (August 2026): a 22B audio-video DiT that makes a clip and its sound together. LTX-2.3's text encoder is Gemma 3 12B and LTX-2.5's is Gemma 4 12B. Both load in diffusers as `LTX2Pipeline`. That needs diffusers `main` and transformers 5.10.1 or later (for Gemma 4), which the bootstrap installs when the image's are older (§11).
@@ -361,6 +376,7 @@ MyDrive/degas/
     flux3/         flux-3-image-klein-base/ (the modular diffusers folder, without variants/ or BFL's root files)
     moss/          MOSS-Image-Base/, MOSS-Image-SFT/, Kromoss/ (the repos' diffusers folders, without assets/)
     fibo2/         Fibo-2.0-dev/ (the diffusers folder with fonts/, without assets/ or fine_tuning/)
+    krea2/         Krea-2-Raw/, Krea-2-Turbo/ (the diffusers folders, without the root *.safetensors or images/; processor/ added)
     ltx2/          <variant>/…   (diffusers folders: ltx25/, ltx23-distilled/, ltx23/; latent_upsampler/ inside for Upscale)
   loras/
     sdxl/          *.safetensors (+ *.yaml, preview *.jpg/png)
@@ -370,6 +386,7 @@ MyDrive/degas/
     klein/         *.safetensors
     moss/          *.safetensors (kohya; Kromoss's 8-steps-dmd-lora)
     flux3/         *.safetensors
+    krea2/         *.safetensors (conradlocke's krea2_general_edit_v2 and krea2_identity_edit_v2 for edits)
     ltx2/          *.safetensors (sidecar `variants` from Civitai: ltx23 + ltx23-distilled, or ltx25)
   controlnets/
     sdxl/          *.safetensors or diffusers dirs
@@ -819,6 +836,8 @@ Phases are numbered from 0.
     - `i2i` of the harbour with *Uncensored* (FIBO-vlm writing, the Heretic encoding): a new composition of the same harbour. 258 s.
     - `t2i` bookshop, AusBoss style without *Uncensored* (Qwen-Image 2.1's encoder writing, Fibo's own encoder back without reloading the transformer): a caption close to the Heretic's, and the sign spelled right with its dash. 243 s, including the first copy of Qwen-Image 2.1 (36 GB).
 
+19. **Krea 2.** 🚧 Built; the live test is still to do. The `krea2` family (§4.3): Krea 2 Raw and Turbo for `t2i` and `edit`. Krea ships no edit model, so an edit runs conradlocke's General or Identity Edit LoRA with comfyui-krea2edit's recipe ported to the stock pipeline: the images' clean VAE tokens put before the target's on their own RoPE frames, their attention boosted, and the prompt encoded together with the images. The descriptor adds the edit LoRA as the spec's `edit_lora`. Civitai's `Krea 2` and `Krea 2 Turbo` LoRAs import to `loras/krea2/`.
+
 ## 11. Risks and open questions
 
 | Risk | Impact | Mitigation |
@@ -835,6 +854,7 @@ Phases are numbered from 0.
 | diffusers API churn for newer Wan and ControlNet classes | Upgrades break the worker | Pin versions in `requirements-worker.txt`; record versions in each saved config |
 | fp8 layerwise casting is newer diffusers code, used here with model CPU offload and PEFT LoRAs | FLUX.1 fails to load a LoRA, or runs slowly, on an L4 | `_adapters_in_bf16` keeps adapters out of fp8; the live test covers offload and a LoRA; on an A100 and up, a bf16 folder model skips fp8 entirely |
 | diffusers' IP-Adapter layers and PEFT LoRAs on the same attention modules; `unload_ip_adapter` resets every processor | A LoRA or a regional ControlNet misbehaves after image prompts are added or removed | The live test adds and removes each with the other loaded; the runner remakes derived pipelines whenever the adapter set changes |
+| Krea 2's edits are a port of a community ComfyUI node, not Krea's or diffusers' code | Edits drift from what the LoRAs were trained with (geometry, positions, the grounded encode), and come out weaker or with seams | Ported line by line from the node pack, with the geometry unit-tested; the live test checks mismatched aspect ratios and both LoRAs; the trainer's code (`krea2edit-trainer`) is the reference if they disagree |
 | Qwen-Image 2.1, LTX-2.5, FLUX 3 and Fibo 2.0 need diffusers `main` (not in 0.41.0), and LTX-2 needs transformers 5.10.1+ (Gemma 4) | The pinned commit and the newer transformers also run every other family, and could break them | Install each only when the image's lacks what's needed (`QwenImage21Pipeline`, `LTX2Pipeline` and `LTX2DurationHead`, FLUX 3's `upsample_prompt`; `Gemma4UnifiedForConditionalGeneration`); re-test every family on them; move to the first releases that have them |
 
 ## 12. Future work

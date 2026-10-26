@@ -5,6 +5,7 @@ from degas.families.fibo2 import Fibo2
 from degas.families.flux1 import Flux1
 from degas.families.flux3 import Flux3
 from degas.families.klein import Klein
+from degas.families.krea2 import Krea2
 from degas.families.ltx2 import Ltx2
 from degas.families.moss import Moss
 from degas.families.qwen21 import Qwen21
@@ -12,5 +13,17 @@ from degas.families.sdxl import Sdxl
 from degas.families.wan22 import Wan22
 
 FAMILIES: dict[str, FamilyDescriptor] = {
-    f.id: f for f in (Sdxl(), Flux1(), Qwen21(), Klein(), Flux3(), Moss(), Fibo2(), Wan22(), Ltx2())
+    f.id: f
+    for f in (
+        Sdxl(),
+        Flux1(),
+        Qwen21(),
+        Klein(),
+        Flux3(),
+        Krea2(),
+        Moss(),
+        Fibo2(),
+        Wan22(),
+        Ltx2(),
+    )
 }

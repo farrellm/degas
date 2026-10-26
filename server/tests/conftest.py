@@ -263,8 +263,8 @@ class FakeLtx:
 class FakeQwen:
     """Records the sizes of the condition images (source first, then references) and mask.
 
-    Also stands in for FLUX.1, FLUX.2 [klein] and MOSS-Image, recording the assets each job
-    names."""
+    Also stands in for FLUX.1, FLUX.2 [klein], Krea 2 and MOSS-Image, recording the assets each
+    job names."""
 
     def __init__(self) -> None:
         self.calls: list[dict[str, Any]] = []
@@ -272,7 +272,7 @@ class FakeQwen:
     def run(self, spec: dict[str, Any], seeds: list[int], ctx: RunContext) -> Iterator[Output]:
         inputs = spec.get("inputs") or {}
         staged: dict[str, Any] = {"mode": spec["mode"], "images": []}
-        for extra in ("config", "upsampler", "text_encoder"):
+        for extra in ("config", "upsampler", "text_encoder", "edit_lora"):
             if spec.get(extra):
                 staged[extra] = spec[extra]["path"]
         for ref in [inputs.get("source"), *(inputs.get("refs") or [])]:
@@ -381,6 +381,7 @@ class Harness:
         self.flux = FakeQwen()
         self.klein = FakeQwen()
         self.flux3 = FakeFlux3()
+        self.krea2 = FakeQwen()
         self.moss = FakeQwen()
         self.fibo2 = FakeFlux3()
         self.sam = FakeSam()
@@ -409,6 +410,7 @@ class Harness:
                 "flux1": lambda: self.flux,
                 "klein": lambda: self.klein,
                 "flux3": lambda: self.flux3,
+                "krea2": lambda: self.krea2,
                 "moss": lambda: self.moss,
                 "fibo2": lambda: self.fibo2,
             },
@@ -693,6 +695,34 @@ MOSS_TURBO = {
     "drive_file_id": "mt",
     "size": 12,
 }
+KREA2_RAW = {
+    "path": "models/krea2/Krea-2-Raw",
+    "family": "krea2",
+    "kind": "model",
+    "drive_file_id": "k2r",
+    "size": 36,
+}
+KREA2_TURBO = {
+    "path": "models/krea2/Krea-2-Turbo",
+    "family": "krea2",
+    "kind": "model",
+    "drive_file_id": "k2t",
+    "size": 36,
+}
+KREA2_GENERAL = {
+    "path": "loras/krea2/krea2_general_edit_v2.safetensors",
+    "family": "krea2",
+    "kind": "lora",
+    "drive_file_id": "k2g",
+    "size": 2,
+}
+KREA2_IDENTITY = {
+    "path": "loras/krea2/krea2_identity_edit_v2.safetensors",
+    "family": "krea2",
+    "kind": "lora",
+    "drive_file_id": "k2i",
+    "size": 3,
+}
 LTX25 = {
     "path": "models/ltx2/ltx25/LTX-2.5-Diffusers",
     "family": "ltx2",
@@ -737,6 +767,10 @@ def client(harness: Harness) -> Iterator[TestClient]:
                 MOSS_SFT,
                 MOSS_KROMOSS,
                 MOSS_TURBO,
+                KREA2_RAW,
+                KREA2_TURBO,
+                KREA2_GENERAL,
+                KREA2_IDENTITY,
                 INPAINT_MODEL,
                 SAM,
                 DEPTH,

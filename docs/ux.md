@@ -331,6 +331,15 @@ Built. Fibo 2.0 is an image family found under the Model button, with one varian
 - **From image** is Bria's *Inspire*: the picture inspires a new one rather than being redrawn, so there's no *Denoise strength* and no *Upsample prompt*. The prompt is optional; its description gives an example change ("the same scene, the whale is blue"), and *Generate* is enabled with it empty. Create allows an empty prompt for any schema that doesn't list `prompt` as required.
 - There's no negative prompt and no LoRAs row: Fibo uses Bria's own negative, and the pipeline loads no LoRAs. CFG is a slider, default 5, and Steps default to 50.
 
+### Phase 19: Krea 2
+
+Built. Krea 2 is an image family found under the Model button, with two variants, *Krea 2 Raw* and *Krea 2 Turbo*, each doing *From text* and *Edit*. Each one lists only the models in its own folder. The form comes from the schema, with no new widgets.
+
+- **Raw** has a negative prompt and a CFG slider (default 5.5, or 3 in *Edit*; its description says 1 turns it off). **Turbo** has neither, and *Steps* defaults to 8, with the field saying the model is distilled to 8. Raw's sizes go up to 1536², Turbo's to 2048².
+- **Edit LoRA** (in *Edit* only) is a select: *General edit* (the default) or *Identity*. Its description says Identity puts the person from the photo into the scene or pose the prompt describes, and that a second image is the person and the source the scene.
+- **Images row.** It takes 1 image after the source, which only *Identity* reads. With *General edit*, Generate is refused with *Only Identity reads a second image, the person*.
+- The edit LoRAs are ordinary LoRAs in `loras/krea2/`, so the LoRAs row lists them too. Choosing one there sets its weight. The job loads the one *Edit LoRA* names either way.
+
 ## 5. Component inventory
 
 | Component | Status | Notes |

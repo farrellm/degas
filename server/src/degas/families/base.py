@@ -148,6 +148,7 @@ def spec_assets(spec: Spec) -> list[NeededAsset]:
     for lora in spec.get("loras") or []:
         for part in lora_files(lora):
             need(part, "lora", shared=True)
+    need(spec.get("edit_lora"), "lora", shared=True)
     for unit in spec.get("control") or []:
         need(unit["controlnet"], "controlnet", shared=True)
     for prompt in spec.get("image_prompts") or []:

@@ -104,3 +104,4 @@ class Spec(TypedDict):
     face_detector: NotRequired[AssetRef]
     upsampler: NotRequired[AssetRef]
     text_encoder: NotRequired[AssetRef]
+    edit_lora: NotRequired[Lora]  # Krea 2: the LoRA an edit runs with

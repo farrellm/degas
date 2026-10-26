@@ -36,6 +36,9 @@ BASE_MODELS: dict[str, tuple[str, list[str] | None]] = {
     "Flux.1 Krea": ("flux1", None),
     "Flux.2 Klein 9B": ("klein", None),
     "Flux.2 Klein 9B-base": ("klein", None),
+    # LoRAs trained on Raw work on Turbo too (Krea's advice); Turbo-trained ones are tagged.
+    "Krea 2": ("krea2", None),
+    "Krea 2 Turbo": ("krea2", ["turbo"]),
     "Qwen 2": ("qwen21", None),
     "Qwen 2.1": ("qwen21", None),
     "Wan Video 2.2 TI2V-5B": ("wan22", ["ti2v-5b"]),
@@ -322,7 +325,8 @@ def plan_import(
 # Hugging Face has no base-model field Degas can rely on: `base_model` in the model card is
 # optional, and many LoRAs only say it in their names. These patterns are tried on the file's
 # name, then on the card's `base_model`, then on the repo's name: first match wins. (Order matters:
-# "ti2v" contains "i2v", and "FLUX.2 klein" contains "flux".)
+# "ti2v" contains "i2v", "FLUX.2 klein" contains "flux", and Krea 2 must be tried before FLUX.1
+# so that "flux1-krea" stays FLUX.1.)
 NAMED_BASES: list[tuple[re.Pattern[str], str, str, list[str] | None]] = [
     (re.compile(p), label, fam, variants)
     for p, label, fam, variants in [
@@ -338,6 +342,8 @@ NAMED_BASES: list[tuple[re.Pattern[str], str, str, list[str] | None]] = [
             ["wan21-i2v-14b", "wan21-flf2v-14b"],
         ),
         (r"klein.?9b|9b.?klein", "FLUX.2 klein 9B", "klein", None),
+        (r"krea.?2.?turbo", "Krea 2 Turbo", "krea2", ["turbo"]),
+        (r"krea.?2(?![0-9])", "Krea 2", "krea2", None),
         (r"flux.?1|flux(?![._ -]?2)", "FLUX.1", "flux1", None),
         (r"qwen.?image.?2", "Qwen-Image 2", "qwen21", None),
         (r"sdxl|stable.diffusion.xl|pony|illustrious|noobai", "SDXL", "sdxl", None),

@@ -269,6 +269,15 @@ def test_plan_ltx_loras_name_their_variants() -> None:
         plan({**v, "baseModel": "LTXV2"})
 
 
+def test_plan_krea2_loras() -> None:
+    v = version(baseModel="Krea 2", files=[wan_file("ink_wash_krea2.safetensors", 1)])
+    p = plan(v)
+    assert [f.path.split("/")[1] for f in p.files] == ["krea2"]
+    assert p.variants is None
+    assert plan({**v, "baseModel": "Krea 2 Turbo"}).variants == ["turbo"]
+    assert plan({**v, "baseModel": "Flux.1 Krea"}).files[0].path.split("/")[1] == "flux1"
+
+
 def test_slug() -> None:
     assert slug("Tést Style XL") == "test_style_xl"
     assert slug("Slap (and Self Slap) - Wan 2.2") == "slap_and_self_slap_wan_2.2"

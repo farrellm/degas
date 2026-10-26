@@ -26,6 +26,7 @@ MISSING = {
     "rescan, or turn off Upsample prompt.",
     "text_encoder": "The uncensored text encoder isn't in Drive. Put it in degas/{path}/, then "
     "rescan, or turn off Uncensored.",
+    "edit_lora": "Edits need the edit LoRA in Drive. Put it at degas/{path}, then rescan.",
     # Another family's model, whose text encoder writes the prompt.
     "writer": "This upsample style writes the prompt with the text encoder of degas/{path}/, "
     "which isn't in Drive. Put it there, then rescan, or pick another style.",
@@ -51,6 +52,9 @@ def resolve_assets(db: Database, family: str, spec: Spec) -> None:
             key = "face_detector" if need["kind"] == "preprocessor" else need["kind"]
             if need["kind"] == "model" and need["path"] != spec["model"]["path"]:
                 key = "writer"
+            edit_lora = spec.get("edit_lora")
+            if edit_lora and need["path"] == edit_lora["path"]:
+                key = "edit_lora"
             if key in MISSING:
                 raise SpecError(MISSING[key].format(path=need["path"]))
             raise SpecError(f"{CHOSEN[need['kind']]} {need['path']} is not in the Drive index")
@@ -70,6 +74,7 @@ def resolve_assets(db: Database, family: str, spec: Spec) -> None:
         spec.get("face_detector"),
         spec.get("upsampler"),
         spec.get("text_encoder"),
+        spec.get("edit_lora"),
     )
     for extra in added:
         if extra:
