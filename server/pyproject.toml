@@ -5,6 +5,7 @@ description = "Degas home server: API, job queue, Colab session manager"
 requires-python = ">=3.13,<3.14"
 dependencies = [
     "degas-worker",  # the worker bundle is built from the installed package
+    "colabkit",
     "fastapi>=0.141",
     "httpx2>=2.13",
     "cryptography>=45",
@@ -20,6 +21,7 @@ dependencies = [
 
 [tool.uv.sources]
 degas-worker = { workspace = true }
+colabkit = { url = "https://github.com/farrellm/colabkit/archive/refs/tags/v0.1.0.tar.gz" }
 
 [project.scripts]
 degas = "degas.cli:main"

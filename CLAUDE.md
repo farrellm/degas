@@ -18,9 +18,11 @@ cd web && pnpm vitest run src/lib/schema.test.ts # single web test
 
 - `server/src/degas` (home server): `api/` (a router per resource, request schemas, and
   `errors.py`, the one table mapping `DegasError`s to HTTP statuses), `db/` (schema, queries,
-  row TypedDicts), blob store, dispatcher, Colab session manager (`colab/`: CLI wrapper, SSH
-  tunnel, worker client, bundle). `services.py` wires them; `degas.app:create_app` is a
-  factory (no module-level app).
+  row TypedDicts), blob store, dispatcher, Colab session manager (`colab/`: session lifecycle,
+  worker client, bundle; the `colab` CLI wrapper and SSH tunnel come from
+  [colabkit](https://github.com/farrellm/colabkit), shared with FrameHound — change them
+  there and bump the tag). `services.py` wires them; `degas.app:create_app` is a factory (no
+  module-level app).
 - `worker/src/degas_worker` (runs on the Colab VM, behind the SSH tunnel): tarred by
   `degas/colab/bundle.py` and scp'd over — must never import `degas`. `degas_worker/spec.py`
   types the job spec for both sides (the server imports it).

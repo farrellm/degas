@@ -5,7 +5,7 @@ import pytest
 
 from degas.blobs import BlobStore
 from degas.colab.bundle import build_bundle
-from degas.colab.cli import ColabCli, ColabError, Usage, parse_usage
+from degas.colab.cli import ColabCli
 from degas.config import load_config
 from degas.db import Database
 from degas.families.base import SpecError, spec_assets
@@ -17,15 +17,10 @@ from .conftest import some
 # -- colab CLI -----------------------------------------------------------------------------
 
 FAKE_COLAB = """#!/bin/sh
+echo "$@"
 case "$1" in
-  status) if [ -e "$(dirname "$0")/alive" ]; then
-            printf '\\033[1m[degas] 10.0.0.1 | Hardware: L4 | Status: IDLE\\033[0m\\n'
-          else echo "[colab] Session 'degas' not found."; fi ;;
-  exec) cat; echo; echo done ;;
-  stop) echo "[colab] Stopping session 'degas'..." ;;
-  usage) echo "Current balance: 198.67 compute units"
-         echo "Usage rate: 1.54/hr"; echo "Active assignments: 1" ;;
-  *) echo "boom"; exit 3 ;;
+  status) echo "[degas] 10.0.0.1 | Hardware: L4 | Status: IDLE" ;;
+  exec) cat ;;
 esac
 """
 
@@ -38,30 +33,11 @@ def colab(tmp_path: Path) -> ColabCli:
     return ColabCli(str(binary), "degas")
 
 
-async def test_colab_status(colab: ColabCli, tmp_path: Path) -> None:
-    assert await colab.is_alive() is False
-    (tmp_path / "alive").touch()
+async def test_colab_binds_the_session(colab: ColabCli) -> None:
+    """The CLI itself is tested in colabkit; this checks Degas's session is named."""
     assert await colab.is_alive() is True
-
-
-async def test_colab_exec_sends_code_on_stdin(colab: ColabCli) -> None:
-    out = await colab.exec("print('hi')")
-    assert "print('hi')" in out
-    assert "done" in out
-
-
-async def test_colab_usage(colab: ColabCli) -> None:
-    assert await colab.usage() == Usage(balance=198.67, rate=1.54, assignments=1)
-
-
-def test_colab_usage_without_figures() -> None:
-    with pytest.raises(ColabError, match="Unexpected"):
-        parse_usage("[colab] A new version is available\n")
-
-
-async def test_colab_errors(colab: ColabCli) -> None:
-    with pytest.raises(ColabError, match="exit 3"):
-        await colab.new("L4", high_mem=False)
+    out = await colab.exec("print('hi')", timeout=30)
+    assert out.splitlines() == ["exec -s degas --timeout 30", "print('hi')"]
 
 
 def test_proxy_command() -> None:

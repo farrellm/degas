@@ -10,6 +10,7 @@ from typing import Any, cast
 
 import httpx2
 import pytest
+from colabkit import Tunnel
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from PIL import Image
@@ -17,7 +18,6 @@ from PIL import Image
 from degas.app import create_app
 from degas.colab.cli import ColabError, Usage
 from degas.colab.session import STARTED_MARKER, Intervals
-from degas.colab.tunnel import Tunnel
 from degas.colab.worker_client import WorkerClient
 from degas.config import Config
 from degas.services import Services, build_services
