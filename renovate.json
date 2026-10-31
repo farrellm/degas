@@ -2,6 +2,7 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": ["config:recommended", "helpers:pinGitHubActionDigests"],
   "schedule": ["before 6am on monday"],
+  "lockFileMaintenance": { "enabled": true },
   "packageRules": [
     {
       "groupName": "dev tools",
@@ -19,6 +20,11 @@
     {
       "groupName": "python",
       "matchManagers": ["pep621"]
+    },
+    {
+      "description": "Python is pinned to the Colab runtime's version; bump it by hand",
+      "matchDepNames": ["python"],
+      "enabled": false
     }
   ],
   "customManagers": [
