@@ -704,8 +704,9 @@ The app has a bottom tab bar with Create and Results, and Library from Phase 3. 
 degas/
   docs/design.md
   server/src/degas/        app.py, api/ (routers, schemas, error statuses), db/ (schema,
-                           queries, row types), colab/ (CLI wrapper, session mgr,
-                           tunnel.py for ssh), dispatcher.py, drive/ (OAuth, index, catalog),
+                           queries, row types), colab/ (session mgr, worker client,
+                           bundle; CLI and ssh via colabkit), dispatcher.py, drive/ (OAuth,
+                           index, catalog),
                            families/ (descriptors, validation), inputs.py, library.py, push.py
   worker/src/degas_worker/ app.py (FastAPI), routers/, jobs.py, cache.py (rclone), families/,
                            preprocess/, spec.py (the job spec, shared with the server)
@@ -852,7 +853,7 @@ Phases are numbered from 0.
 
 | Risk | Impact | Mitigation |
 |---|---|---|
-| `colab ssh` is a new CLI feature and could change or break | High: the transport depends on it | Keep the transport behind one interface (`colab/tunnel.py`). An `exec`-based fallback is proven to work (persistent kernel, streamed output, cancel via a flag file uploaded mid-job) |
+| `colab ssh` is a new CLI feature and could change or break | High: the transport depends on it | Keep the transport behind one interface (`colabkit.ssh`, shared with FrameHound). An `exec`-based fallback is proven to work (persistent kernel, streamed output, cancel via a flag file uploaded mid-job) |
 | A VM with an idle kernel may be reclaimed even while the worker is busy | Jobs killed partway through | Build the `exec` heartbeat in Phase 1 as a setting that is on by default (one trivial `exec` every 5 min, costing about 1.5 s each) |
 | Drive OAuth app in "testing" mode issues refresh tokens that expire after 7 days | Weekly re-authorization | Publish the OAuth app for your own account only (drive.readonly is a restricted scope, but an unverified app used only by its owner is fine); the UI prompts to re-authorize when a refresh fails |
 | SSH tunnel throughput (about 12 MB/s) | Slow transfer of large video outputs | Acceptable: a 10 MB MP4 takes about 1 s. Encode with a sensible CRF |
