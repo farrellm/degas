@@ -13,9 +13,10 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Unpack
 
+from colabkit import Tunnel, TunnelError
+
 from degas.colab.bundle import Bundle, build_bundle
 from degas.colab.cli import Colab, ColabError, Usage
-from degas.colab.tunnel import Tunnel, TunnelError
 from degas.colab.worker_client import WorkerClient, WorkerError
 from degas.config import Config
 from degas.db import (
@@ -228,7 +229,7 @@ class SessionManager:
             return None
         return {
             "balance": self.usage.balance,
-            "rate": self.usage.rate,
+            "rate": self.usage.rate_per_hour,
             "assignments": self.usage.assignments,
             "checked_at": self.usage_at.isoformat(timespec="seconds"),
         }
@@ -651,10 +652,10 @@ class SessionManager:
             or not self.active
             or self.session["unit_rate"] is not None
             or usage.assignments != base.assignments + 1
-            or usage.rate <= base.rate
+            or usage.rate_per_hour <= base.rate_per_hour
         ):
             return
-        self._update(unit_rate=round(usage.rate - base.rate, 2))
+        self._update(unit_rate=round(usage.rate_per_hour - base.rate_per_hour, 2))
         self._baseline = None
 
     def request_usage(self, force: bool = False) -> None:

@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from datetime import timedelta
 
 import httpx2
+from colabkit import SshTunnel, Tunnel
 
 from degas.blobs import BlobStore
 from degas.civitai.civarchive import CivArchive
@@ -17,7 +18,6 @@ from degas.civitai.huggingface import HuggingFace
 from degas.civitai.importer import Importer, Imports
 from degas.colab.cli import Colab, ColabCli
 from degas.colab.session import SessionManager
-from degas.colab.tunnel import SshTunnel, Tunnel
 from degas.colab.worker_client import WorkerClient
 from degas.config import Config
 from degas.db import Database, JobRow

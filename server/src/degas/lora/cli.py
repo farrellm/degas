@@ -8,11 +8,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import httpx2
+from colabkit import SshTunnel
 from pydantic import ValidationError
 
 from degas.colab.cli import ColabCli, ColabError
 from degas.colab.session import ensure_key
-from degas.colab.tunnel import SshTunnel
 from degas.config import Config
 from degas.db import Database
 from degas.drive import DriveAuth

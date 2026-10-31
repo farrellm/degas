@@ -17,11 +17,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal, Protocol
 
+from colabkit import Tunnel
 from pydantic import BaseModel
 
 from degas.colab.cli import Colab
 from degas.colab.session import RCLONE_URL
-from degas.colab.tunnel import Tunnel
 from degas.drive import AccessToken
 from degas.errors import DegasError
 from degas.lora import recipe
