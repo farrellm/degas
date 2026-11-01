@@ -62,7 +62,8 @@ fmt-check: web/node_modules ## Fail if anything needs formatting
 lint: web/node_modules ## Run every linter and type checker
 	uv run ruff check .
 	uv run mypy
-	uv export --frozen --all-packages --no-emit-workspace -q \
+	# colabkit is our own git source: no hash to require, nothing in the advisory DB
+	uv export --frozen --all-packages --no-emit-workspace --no-emit-package colabkit -q \
 		| uvx pip-audit==$(PIP_AUDIT_VERSION) --disable-pip --require-hashes -r /dev/stdin --progress-spinner off
 	cd web && pnpm -s lint
 	shellcheck $(SH_FILES)

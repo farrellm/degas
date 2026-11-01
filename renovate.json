@@ -1,6 +1,6 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["config:recommended", "helpers:pinGitHubActionDigests"],
+  "extends": ["config:recommended", "helpers:pinGitHubActionDigests", ":semanticCommitsDisabled"],
   "schedule": ["before 6am on monday"],
   "lockFileMaintenance": { "enabled": true },
   "packageRules": [
@@ -13,13 +13,21 @@
       "matchManagers": ["github-actions"]
     },
     {
+      "description": "Digest-pinned and gated by CI; majors still wait for review",
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["minor", "patch", "digest"],
+      "automerge": true
+    },
+    {
       "groupName": "web dev tools",
       "matchManagers": ["npm"],
       "matchDepTypes": ["devDependencies"]
     },
     {
+      "description": "colabkit is our own shared library; a new tag gets its own PR",
       "groupName": "python",
-      "matchManagers": ["pep621"]
+      "matchManagers": ["pep621"],
+      "matchDepNames": ["!colabkit"]
     },
     {
       "description": "Python is pinned to the Colab runtime's version; bump it by hand",
