@@ -28,8 +28,17 @@ def test_defaults_are_qwens() -> None:
     params = spec["params"]
     assert (params["width"], params["height"], params["steps"]) == (2048, 2048, 40)
     assert (params["cfg"], params["schedule"], params["degrid"]) == (1.0, "default", True)
+    assert params["sampler"] == "euler"
     assert spec["inputs"] == {}
     assert "mask_blur" not in params
+
+
+def test_er_sde_is_a_sampler_beside_the_schedule() -> None:
+    params = {"prompt": "x", "sampler": "er_sde", "schedule": "beta"}
+    spec = Qwen21().validate({**SPEC, "params": params})
+    assert (spec["params"]["sampler"], spec["params"]["schedule"]) == ("er_sde", "beta")
+    with pytest.raises(SpecError):
+        Qwen21().validate({**SPEC, "params": {"prompt": "x", "sampler": "dpmpp_2m"}})
 
 
 def test_prompt_upsampling_is_off_by_default_and_needs_no_asset() -> None:
