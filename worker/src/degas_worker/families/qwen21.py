@@ -288,15 +288,13 @@ class ErSdeScheduler(FlowMatchEulerDiscreteScheduler):  # type: ignore[misc]
     same sigmas as Euler, with a third-order step that adds fresh noise each step. The noise is
     drawn on the CPU from `generator`, so a seed gives the same image on every GPU."""
 
-    # Not set in `__init__`: `from_config` reads its signature for the config's keys.
+    # Neither `__init__` nor `set_timesteps` is overridden: diffusers reads their signatures
+    # (`from_config` for the config's keys, `retrieve_timesteps` for a `sigmas` parameter).
+    # The weights are worked out when `step` first sees a new schedule instead.
     generator: torch.Generator | None = None
+    _for_sigmas: Any = None
     _coefficients: tuple[er_sde.Step, ...] = ()
     _history: tuple[torch.Tensor, ...] = ()  # the last x0, then its divided difference
-
-    def set_timesteps(self, *args: Any, **kwargs: Any) -> None:
-        super().set_timesteps(*args, **kwargs)
-        self._coefficients = tuple(er_sde.coefficients([float(s) for s in self.sigmas]))
-        self._history = ()
 
     def step(
         self,
@@ -307,6 +305,10 @@ class ErSdeScheduler(FlowMatchEulerDiscreteScheduler):  # type: ignore[misc]
         return_dict: bool = True,
         **kwargs: Any,
     ) -> Any:
+        if self._for_sigmas is not self.sigmas:  # `set_timesteps` made a new schedule
+            self._for_sigmas = self.sigmas
+            self._coefficients = tuple(er_sde.coefficients([float(s) for s in self.sigmas]))
+            self._history = ()
         if self.step_index is None:
             self._init_step_index(timestep)
         coef = self._coefficients[self.step_index]
