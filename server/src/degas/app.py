@@ -18,7 +18,7 @@ def create_app(
     services: Callable[[Config], Services] = build_services,
 ) -> FastAPI:
     config = config or load_config()
-    mcp = build_mcp(lambda: app.state.services)
+    mcp = build_mcp(lambda: app.state.services, config.mcp)
     mcp_app = mcp.streamable_http_app(
         streamable_http_path="/mcp", stateless_http=True, transport_security=security()
     )

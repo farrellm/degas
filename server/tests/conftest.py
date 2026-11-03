@@ -597,6 +597,13 @@ QWEN = {
     "drive_file_id": "q21",
     "size": 10,
 }
+QWEN_LORA = {
+    "path": "loras/qwen21/realism.safetensors",
+    "family": "qwen21",
+    "kind": "lora",
+    "drive_file_id": "q21l",
+    "size": 5,
+}
 FLUX1 = {
     "path": "models/flux1/flux1-dev-fp8.safetensors",
     "family": "flux1",
@@ -753,6 +760,7 @@ def client(harness: Harness) -> Iterator[TestClient]:
                 WAN_I2V,
                 LTX25,
                 QWEN,
+                QWEN_LORA,
                 FLUX1,
                 FLUX1_BASE,
                 KLEIN,

@@ -81,7 +81,7 @@ A [CivArchive](https://civarchive.com) link (`civarchive.com` or `civitaiarchive
 
 ## Using it from an agent (MCP)
 
-The server is also an MCP server at `/mcp`, with `create_image` and `edit_image` (Qwen-Image 2.1, optionally with reference images that the prompt refers to by number: "the jacket from image 2"). A call starts an L4 session if none is running and waits for the image, which also lands in Results. For Claude Code:
+The server is also an MCP server at `/mcp`, with `create_image` and `edit_image` (Qwen-Image 2.1 by default, optionally with reference images that the prompt refers to by number: "the jacket from image 2"). A call starts a session (an L4 for Qwen) if none is running and waits for the image, which also lands in Results. `[mcp]` in `degas.toml` sets the family, variant, model, LoRAs, GPU, default resolutions and any of the family's parameters (see `degas.toml.example`); it is checked at startup, and a family that can't edit gets only `create_image`. For Claude Code:
 
 ```sh
 claude mcp add --transport http degas https://<host>.ts.net:8448/mcp

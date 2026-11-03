@@ -3,9 +3,9 @@
 import os
 import tomllib
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 # Repository checkout: <repo>/server/src/degas/config.py
 _REPO = Path(__file__).resolve().parents[3]
@@ -66,6 +66,33 @@ class HuggingFaceConfig(Section):
     api_base: str = "https://huggingface.co"
 
 
+class McpLora(Section):
+    path: str  # e.g. "loras/qwen21/x.safetensors"
+    weight: float = 1.0
+
+
+class McpConfig(Section):
+    """What the MCP tools (`/mcp`) generate with. Checked against the family when the app is
+    built; the model and LoRAs against the Drive index at each call."""
+
+    family: str = "qwen21"
+    # Default: the family's first variant that does both t2i and edit (else just t2i).
+    variant: str | None = None
+    model: str | None = None  # Drive path; default: the variant's first model in the index
+    loras: list[McpLora] = Field(default_factory=list)
+    gpu: str | None = None  # for a session the tools start; default: the variant's minimum
+    high_mem: bool = False
+    # 1K is about 1 megapixel, 2K about 4 (capped at the family's maximum). With images, an
+    # L4 runs out of memory for Qwen at 2K.
+    resolution: Literal["1K", "2K"] = "2K"
+    resolution_with_images: Literal["1K", "2K"] = "1K"
+    # Any of the family's parameters (as its param schema names them), for every call; a key
+    # a mode doesn't take is left out of that mode's jobs. Then per-mode overrides.
+    params: dict[str, Any] = Field(default_factory=dict)
+    t2i_params: dict[str, Any] = Field(default_factory=dict)
+    edit_params: dict[str, Any] = Field(default_factory=dict)
+
+
 class Config(Section):
     data_dir: Path = Path("data")
     host: str = "127.0.0.1"
@@ -79,6 +106,7 @@ class Config(Section):
     civitai: CivitaiConfig = CivitaiConfig()
     civarchive: CivArchiveConfig = CivArchiveConfig()
     huggingface: HuggingFaceConfig = HuggingFaceConfig()
+    mcp: McpConfig = McpConfig()
 
     @property
     def ssh_key(self) -> Path:

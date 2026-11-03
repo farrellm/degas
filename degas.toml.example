@@ -42,3 +42,22 @@ rclone_remote = "gdrive:"    # local rclone remote that can write to the same Dr
 # Contact for the push services (Apple, Google, Mozilla); use a mailto: you read.
 subject = "mailto:degas@localhost"
 # key_file = "data/vapid_private.pem"   # VAPID key pair, generated on first use
+
+[mcp]
+# What the MCP tools (/mcp) generate with; checked against the family at startup.
+# family = "qwen21"          # any image family: qwen21, klein, flux3, fibo2, krea2, flux1, moss, sdxl
+# variant = "base"           # default: the family's first variant that does t2i and edit
+# model = "models/qwen21/Qwen-Image-2.1"   # Drive path; default: the variant's first model
+# loras = [{ path = "loras/qwen21/x.safetensors", weight = 0.8 }]
+# gpu = "L4"                 # for a session the tools start; default: the variant's minimum
+# high_mem = false
+# resolution = "2K"          # 1K ≈ 1 MP, 2K ≈ 4 MP (capped at the family's maximum)
+# resolution_with_images = "1K"   # a 2K Qwen edit with references runs out of memory on an L4
+# Any of the family's parameters, as its schema names them
+# (GET /api/families/<id>/schema?variant=<v>&mode=t2i). A key a mode doesn't take is left
+# out of that mode's jobs; tool arguments win over these.
+# [mcp.params]
+# steps = 30
+# sampler = "er_sde"
+# [mcp.t2i_params]           # text-to-image only
+# [mcp.edit_params]          # edits (calls with images) only
