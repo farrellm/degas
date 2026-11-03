@@ -80,5 +80,20 @@ def choice_prop(
     return prop
 
 
+# Samplers for flow-match pipelines (Qwen-Image 2.1, Krea 2). Keep in sync with the worker
+# (degas_worker/families/flow_samplers.py).
+FLOW_SAMPLERS = {"euler": "Euler", "er_sde": "ER-SDE"}
+
+
+def flow_sampler_prop() -> JsonSchema:
+    return choice_prop(
+        "Sampler",
+        FLOW_SAMPLERS,
+        "euler",
+        description="ER-SDE adds fresh noise each step, for more fine detail.",
+        advanced=True,
+    )
+
+
 def params_schema(props: dict[str, JsonSchema]) -> JsonSchema:
     return {"type": "object", "required": ["prompt"], "properties": props}

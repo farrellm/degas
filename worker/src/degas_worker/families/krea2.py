@@ -27,6 +27,7 @@ from safetensors.torch import load_file
 from transformers import AutoProcessor
 
 from degas_worker.families.base import Output, RunContext
+from degas_worker.families.flow_samplers import flow_scheduler, seeded_noise
 from degas_worker.families.krea2_edit import (
     EditKind,
     fit,
@@ -44,7 +45,6 @@ from degas_worker.families.runtime import (
     fetch_loras,
     free_gpu_memory,
     png_output,
-    seeded,
     step_callback,
     sync_loras,
 )
@@ -57,6 +57,7 @@ class Krea2Runner:
         self.processor: Any = None
         self.model_path: Path | None = None
         self.adapters: dict[str, str] = {}  # LoRA asset path → loaded adapter name
+        self._scheduler_config: Any = None
 
     def run(self, spec: Spec, seeds: list[int], ctx: RunContext) -> Iterator[Output]:
         mode = spec.get("mode")
@@ -80,6 +81,7 @@ class Krea2Runner:
         ctx.progress(0, "load", 1, 1)
 
         params = spec["params"]
+        self.pipe.scheduler = flow_scheduler(self._scheduler_config, params.get("sampler", "euler"))
         steps = int(params["steps"])
         width, height = int(params["width"]), int(params["height"])
         # Turbo has no CFG field; it runs guidance-free.
@@ -105,7 +107,7 @@ class Krea2Runner:
                     ctx.progress(item, "denoise", 0, steps)
                     result = self.pipe(
                         **kwargs,
-                        generator=seeded(seed),
+                        generator=seeded_noise(self.pipe.scheduler, seed),
                         callback_on_step_end=step_callback(ctx, item, steps),
                     )
                     ctx.progress(item, "encode", steps, steps)
@@ -195,6 +197,7 @@ class Krea2Runner:
         self.processor = AutoProcessor.from_pretrained(path / "processor", local_files_only=True)
         self.model_path = path
         self.adapters = {}
+        self._scheduler_config = pipe.scheduler.config
 
     def _load_lora(self, file: Path, name: str) -> None:
         # diffusers' Krea 2 converter takes only lora_A/lora_B. Files in Krea's own names

@@ -13,6 +13,7 @@ from degas.families.base import (
 )
 from degas.families.schema import (
     choice_prop,
+    flow_sampler_prop,
     negative_prompt_prop,
     params_schema,
     prompt_prop,
@@ -36,7 +37,6 @@ MAX_REFS = 9
 
 # Keep in sync with the worker runner (degas_worker/families/qwen21.py).
 SCHEDULES = {"default": "Default", "beta": "Beta"}
-SAMPLERS = {"euler": "Euler", "er_sde": "ER-SDE"}
 # The system prompts the text encoder rewrites the prompt with (degas_worker/.../qwen21_prompt.py).
 UPSAMPLE_STYLES = {"kokon": "Kokon", "degas": "Degas"}
 # Qwen3-VL 8B Heretic (DreamFast/Qwen3-VL-8B-Heretic-1.3.0, a transformers folder): the text
@@ -129,13 +129,7 @@ class Qwen21:
                 "x-advanced": True,
             },
             "seed": seed_prop(),
-            "sampler": choice_prop(
-                "Sampler",
-                SAMPLERS,
-                "euler",
-                description="ER-SDE adds fresh noise each step, for more fine detail.",
-                advanced=True,
-            ),
+            "sampler": flow_sampler_prop(),
             "schedule": choice_prop("Schedule", SCHEDULES, "default", advanced=True),
             "degrid": {
                 "type": "boolean",

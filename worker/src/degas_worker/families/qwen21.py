@@ -18,25 +18,22 @@ from pathlib import Path
 from typing import Any
 
 import torch
-from diffusers import FlowMatchEulerDiscreteScheduler, QwenImage21Pipeline
-from diffusers.schedulers.scheduling_flow_match_euler_discrete import (
-    FlowMatchEulerDiscreteSchedulerOutput,
-)
+from diffusers import QwenImage21Pipeline
 from PIL import Image
 from safetensors.torch import load_file
 from transformers import LogitsProcessor, Qwen3VLForConditionalGeneration
 
 from degas_worker import masks
 from degas_worker.degrid import degrid
-from degas_worker.families import er_sde, qwen21_prompt
+from degas_worker.families import qwen21_prompt
 from degas_worker.families.base import Output, RunContext
+from degas_worker.families.flow_samplers import flow_scheduler, seeded_noise
 from degas_worker.families.lora import qwen21_lora_state
 from degas_worker.families.offload import loaded_bytes, module_bytes, place
 from degas_worker.families.runtime import (
     fetch_loras,
     free_gpu_memory,
     png_output,
-    seeded,
     step_callback,
     sync_loras,
 )
@@ -46,7 +43,6 @@ log = logging.getLogger(__name__)
 
 # Keep in sync with the server descriptor (degas/families/qwen21.py).
 SCHEDULES: dict[str, dict[str, Any]] = {"default": {}, "beta": {"use_beta_sigmas": True}}
-SAMPLERS = ("euler", "er_sde")
 
 # The transformer's sequence is the prompt, each condition image's latents (16 px each) and its
 # vision tokens in the prompt (32 px each), then the output's latents. PROMPT_TOKENS covers the
@@ -107,7 +103,12 @@ class Qwen21Runner:
             )
             ctx.check_cancelled()
 
-        self.pipe.scheduler = _scheduler(self._scheduler_config, params)
+        extra = SCHEDULES.get(params.get("schedule", "default"))
+        if extra is None:
+            raise ValueError(f"Unknown schedule {params['schedule']!r}")
+        self.pipe.scheduler = flow_scheduler(
+            self._scheduler_config, params.get("sampler", "euler"), **extra
+        )
         steps = int(params["steps"])
         width, height = int(params["width"]), int(params["height"])
         cfg = float(params["cfg"])
@@ -128,13 +129,9 @@ class Qwen21Runner:
         for item, seed in enumerate(seeds):
             ctx.check_cancelled()
             ctx.progress(item, "denoise", 0, steps)
-            generator = seeded(seed)
-            if isinstance(self.pipe.scheduler, ErSdeScheduler):
-                # Its noise follows the initial latents in the seed's stream.
-                self.pipe.scheduler.generator = generator
             result = self.pipe(
                 **kwargs,
-                generator=generator,
+                generator=seeded_noise(self.pipe.scheduler, seed),
                 callback_on_step_end=step_callback(ctx, item, steps),
             )
             ctx.progress(item, "encode", steps, steps)
@@ -283,54 +280,6 @@ class Qwen21Runner:
         free_gpu_memory()
 
 
-class ErSdeScheduler(FlowMatchEulerDiscreteScheduler):  # type: ignore[misc]
-    """ComfyUI's `er_sde` sampler on the flow-match schedule (`er_sde.py` has the math): the
-    same sigmas as Euler, with a third-order step that adds fresh noise each step. The noise is
-    drawn on the CPU from `generator`, so a seed gives the same image on every GPU."""
-
-    # Neither `__init__` nor `set_timesteps` is overridden: diffusers reads their signatures
-    # (`from_config` for the config's keys, `retrieve_timesteps` for a `sigmas` parameter).
-    # The weights are worked out when `step` first sees a new schedule instead.
-    generator: torch.Generator | None = None
-    _for_sigmas: Any = None
-    _coefficients: tuple[er_sde.Step, ...] = ()
-    _history: tuple[torch.Tensor, ...] = ()  # the last x0, then its divided difference
-
-    def step(
-        self,
-        model_output: torch.Tensor,
-        timestep: float | torch.Tensor,
-        sample: torch.Tensor,
-        *args: Any,
-        return_dict: bool = True,
-        **kwargs: Any,
-    ) -> Any:
-        if self._for_sigmas is not self.sigmas:  # `set_timesteps` made a new schedule
-            self._for_sigmas = self.sigmas
-            self._coefficients = tuple(er_sde.coefficients([float(s) for s in self.sigmas]))
-            self._history = ()
-        if self.step_index is None:
-            self._init_step_index(timestep)
-        coef = self._coefficients[self.step_index]
-        x = sample.to(torch.float32)
-        x0 = x - float(self.sigmas[self.step_index]) * model_output.to(torch.float32)
-        prev = coef.sample * x + coef.denoised * x0
-        history: tuple[torch.Tensor, ...] = (x0,)
-        if coef.d1:
-            dd = (x0 - self._history[0]) / coef.d1_over
-            prev = prev + coef.d1 * dd
-            history = (x0, dd)
-            if coef.d2:
-                prev = prev + coef.d2 * (dd - self._history[1]) / coef.d2_over
-        if coef.noise:
-            noise = torch.randn(x.shape, generator=self.generator, dtype=torch.float32)
-            prev = prev + coef.noise * noise.to(x.device)
-        self._history = history
-        self._step_index += 1
-        prev = prev.to(model_output.dtype)
-        return FlowMatchEulerDiscreteSchedulerOutput(prev_sample=prev) if return_dict else (prev,)
-
-
 class _PresencePenalty(LogitsProcessor):  # type: ignore[misc]
     """Lowers the logit of every token already generated by `penalty` (vLLM's presence
     penalty). transformers' `repetition_penalty` scales instead, and counts the prompt too."""
@@ -345,18 +294,6 @@ class _PresencePenalty(LogitsProcessor):  # type: ignore[misc]
             return scores
         seen = torch.zeros_like(scores, dtype=torch.bool).scatter_(1, generated, True)
         return scores - seen.to(scores.dtype) * self.penalty
-
-
-def _scheduler(config: Any, params: dict[str, Any]) -> Any:
-    """The job's sampler with its schedule, from the pipeline's scheduler config."""
-    extra = SCHEDULES.get(params.get("schedule", "default"))
-    if extra is None:
-        raise ValueError(f"Unknown schedule {params['schedule']!r}")
-    sampler = params.get("sampler", "euler")
-    if sampler not in SAMPLERS:
-        raise ValueError(f"Unknown sampler {sampler!r}")
-    cls = ErSdeScheduler if sampler == "er_sde" else FlowMatchEulerDiscreteScheduler
-    return cls.from_config(config, **extra)
 
 
 def _open(path: Path) -> Image.Image:

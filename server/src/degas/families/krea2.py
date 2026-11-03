@@ -22,6 +22,7 @@ from degas.families.base import (
 )
 from degas.families.schema import (
     choice_prop,
+    flow_sampler_prop,
     negative_prompt_prop,
     params_schema,
     prompt_prop,
@@ -140,6 +141,7 @@ class Krea2:
                 "is the person, and the source the scene.",
             )
         props["seed"] = seed_prop()
+        props["sampler"] = flow_sampler_prop()
         return params_schema(props)
 
     def extend_variant(self, variant: str) -> str | None:

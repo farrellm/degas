@@ -49,6 +49,13 @@ def test_turbo_has_no_cfg_or_negative_prompt() -> None:
     assert (spec["params"]["width"], spec["params"]["steps"]) == (2048, 8)
 
 
+@pytest.mark.parametrize("base", [T2I, TURBO, EDIT])
+def test_every_variant_and_mode_offers_er_sde(base: dict[str, Any]) -> None:
+    assert Krea2().validate(base)["params"]["sampler"] == "euler"
+    params = {**base["params"], "sampler": "er_sde"}
+    assert Krea2().validate({**base, "params": params})["params"]["sampler"] == "er_sde"
+
+
 def test_raw_is_capped_below_turbo() -> None:
     spec = Krea2().validate({**T2I, "params": {"prompt": "x", "width": 2048, "height": 2048}})
     assert (spec["params"]["width"], spec["params"]["height"]) == (1536, 1536)
