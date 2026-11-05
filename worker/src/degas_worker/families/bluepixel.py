@@ -49,6 +49,7 @@ class BluePixelPipeline(Flux2KleinPipeline):  # type: ignore[misc]
         text_encoder: Any,
         tokenizer: Any,
         transformer: Any,
+        is_distilled: bool = False,
     ) -> None:
         # Flux2KleinPipeline's own __init__ reads the KL VAE's config.
         DiffusionPipeline.__init__(self)
@@ -59,7 +60,9 @@ class BluePixelPipeline(Flux2KleinPipeline):  # type: ignore[misc]
             scheduler=scheduler,
             transformer=transformer,
         )
-        self.register_to_config(is_distilled=False)  # CFG still applies
+        # False: CFG still applies. It must be a parameter with a default, or diffusers'
+        # `components` takes the config key for a missing module.
+        self.register_to_config(is_distilled=is_distilled)
         self.vae_scale_factor = SPATIAL
         self.image_processor = Flux2ImageProcessor(vae_scale_factor=SPATIAL)
         self.tokenizer_max_length = 512
