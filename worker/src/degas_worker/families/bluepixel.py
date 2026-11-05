@@ -9,6 +9,7 @@ DC-AE's latents are scaled by its `scaling_factor` instead of klein's patchify a
 The VAE runs in float32, as vivo's does, and the rest in bf16.
 """
 
+import logging
 from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
@@ -36,9 +37,13 @@ from degas_worker.families.runtime import (
 from degas_worker.spec import Spec
 
 SPATIAL = 64  # the DC-AE's downscale; the transformer's patches are 1x1
-# Roughly what an untiled float32 DC-AE pass holds at its full-resolution stage: a few
-# 128-channel activations of the image's size. Past the free memory, the VAE tiles.
-VAE_BYTES_PER_PIXEL = 128 * 4 * 4
+# A VAE pass that runs out of memory is redone in tiles. diffusers' DC-AE defaults (512 px
+# tiles, 448 px apart) blend over one latent, which leaves a visible grid at f64; these blend
+# over 8 (512 px).
+TILE = 2048
+TILE_STRIDE = 1536
+
+log = logging.getLogger(__name__)
 
 
 class BluePixelPipeline(Flux2KleinPipeline):  # type: ignore[misc]
@@ -90,18 +95,23 @@ class BluePixelPipeline(Flux2KleinPipeline):  # type: ignore[misc]
         return self._pack_latents(latents), latent_ids
 
     def _vae(self, call: Callable[[], torch.Tensor], size: Any) -> torch.Tensor:
-        """Run a VAE pass untiled when it should fit, else (or after an out of memory) tiled."""
-        h, w = int(size[0]), int(size[1])
-        free, _total = torch.cuda.mem_get_info()
-        free += torch.cuda.memory_reserved() - torch.cuda.memory_allocated()
-        if h * w * VAE_BYTES_PER_PIXEL < free * 0.9:
+        """Run a VAE pass whole, or in tiles if that runs out of memory."""
+        self.vae.disable_tiling()
+        try:
+            return call()
+        except torch.OutOfMemoryError:
+            free_gpu_memory()
+        log.info("VAE out of memory at %dx%d: tiling", int(size[1]), int(size[0]))
+        self.vae.enable_tiling(
+            tile_sample_min_height=TILE,
+            tile_sample_min_width=TILE,
+            tile_sample_stride_height=TILE_STRIDE,
+            tile_sample_stride_width=TILE_STRIDE,
+        )
+        try:
+            return call()
+        finally:
             self.vae.disable_tiling()
-            try:
-                return call()
-            except torch.OutOfMemoryError:
-                free_gpu_memory()
-        self.vae.enable_tiling()
-        return call()
 
     @torch.no_grad()  # type: ignore[untyped-decorator]
     def __call__(
