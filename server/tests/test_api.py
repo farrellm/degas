@@ -54,6 +54,7 @@ def test_families_and_schema(client: TestClient) -> None:
         "krea2",
         "moss",
         "fibo2",
+        "bluepixel",
         "wan22",
         "ltx2",
     ]

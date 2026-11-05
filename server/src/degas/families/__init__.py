@@ -1,6 +1,7 @@
 """Model family registry."""
 
 from degas.families.base import FamilyDescriptor
+from degas.families.bluepixel import BluePixel
 from degas.families.fibo2 import Fibo2
 from degas.families.flux1 import Flux1
 from degas.families.flux3 import Flux3
@@ -23,6 +24,7 @@ FAMILIES: dict[str, FamilyDescriptor] = {
         Krea2(),
         Moss(),
         Fibo2(),
+        BluePixel(),
         Wan22(),
         Ltx2(),
     )

@@ -263,8 +263,8 @@ class FakeLtx:
 class FakeQwen:
     """Records the sizes of the condition images (source first, then references) and mask.
 
-    Also stands in for FLUX.1, FLUX.2 [klein], Krea 2 and MOSS-Image, recording the assets each
-    job names."""
+    Also stands in for FLUX.1, FLUX.2 [klein], Krea 2, MOSS-Image and BluePixel, recording the
+    assets each job names."""
 
     def __init__(self) -> None:
         self.calls: list[dict[str, Any]] = []
@@ -384,6 +384,7 @@ class Harness:
         self.krea2 = FakeQwen()
         self.moss = FakeQwen()
         self.fibo2 = FakeFlux3()
+        self.bluepixel = FakeQwen()
         self.sam = FakeSam()
         self.trace = FakeTrace()
         self.worker_paths = Paths(home=tmp_path / "vm", models=tmp_path / "vm-models")
@@ -413,6 +414,7 @@ class Harness:
                 "krea2": lambda: self.krea2,
                 "moss": lambda: self.moss,
                 "fibo2": lambda: self.fibo2,
+                "bluepixel": lambda: self.bluepixel,
             },
             rclone=str(rclone),
             exit_process=exit_process,
@@ -730,6 +732,13 @@ KREA2_IDENTITY = {
     "drive_file_id": "k2i",
     "size": 3,
 }
+BLUEPIXEL = {
+    "path": "models/bluepixel/BluePixel-Turbo",
+    "family": "bluepixel",
+    "kind": "model",
+    "drive_file_id": "bpt",
+    "size": 55,
+}
 LTX25 = {
     "path": "models/ltx2/ltx25/LTX-2.5-Diffusers",
     "family": "ltx2",
@@ -779,6 +788,7 @@ def client(harness: Harness) -> Iterator[TestClient]:
                 KREA2_TURBO,
                 KREA2_GENERAL,
                 KREA2_IDENTITY,
+                BLUEPIXEL,
                 INPAINT_MODEL,
                 SAM,
                 DEPTH,

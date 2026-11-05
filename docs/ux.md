@@ -340,6 +340,13 @@ Built. Krea 2 is an image family found under the Model button, with two variants
 - **Images row.** It takes 1 image after the source, which only *Identity* reads. With *General edit*, Generate is refused with *Only Identity reads a second image, the person*.
 - The edit LoRAs are ordinary LoRAs in `loras/krea2/`, so the LoRAs row lists them too. Choosing one there sets its weight. The job loads the one *Edit LoRA* names either way.
 
+### Phase 20: BluePixel
+
+Built. BluePixel is an image family found under the Model button, with one variant, *BluePixel-Turbo*, which does *Edit* only, so choosing it switches Create to *Edit*. The form comes from the schema, with no new widget.
+
+- **Settings:** *Steps* (4, and the field says the model is distilled to 4), *CFG* (3; its description says 1 turns it off and halves the time) and the size. Sizes are multiples of 64 and default to 4096². The presets are 4K at four aspects each way, plus 1K and 2K squares for quicker edits.
+- **No Images row**: the variant reads no references (`max_refs` 0). Its LoRAs row stays empty, and a job with a LoRA is refused with *BluePixel doesn't take LoRAs*.
+
 ## 5. Component inventory
 
 | Component | Status | Notes |

@@ -336,6 +336,16 @@ class FamilyRunner:
 - **LoRAs:** single files, in `loras/krea2/`, loaded by `Krea2LoraLoaderMixin`, which converts Krea's and ai-toolkit's key names. Civitai's `Krea 2` LoRAs are offered to both variants (Krea says LoRAs trained on Raw work on Turbo), and `Krea 2 Turbo` ones to Turbo.
 - **Not in v1:** the edit's knobs (boost, grounding size, placement), the reference masks (`ref_boost_mask`), Ostris's appended-reference LoRAs (`Krea2OstrisEdit`), the fp8 transformer on an L4, and `inpaint`.
 
+**BluePixel (`bluepixel`)**
+
+- **Model.** BluePixel-Turbo (vivo, November 2026; the paper is arXiv 2610.19882): FLUX.2 [klein] 9B fine-tuned for instruction editing at native 4K, with a DC-AE f64 autoencoder (`mit-han-lab/dc-ae-f64c128-mix-1.0`, 128 latent channels) in place of klein's VAE, and SATP-distilled from a 50-step teacher to 4 steps at CFG 3. The text encoder is klein's Qwen3-8B. Weights under the FLUX Non-Commercial License; vivo's code is Apache-2.0. The repo's 2026-11-03 revision (`872eb46b`) is an intermediate checkpoint, and vivo plans RL post-training after it.
+- **Checkpoint.** The diffusers folder `openvivo/BluePixel-Turbo` under `models/bluepixel/BluePixel-Turbo/` (about 55 GB: the transformer stored in float32, 36.3 GB; text encoder 16.4 GB; VAE 2.7 GB, float32), without the README, LICENSE.md and NOTICE.
+- **Pipeline.** vivo's `vins_infer.py` subclasses diffusers 0.36's `Flux2Pipeline`, and its `model_index.json` names that class (`FluxKleinPipeline`), which diffusers doesn't have. The runner's `BluePixelPipeline` ports it onto the pinned `Flux2KleinPipeline`, which already encodes the prompt as klein does (layers 9, 18 and 27). What changes: the latents are the DC-AE's (`H/64 × W/64`, 1×1 patches, scaled by its `scaling_factor` rather than klein's patchify and batch norm), the source is the one condition image at the output size (not capped at 1 megapixel), CFG runs against the empty prompt, and the transformer gets no guidance embedding. The timesteps are klein's (`compute_empirical_mu`, vivo's default `empirical` mode with no fixed shift). The transformer and text encoder are loaded in bf16, and the VAE in float32 as vivo runs it.
+- **Variant `turbo`**, mode `edit` only, minimum GPU A100. The models come to about 37 GB, so the usual offload rule keeps them resident on an 80 GB A100 or an H100 and offloads on a 40 GB A100. A VAE pass at 4K in float32 holds several 128-channel activations of the image's size, so the runner tiles it (diffusers' 512 px tiles) when its estimate (four 128-channel float32 activations of the image's size, 32 GiB at 4096²) is over 90% of the free memory, and after an out of memory.
+- **Edit.** The source is fitted to the output size at submit, like Qwen's, and is the only image the model reads (no references). vivo's pipeline sizes the output from the source (`target_pixels`, 4096² by default, at the source's aspect in multiples of 64); here the form's size does that, and *Crop to fit* or *Letterbox* handles a different shape.
+- **Parameters:** prompt (an English instruction), width and height (multiples of 64, 1 to 16.8 megapixels, default 4096²; the presets are 4K at 1:1, 3:4, 2:3 and 9:16 each way, and 1K and 2K squares), steps (default 4), CFG (default 3; 1 turns it off) and seed. No negative prompt: the unconditional pass is the empty prompt.
+- **Not in v1:** LoRAs (none exist for it, and klein's are for a different latent space), text-to-image (the pipeline would run without an image, but the model is trained to edit), several condition images, and the MCP tools, which need a variant that does `t2i`.
+
 **LTX-2 (`ltx2`)**
 
 - **Model.** Lightricks' LTX-2.3 (March 2026) and LTX-2.5 (August 2026): a 22B audio-video DiT that makes a clip and its sound together. LTX-2.3's text encoder is Gemma 3 12B and LTX-2.5's is Gemma 4 12B. Both load in diffusers as `LTX2Pipeline`. That needs diffusers `main` and transformers 5.10.1 or later (for Gemma 4), which the bootstrap installs when the image's are older (§11).
@@ -379,6 +389,7 @@ MyDrive/degas/
     moss/          MOSS-Image-Base/, MOSS-Image-SFT/, Kromoss/ (the repos' diffusers folders, without assets/)
     fibo2/         Fibo-2.0-dev/ (the diffusers folder with fonts/, without assets/ or fine_tuning/)
     krea2/         Krea-2-Raw/, Krea-2-Turbo/ (the diffusers folders, without the root *.safetensors or images/; processor/ added)
+    bluepixel/     BluePixel-Turbo/ (the diffusers folder, without README.md, LICENSE.md or NOTICE)
     ltx2/          <variant>/…   (diffusers folders: ltx25/, ltx23-distilled/, ltx23/; latent_upsampler/ inside for Upscale)
   loras/
     sdxl/          *.safetensors (+ *.yaml, preview *.jpg/png)
@@ -850,6 +861,7 @@ Phases are numbered from 0.
     - A portrait source (832×1216) edited to a landscape output (1216×832, "make it snowing heavily"): no stretch and no seam, but the model reframed the shot, zooming in on the torso and cropping the head, instead of keeping the person at the source's scale.
     - Identity, the person alone ("she sits on a log beside a campfire…"): the raincoat and jeans carried over, but not the face or hair. Raw added glasses and brown hair; Turbo was closer in the face but had straight, tied-back hair. Identity with the fox scene as the source and the person as the second image ("the woman kneels in the snow next to the fox", 156 s): the face, red curls and coat matched, and the scene and fox were kept.
     - Still to do: an 80 GB A100 or an H100 (resident), and Identity's person-alone results at other settings.
+20. **BluePixel.** ✅ Built, not yet tested on a live GPU. The `bluepixel` family (§4.3): vivo's BluePixel-Turbo, an `edit`-only fine-tune of FLUX.2 [klein] 9B with a DC-AE f64 autoencoder, at 4 steps and CFG 3 up to 4096². The runner ports vivo's pipeline onto diffusers' `Flux2KleinPipeline` (`BluePixelPipeline`), and tiles the float32 VAE when a pass wouldn't fit. To test live: a 4K edit and a 1K one, the CFG 1 path, a non-square output, and whether the VAE tiles on an 80 GB card.
 
 ## 11. Risks and open questions
 

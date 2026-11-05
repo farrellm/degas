@@ -35,6 +35,12 @@ def _fibo2() -> FamilyRunner:
     return Fibo2Runner()
 
 
+def _bluepixel() -> FamilyRunner:
+    from degas_worker.families.bluepixel import BluePixelRunner  # noqa: PLC0415 - diffusers, lazily
+
+    return BluePixelRunner()
+
+
 def _krea2() -> FamilyRunner:
     from degas_worker.families.krea2 import Krea2Runner  # noqa: PLC0415 - imports diffusers lazily
 
@@ -73,6 +79,7 @@ RUNNERS: dict[str, Callable[[], FamilyRunner]] = {
     "krea2": _krea2,
     "moss": _moss,
     "fibo2": _fibo2,
+    "bluepixel": _bluepixel,
     "qwen21": _qwen21,
     "wan22": _wan22,
     "ltx2": _ltx2,
