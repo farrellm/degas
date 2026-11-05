@@ -342,7 +342,7 @@ Built. Krea 2 is an image family found under the Model button, with two variants
 
 ### Phase 20: BluePixel
 
-Built. BluePixel is an image family found under the Model button, with one variant, *BluePixel-Turbo*, which does *Edit* only, so choosing it switches Create to *Edit*. The form comes from the schema, with no new widget.
+Built. BluePixel is an image family found under the Model button, with one variant, *BluePixel-Turbo*, which does *Edit* only, so the Model picker lists it only in *Edit*. The form comes from the schema, with no new widget.
 
 - **Settings:** *Steps* (4, and the field says the model is distilled to 4), *CFG* (3; its description says 1 turns it off and halves the time) and the size. Sizes are multiples of 64 and default to 4096². The presets are 4K at four aspects each way, plus 1K and 2K squares for quicker edits.
 - **No Images row**: the variant reads no references (`max_refs` 0). Its LoRAs row stays empty, and a job with a LoRA is refused with *BluePixel doesn't take LoRAs*.
